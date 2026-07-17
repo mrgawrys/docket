@@ -1,0 +1,11 @@
+{
+  "orgs": ["your-github-org", "another-org"],
+  "repos": {
+    "your-github-org/some-repo": "/absolute/path/to/your/local/clone",
+    "another-org/other-repo": "/absolute/path/to/other/clone"
+  },
+  "poll_interval_minutes": 15,
+  "claude_bin": "claude",
+  "claude_config_dir": "",
+  "notifications": true
+}
