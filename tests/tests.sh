@@ -130,4 +130,14 @@ env -u CLAUDE_BIN AUTO_REVIEW_CONFIG_DIR="$AUTO_REVIEW_CONFIG_DIR" AUTO_REVIEW_S
   bash "$BIN" --review "testorg/demo#45"
 grep -q run2 "$CLAUDE_CALLS" || fail "claude_bin from config must be used"
 
+# 12. skipped: PR repo has no local clone mapped -> status skipped, no local_path
+echo '{}' >"$STATE"
+cat >"$AUTO_REVIEW_CONFIG_DIR/config.json" <<EOF
+{"orgs": ["testorg"], "repos": {}}
+EOF
+bash "$BIN"
+[ "$(jq -r '."testorg/demo#7".status' "$STATE")" = skipped ] || fail "unmapped repo should be skipped"
+[ "$(jq '."testorg/demo#7" | has("local_path")' "$STATE")" = false ] || fail "skipped entry must not record local_path"
+tail -1 "$AUTO_REVIEW_STATE_DIR/auto-review.log" | grep -q '1 skipped' || fail "summary should count skipped PRs"
+
 echo "ALL TESTS PASS"

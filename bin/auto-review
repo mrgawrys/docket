@@ -112,7 +112,7 @@ fetch_candidates() { # TSV: nameWithOwner, number, title, url (non-draft only)
   local org
   for org in $(jq -r '.orgs[]' "$CONFIG"); do
     "$GH_BIN" search prs --review-requested=@me --state=open --owner "$org" \
-        --json number,title,url,isDraft,repository 2>>"$LOG_FILE" |
+        --limit 100 --json number,title,url,isDraft,repository 2>>"$LOG_FILE" |
       jq -r '.[] | select(.isDraft | not) |
              [.repository.nameWithOwner, (.number|tostring), .title, .url] | @tsv' \
       || log "gh search failed for org $org"
