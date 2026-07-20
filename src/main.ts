@@ -7,6 +7,7 @@ import { acquireLock } from "./lock";
 import { dismissKey, interactiveList } from "./list";
 import { pollCycle } from "./poll";
 import { reviewPr, type Ctx } from "./reviewer";
+import { offCommand, onCommand } from "./scheduler";
 import {
   ensureState, loadState, normalizeKey, reconcileOrphans, setStatus, splitKey,
 } from "./state";
@@ -176,6 +177,8 @@ commands["dismiss"] = (args) =>
 commands["status"] = () => withCtx((ctx) => statusCommand(ctx));
 commands["log"] = (args) => withCtx((ctx) => logCommand(ctx, Number(args[0] ?? 20) || 20));
 commands["watch"] = () => withCtx((ctx) => watchCommand(ctx));
+commands["on"] = () => withCtx((ctx) => onCommand(ctx));
+commands["off"] = async () => offCommand();
 
 async function main(): Promise<number> {
   const [cmd, ...rest] = Bun.argv.slice(2);
