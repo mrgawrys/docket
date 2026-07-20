@@ -33,7 +33,7 @@ export interface Ctx {
   log: Logger;
   gh: GhCtx;
   counters: Counters;
-  current: { key: string };
+  current: { key: string; child?: { kill(sig?: number | string): void } };
 }
 
 export function removeWorktree(ctx: Ctx, key: string, logPrefix: string): void {
@@ -83,20 +83,29 @@ export async function reviewPr(
 
   const env: Record<string, string | undefined> = { ...process.env };
   if (ctx.cfg.claude_config_dir) env.CLAUDE_CONFIG_DIR = ctx.cfg.claude_config_dir;
-  const p = Bun.spawnSync(
+  const proc = Bun.spawn(
     [
       claudeBin(ctx.cfg), "-p", reviewPrompt(number, note),
       "--output-format", "json", "--permission-mode", "dontAsk",
       "--allowedTools", ALLOWED_TOOLS,
     ],
-    { cwd: localPath, env: env as Record<string, string>, stderr: "pipe" },
+    { cwd: localPath, env: env as Record<string, string>, stdout: "pipe", stderr: "pipe" },
   );
-  appendFileSync(ctx.paths.logPath, p.stderr.toString());
+  // Exposed so a SIGINT/SIGTERM handler can kill the child promptly — spawnSync
+  // would otherwise block the JS thread until claude exits on its own.
+  ctx.current.child = proc;
+  const exitCode = await proc.exited;
+  ctx.current.child = undefined;
+  const [stdout, stderr] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+  ]);
+  appendFileSync(ctx.paths.logPath, stderr);
 
   let sessionId = "";
-  if (p.exitCode === 0) {
+  if (exitCode === 0) {
     try {
-      sessionId = JSON.parse(p.stdout.toString()).session_id ?? "";
+      sessionId = JSON.parse(stdout).session_id ?? "";
     } catch {
       // non-JSON output → treated as failure below
     }

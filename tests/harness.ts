@@ -36,6 +36,7 @@ echo run >>"\${CLAUDE_CALLS:?}"
 printf '%s' "\${CLAUDE_CONFIG_DIR:-}" >"\${CFGDIR_CAPTURE:?}"
 bun -e 'const fs=require("fs");let s={};try{s=JSON.parse(fs.readFileSync(process.env.AUTO_REVIEW_STATE_DIR+"/state.json","utf8"))}catch{};console.log((s["testorg/demo#7"]||{}).status||"absent")' >"\${STATUS_AT_CALL:?}"
 if [ "\${CLAUDE_FAIL:-0}" = 1 ]; then echo "boom" >&2; exit 1; fi
+[ -n "\${CLAUDE_SLEEP:-}" ] && sleep "\$CLAUDE_SLEEP"
 echo '{"type":"result","subtype":"success","result":"ok","session_id":"sess-1234"}'
 `;
 
@@ -48,6 +49,7 @@ export interface Sandbox {
   logPath: string;
   demoRepo: string;
   run(args: string[], extraEnv?: Record<string, string | undefined>): { code: number; out: string; err: string };
+  runAsync(args: string[], extraEnv?: Record<string, string | undefined>): Bun.Subprocess;
   state(): Record<string, any>;
   writeConfig(cfg: unknown): void;
   writeState(s: unknown): void;
@@ -104,6 +106,11 @@ export function makeSandbox(): Sandbox {
       for (const [k, v] of Object.entries(e)) if (v === undefined) delete e[k];
       const p = Bun.spawnSync(["bun", MAIN, ...args], { env: e as Record<string, string> });
       return { code: p.exitCode, out: p.stdout.toString(), err: p.stderr.toString() };
+    },
+    runAsync(args, extraEnv = {}) {
+      const e: Record<string, string | undefined> = { ...process.env, ...env, ...extraEnv };
+      for (const [k, v] of Object.entries(e)) if (v === undefined) delete e[k];
+      return Bun.spawn(["bun", MAIN, ...args], { env: e as Record<string, string> });
     },
     state: () => JSON.parse(readFileSync(statePath, "utf8")),
     writeConfig,

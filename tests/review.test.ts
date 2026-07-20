@@ -73,3 +73,29 @@ test("skipped: unmapped repo -> status skipped, no local_path (scenario 12 core)
   expect(e.status).toBe("skipped");
   expect("local_path" in e).toBe(false);
 });
+
+test("SIGTERM interrupts an in-flight claude run promptly instead of waiting for it to exit", async () => {
+  const sb = makeSandbox();
+  const proc = sb.runAsync(["review", "testorg/demo#60"], { CLAUDE_SLEEP: "10" });
+
+  // give the CLI time to reach the "reviewing" state and spawn the (slow) claude shim
+  const isReviewing = () => {
+    try {
+      return sb.state()["testorg/demo#60"]?.status === "reviewing";
+    } catch {
+      return false; // state.json not written yet
+    }
+  };
+  while (!isReviewing()) await Bun.sleep(25);
+
+  const start = Date.now();
+  proc.kill("SIGTERM");
+  const code = await proc.exited;
+  const elapsed = Date.now() - start;
+
+  expect(code).toBe(130);
+  expect(sb.state()["testorg/demo#60"].status).toBe("canceled");
+  expect(sb.state()["testorg/demo#60"].error).toBe("run interrupted");
+  // proves the handler fired promptly rather than waiting out the 10s shim sleep
+  expect(elapsed).toBeLessThan(8000);
+});

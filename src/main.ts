@@ -61,6 +61,7 @@ async function runLocked(ctx: Ctx, fn: () => Promise<number>): Promise<number> {
   if (!release) return 0; // another live run holds the lock (bash exits 0 here)
   const onSignal = () => {
     if (ctx.current.key) {
+      ctx.current.child?.kill("SIGTERM");
       setStatus(ctx.paths.statePath, ctx.current.key, "canceled", "run interrupted");
       ctx.log(`CANCELED ${ctx.current.key} (interrupted) — retry with: reviews retry ${ctx.current.key}`);
     } else {
