@@ -5,19 +5,20 @@ Watches GitHub for PRs awaiting your review and pre-runs Claude Code's
 the time you sit down, a finished review session is waiting to be resumed.
 Reviews never write anything to GitHub.
 
-A launchd job polls on an interval; the `reviews` fish command is the front
+A launchd job polls on an interval; the `reviews` binary is the front
 end: list finished reviews, resume one, retry failures, dismiss what's done,
 and switch the poller on/off.
 
 ## Requirements
 
-macOS (launchd + osascript), fish, `jq`, `gh` (authenticated), the `claude`
+macOS (launchd + osascript), `bun`, `gh` (authenticated), the `claude`
 CLI, and a local clone of every repo you review.
 
 ## Setup
 
-1. `./install.sh` — checks dependencies, seeds the config, symlinks the fish
-   function, runs the (mocked, offline) test suite.
+1. `./install.sh` — checks dependencies, runs the test suite, builds the
+   `reviews` binary into `~/.local/bin`, seeds the config, links the fish
+   completions.
 2. Edit `~/.config/auto-review/config.json`:
    - `orgs` — GitHub orgs to poll for PRs where your review is requested
    - `repos` — `org/repo` → absolute path of your local clone
@@ -26,7 +27,7 @@ CLI, and a local clone of every repo you review.
    - `claude_config_dir` — set to use a specific `CLAUDE_CONFIG_DIR`
      (useful with multiple Claude accounts); empty = default
    - `notifications` — macOS notifications on review completion (default true)
-3. `bash bin/auto-review --dry-run` — read-only; lists what would be
+3. `reviews poll --dry-run` — read-only; lists what would be
    reviewed. **Everything listed gets reviewed (and billed) once the poller
    is on.** Seed a pre-existing backlog as done first:
    `jq '."ORG/REPO#N" = {status: "done", note: "seeded"}' state.json > s && mv s state.json`
@@ -42,9 +43,11 @@ CLI, and a local clone of every repo you review.
   PRs are dismissed (worktree removed), PRs you already reviewed show your
   verdict. The poller does the same refresh on every poll.
 - `reviews status | log [N] | watch | on | off | help`
-- `bin/auto-review --review ORG/REPO#N ["note"]` — force-review any PR (e.g.
+- `reviews review ORG/REPO#N ["note"]` — force-review any PR (e.g.
   author pushed changes without re-requesting review); accepts PR URLs too.
   The note is passed to the reviewer as extra context.
+- `reviews dismiss ORG/REPO#N` — mark an entry done and remove its worktree
+  without reviewing it.
 
 ## How it works
 
@@ -63,8 +66,14 @@ merged/closed PRs become `done` and lose their worktree; once you review a
 PR its entry shows your verdict — `approved`, `changes-requested`, or
 `commented` — with `+re-requested` / `+new-commits` flags when the author
 re-requests your review or pushes after it. Flagged entries are acted on
-manually (`r#` or `--review` with a note).
+manually (`r#` or `reviews review` with a note).
 
 Statuses, logs, and the lock live in `~/.local/state/auto-review/`; delete a
-state entry to force a re-review. `tests/tests.sh` is fully mocked — no
+state entry to force a re-review. `bun test` is fully mocked — no
 network, no tokens.
+
+## Development
+
+- `bun test` — run the test suite (fully mocked, no network, no tokens)
+- `bun run dev` — run the CLI from source, e.g. `bun run dev status`
+- `bun run build` — compile the `reviews` binary into `dist/`
