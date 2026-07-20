@@ -20,12 +20,15 @@ function reviews --description "List/resume pre-run PR reviews; status|log|watch
     switch "$argv[1]"
         case help -h --help
             echo "reviews            interactive list: resume #, d# dismiss, r# retry, q quit"
+            echo "reviews sync       refresh from GitHub: merged/closed dismissed, your verdicts shown"
             echo "reviews status     launchd state, live poll, last activity, state counts"
             echo "reviews log [N]    last N log lines (default 20)"
             echo "reviews watch      follow the log live (Ctrl+C to stop)"
             echo "reviews on         enable the launchd poller (interval from config)"
             echo "reviews off        disable the launchd poller (manual runs still work)"
             return 0
+        case sync
+            bash $repo/bin/auto-review --sync
         case status
             if launchctl print gui/(id -u)/$label >/dev/null 2>&1
                 echo "poller:  ON (launchd) — 'reviews off' to disable"
@@ -110,7 +113,8 @@ function reviews --description "List/resume pre-run PR reviews; status|log|watch
     end
     for i in (seq (count $keys))
         set -l line (jq -r --arg k $keys[$i] \
-            '.[$k] | "[\(.status)]\t\(.title)\t\(.updated_at)"' $state)
+            '.[$k] | "[\(.status)\((.flags // [])
+                | if length > 0 then " " + (map("+" + .) | join(" ")) else "" end)]\t\(.title)\t\(.updated_at)"' $state)
         printf '%2d  %-32s %s\n' $i $keys[$i] "$line"
     end
     read -l -P 'resume #  (d# dismiss, r# retry, q quit): ' choice
