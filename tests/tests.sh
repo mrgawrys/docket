@@ -11,7 +11,17 @@ mkdir -p "$AUTO_REVIEW_CONFIG_DIR" "$AUTO_REVIEW_STATE_DIR" "$TMP/bin" "$TMP/dem
 
 cat >"$TMP/bin/gh" <<'EOF'
 #!/usr/bin/env bash
+if [ "$1" = api ] && [ "$2" = user ]; then echo testuser; exit 0; fi
 if [ "$1" = pr ] && [ "$2" = view ]; then
+  for a in "$@"; do
+    if [[ "$a" == *state*latestReviews* ]]; then
+      [ "${GH_PR_VIEW_FAIL:-0}" = 1 ] && { echo "boom" >&2; exit 1; }
+      json="${GH_PR_STATUS_JSON:-}"
+      [ -n "$json" ] || json='{"state":"OPEN"}'
+      echo "$json"
+      exit 0
+    fi
+  done
   echo '{"title": "Manual PR", "url": "https://example.test/pr/42"}'
   exit 0
 fi
@@ -139,5 +149,54 @@ bash "$BIN"
 [ "$(jq -r '."testorg/demo#7".status' "$STATE")" = skipped ] || fail "unmapped repo should be skipped"
 [ "$(jq '."testorg/demo#7" | has("local_path")' "$STATE")" = false ] || fail "skipped entry must not record local_path"
 tail -1 "$AUTO_REVIEW_STATE_DIR/auto-review.log" | grep -q '1 skipped' || fail "summary should count skipped PRs"
+
+# 13. sync: my review flips the status, flags capture re-request + new commits
+cat >"$AUTO_REVIEW_CONFIG_DIR/config.json" <<EOF
+{"orgs": ["testorg"], "repos": {"testorg/demo": "$TMP/demo"}}
+EOF
+jq -n --arg p "$TMP/demo" '{"testorg/demo#7": {status: "ready", session_id: "sess-1234",
+  title: "Demo PR", url: "u", local_path: $p, updated_at: "2026-01-01T00:00:00Z"}}' >"$STATE"
+calls_before=$(wc -l <"$CLAUDE_CALLS" | tr -d ' ')
+GH_PR_STATUS_JSON='{"state":"OPEN",
+  "latestReviews":[{"author":{"login":"testuser"},"state":"CHANGES_REQUESTED",
+                    "submittedAt":"2026-07-19T10:00:00Z"}],
+  "reviewRequests":[{"login":"testuser"}],
+  "commits":[{"committedDate":"2026-07-19T12:00:00Z"}]}' bash "$BIN" --sync
+[ "$(jq -r '."testorg/demo#7".status' "$STATE")" = changes-requested ] \
+  || fail "sync should record my review verdict"
+[ "$(jq -c '."testorg/demo#7".flags' "$STATE")" = '["re-requested","new-commits"]' ] \
+  || fail "sync should flag re-request and new commits"
+[ "$(jq -r '."testorg/demo#7".session_id' "$STATE")" = sess-1234 ] \
+  || fail "sync must keep the session resumable"
+[ "$(wc -l <"$CLAUDE_CALLS" | tr -d ' ')" = "$calls_before" ] \
+  || fail "sync must never invoke claude"
+
+# 14. sync: plain approval, nothing new since -> verdict updates, flags clear
+GH_PR_STATUS_JSON='{"state":"OPEN",
+  "latestReviews":[{"author":{"login":"testuser"},"state":"APPROVED",
+                    "submittedAt":"2026-07-19T13:00:00Z"}],
+  "reviewRequests":[],
+  "commits":[{"committedDate":"2026-07-19T12:00:00Z"}]}' bash "$BIN" --sync
+[ "$(jq -r '."testorg/demo#7".status' "$STATE")" = approved ] || fail "verdict should update"
+[ "$(jq -c '."testorg/demo#7".flags' "$STATE")" = '[]' ] || fail "flags should clear"
+
+# 15. sync: gh failure leaves the entry untouched
+GH_PR_VIEW_FAIL=1 bash "$BIN" --sync
+[ "$(jq -r '."testorg/demo#7".status' "$STATE")" = approved ] \
+  || fail "gh failure must not change state"
+
+# 16. normal poll reconciles too: merged -> done, worktree removed, no new claude run
+git -C "$TMP/demo" init -q
+git -C "$TMP/demo" -c user.name=t -c user.email=t@t commit -q --allow-empty -m init
+git -C "$TMP/demo" worktree add --quiet "$TMP/demo/.worktrees/pr-7"
+calls_before=$(wc -l <"$CLAUDE_CALLS" | tr -d ' ')
+GH_PR_STATUS_JSON='{"state":"MERGED"}' bash "$BIN"
+[ "$(jq -r '."testorg/demo#7".status' "$STATE")" = done ] || fail "merged PR should be done"
+[ "$(jq -r '."testorg/demo#7".done_reason' "$STATE")" = merged ] || fail "done_reason recorded"
+[ ! -d "$TMP/demo/.worktrees/pr-7" ] || fail "merged PR worktree should be removed"
+[ "$(wc -l <"$CLAUDE_CALLS" | tr -d ' ')" = "$calls_before" ] \
+  || fail "done entry must not be re-reviewed"
+tail -1 "$AUTO_REVIEW_STATE_DIR/auto-review.log" | grep -q '1 synced' \
+  || fail "poll summary should count synced entries"
 
 echo "ALL TESTS PASS"
