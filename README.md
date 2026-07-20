@@ -38,6 +38,9 @@ CLI, and a local clone of every repo you review.
 
 - `reviews` — interactive list; pick a number to resume the session in the
   right clone, `d#` dismiss (also removes the PR's worktree), `r#` retry.
+- `reviews sync` — refresh entries from GitHub before listing: merged/closed
+  PRs are dismissed (worktree removed), PRs you already reviewed show your
+  verdict. The poller does the same refresh on every poll.
 - `reviews status | log [N] | watch | on | off | help`
 - `bin/auto-review --review ORG/REPO#N ["note"]` — force-review any PR (e.g.
   author pushed changes without re-requesting review); accepts PR URLs too.
@@ -54,7 +57,13 @@ Add `.worktrees/` to your global git excludes (`~/.config/git/ignore`).
 
 Entry lifecycle: `reviewing` → `ready` | `failed` | `canceled` (Ctrl+C), plus
 `skipped` (no local clone mapped) and `done` (dismissed). Orphaned
-`reviewing` entries from a dead run flip to `failed` on the next poll.
+`reviewing` entries from a dead run flip to `failed` on the next poll. Every
+poll (and `reviews sync`) also reconciles active entries against GitHub:
+merged/closed PRs become `done` and lose their worktree; once you review a
+PR its entry shows your verdict — `approved`, `changes-requested`, or
+`commented` — with `+re-requested` / `+new-commits` flags when the author
+re-requests your review or pushes after it. Flagged entries are acted on
+manually (`r#` or `--review` with a note).
 
 Statuses, logs, and the lock live in `~/.local/state/auto-review/`; delete a
 state entry to force a re-review. `tests/tests.sh` is fully mocked — no
