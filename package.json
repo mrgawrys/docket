@@ -1,0 +1,13 @@
+{
+  "name": "reviews",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "bun src/main.ts",
+    "test": "bun test",
+    "build": "bun build --compile src/main.ts --outfile dist/reviews"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.0"
+  }
+}
