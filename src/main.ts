@@ -4,6 +4,7 @@ import { ConfigError, ghBin, loadConfig, paths as resolvePaths } from "./config"
 import { prView } from "./github";
 import { makeLogger } from "./log";
 import { acquireLock } from "./lock";
+import { pollCycle } from "./poll";
 import { reviewPr, type Ctx } from "./reviewer";
 import {
   ensureState, loadState, normalizeKey, reconcileOrphans, setStatus, splitKey,
@@ -140,6 +141,14 @@ commands["sync"] = () =>
     runLocked(ctx, async () => {
       reconcile(ctx);
       ctx.log(`sync complete: ${ctx.counters.synced} updated`);
+      return 0;
+    }),
+  );
+
+commands["poll"] = (args) =>
+  withCtx((ctx) =>
+    runLocked(ctx, async () => {
+      await pollCycle(ctx, args.includes("--dry-run"));
       return 0;
     }),
   );
