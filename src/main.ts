@@ -4,6 +4,7 @@ import { ConfigError, ghBin, loadConfig, paths as resolvePaths } from "./config"
 import { prView } from "./github";
 import { makeLogger } from "./log";
 import { acquireLock } from "./lock";
+import { dismissKey, interactiveList } from "./list";
 import { pollCycle } from "./poll";
 import { reviewPr, type Ctx } from "./reviewer";
 import {
@@ -153,12 +154,29 @@ commands["poll"] = (args) =>
     }),
   );
 
+commands["dismiss"] = (args) =>
+  withCtx(async (ctx) => {
+    const raw = args[0];
+    if (!raw) {
+      console.error("usage: reviews dismiss ORG/REPO#NUM");
+      return 1;
+    }
+    let key: string;
+    try {
+      key = normalizeKey(raw);
+    } catch (e) {
+      console.error((e as Error).message);
+      return 1;
+    }
+    dismissKey(ctx, key);
+    return 0;
+  });
+
 async function main(): Promise<number> {
   const [cmd, ...rest] = Bun.argv.slice(2);
-  if (cmd === undefined || cmd === "-h" || cmd === "--help") {
-    // bare `reviews` becomes the interactive list in Task 9
-    return commands["help"]!([]);
-  }
+  if (cmd === undefined)
+    return withCtx((ctx) => interactiveList(ctx, (key) => commands["retry"]!([key])));
+  if (cmd === "-h" || cmd === "--help") return commands["help"]!([]);
   const fn = commands[cmd];
   if (!fn) {
     console.error(`unknown subcommand: ${cmd} (try: reviews help)`);
