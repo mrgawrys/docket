@@ -10,6 +10,7 @@ import { reviewPr, type Ctx } from "./reviewer";
 import {
   ensureState, loadState, normalizeKey, reconcileOrphans, setStatus, splitKey,
 } from "./state";
+import { logCommand, statusCommand, watchCommand } from "./status";
 import { reconcile } from "./sync";
 
 const USAGE = `reviews — pre-run Claude Code reviews for PRs awaiting you
@@ -171,6 +172,10 @@ commands["dismiss"] = (args) =>
     dismissKey(ctx, key);
     return 0;
   });
+
+commands["status"] = () => withCtx((ctx) => statusCommand(ctx));
+commands["log"] = (args) => withCtx((ctx) => logCommand(ctx, Number(args[0] ?? 20) || 20));
+commands["watch"] = () => withCtx((ctx) => watchCommand(ctx));
 
 async function main(): Promise<number> {
   const [cmd, ...rest] = Bun.argv.slice(2);
