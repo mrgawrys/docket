@@ -8,6 +8,7 @@ import { reviewPr, type Ctx } from "./reviewer";
 import {
   ensureState, loadState, normalizeKey, reconcileOrphans, setStatus, splitKey,
 } from "./state";
+import { reconcile } from "./sync";
 
 const USAGE = `reviews — pre-run Claude Code reviews for PRs awaiting you
 
@@ -130,6 +131,15 @@ commands["retry"] = (args) =>
       }
       const { repo, number } = splitKey(key);
       await reviewPr(ctx, key, repo, number, entry.title ?? "", entry.url ?? "", args[1]);
+      return 0;
+    }),
+  );
+
+commands["sync"] = () =>
+  withCtx((ctx) =>
+    runLocked(ctx, async () => {
+      reconcile(ctx);
+      ctx.log(`sync complete: ${ctx.counters.synced} updated`);
       return 0;
     }),
   );
