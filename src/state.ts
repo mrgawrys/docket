@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import type { Logger } from "./log";
 
 export type Verdict = "approved" | "changes-requested" | "commented";
 export type Status =
@@ -104,4 +105,13 @@ export function normalizeKey(input: string): string {
 export function splitKey(key: string): { repo: string; number: string } {
   const i = key.lastIndexOf("#");
   return { repo: key.slice(0, i), number: key.slice(i + 1) };
+}
+
+export function reconcileOrphans(statePath: string, log: Logger): void {
+  const s = loadState(statePath);
+  for (const [key, e] of Object.entries(s)) {
+    if (e.status !== "reviewing") continue;
+    setStatus(statePath, key, "failed", "previous run died mid-review");
+    log(`ORPHAN ${key}: previous run died mid-review, marked failed — retry with: reviews retry ${key}`);
+  }
 }
