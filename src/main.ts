@@ -170,12 +170,19 @@ commands["dismiss"] = (args) =>
       console.error((e as Error).message);
       return 1;
     }
+    if (!loadState(ctx.paths.statePath)[key]) {
+      console.error(`unknown key: ${key}`);
+      return 1;
+    }
     dismissKey(ctx, key);
     return 0;
   });
 
 commands["status"] = () => withCtx((ctx) => statusCommand(ctx));
-commands["log"] = (args) => withCtx((ctx) => logCommand(ctx, Number(args[0] ?? 20) || 20));
+commands["log"] = (args) => {
+  const n = Number(args[0] ?? 20);
+  return withCtx((ctx) => logCommand(ctx, Number.isFinite(n) && n >= 1 ? n : 20));
+};
 commands["watch"] = () => withCtx((ctx) => watchCommand(ctx));
 commands["on"] = () => withCtx((ctx) => onCommand(ctx));
 commands["off"] = async () => offCommand();

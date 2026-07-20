@@ -60,6 +60,7 @@ export async function watchCommand(ctx: Ctx): Promise<number> {
   for (const line of tailLines(path, 10)) console.log(line);
   let offset = existsSync(path) ? statSync(path).size : 0;
   watchFile(path, { interval: 500 }, () => {
+    if (!existsSync(path)) return; // fires even for a missing file (fresh install, log deleted mid-watch)
     const size = statSync(path).size;
     if (size < offset) offset = 0; // log rotated/truncated
     if (size > offset) {

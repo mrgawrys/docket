@@ -24,6 +24,17 @@ test("log command prints the last n lines", () => {
   expect(sb.run(["log"]).code).toBe(0); // default 20
 });
 
+test("log command clamps a negative n to the default instead of slicing the head", () => {
+  const sb = makeSandbox();
+  sb.run(["poll", "--dry-run"]);
+  sb.run(["poll", "--dry-run"]);
+  const negative = sb.run(["log", "-1"]).out;
+  const zero = sb.run(["log", "0"]).out;
+  const def = sb.run(["log"]).out;
+  expect(negative).toBe(def);
+  expect(zero).toBe(def);
+});
+
 test("status exits 0 and shows state counts even without launchd", () => {
   const sb = makeSandbox();
   sb.run(["poll", "--dry-run"]);

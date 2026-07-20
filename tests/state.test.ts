@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -29,6 +29,13 @@ test("load bootstraps {}, save round-trips", () => {
   expect(loadState(p)).toEqual({});
   saveState(p, { "a/b#1": { status: "ready", updated_at: "t" } });
   expect(loadState(p)["a/b#1"]!.status).toBe("ready");
+});
+
+test("load heals an empty (0-byte) state.json instead of crashing on JSON.parse", () => {
+  const p = statePath();
+  writeFileSync(p, "");
+  expect(loadState(p)).toEqual({});
+  expect(readFileSync(p, "utf8")).toBe("{}\n");
 });
 
 test("setStatus updates status + updated_at, records error only when given", () => {

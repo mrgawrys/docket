@@ -62,3 +62,11 @@ test("dismiss command marks done and removes the worktree", () => {
   expect(sb.state()["testorg/demo#7"].status).toBe("done");
   expect(existsSync(join(sb.demoRepo, ".worktrees", "pr-7"))).toBe(false);
 });
+
+test("dismiss command rejects an unknown key instead of fabricating an entry", () => {
+  const sb = makeSandbox();
+  const r = sb.run(["dismiss", "nope/nope#1"]);
+  expect(r.code).not.toBe(0);
+  expect(r.err).toContain("unknown key");
+  expect(sb.state()).toEqual({});
+});

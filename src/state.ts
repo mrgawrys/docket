@@ -1,4 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import {
+  existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync,
+} from "node:fs";
 import { dirname } from "node:path";
 import type { Logger } from "./log";
 
@@ -28,7 +30,8 @@ export function timestamp(): string {
 
 export function ensureState(statePath: string): void {
   mkdirSync(dirname(statePath), { recursive: true });
-  if (!existsSync(statePath)) writeFileSync(statePath, "{}\n");
+  // size check mirrors the bash original's self-heal for a truncated/empty state.json
+  if (!existsSync(statePath) || statSync(statePath).size === 0) writeFileSync(statePath, "{}\n");
 }
 
 export function loadState(statePath: string): State {
