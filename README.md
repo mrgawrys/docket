@@ -31,6 +31,13 @@ CLI, and a local clone of every repo you review.
      whichever account `gh auth switch` last left active — with a personal +
      work account that means the poller can go blind without any error.
      Empty = active account.
+   - `ignored_teams` — org-qualified team slugs (e.g.
+     `your-github-org/some-team`). A PR that lands in your queue **only**
+     because one of these teams was asked to review (CODEOWNERS or a manual
+     team request) is skipped — nothing is recorded, so if someone later
+     requests *you* directly the PR is picked up normally. A PR where you
+     are requested personally, or via any team not listed here, is always
+     reviewed. Empty = review everything.
    - `notifications` — macOS notifications on review completion (default true)
 3. `reviews poll --dry-run` — read-only; lists what would be
    reviewed. **Everything listed gets reviewed (and billed) once the poller
@@ -43,7 +50,9 @@ CLI, and a local clone of every repo you review.
 ## Day to day
 
 - `reviews` — interactive list; pick a number to resume the session in the
-  right clone, `d#` dismiss (also removes the PR's worktree), `r#` retry.
+  right clone, `d#` dismiss (also removes the PR's worktree), `r#` retry,
+  `p` poll for new review requests, `s` sync with GitHub. Everything except
+  resume and quit re-shows the refreshed list.
 - `reviews sync` — refresh entries from GitHub before listing: merged/closed
   PRs are dismissed (worktree removed), PRs you already reviewed show your
   verdict. The poller does the same refresh on every poll.
@@ -56,8 +65,9 @@ CLI, and a local clone of every repo you review.
 
 ## How it works
 
-Each poll runs `gh search prs --review-requested=@me` per org, skips drafts
-and already-known PRs, then hands each new PR to its own detached background
+Each poll runs `gh search prs --review-requested=@me` per org, skips drafts,
+already-known PRs, and PRs whose only route to you is a team in
+`ignored_teams`, then hands each new PR to its own detached background
 runner (`reviews exec`) that runs `claude -p` headlessly with a locked-down
 tool allowlist. Runners are parallel and survive the poll process: ctrl+c on
 a poll, `reviews review`, or `reviews retry` never cancels an in-flight

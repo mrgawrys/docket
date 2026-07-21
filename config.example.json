@@ -8,5 +8,6 @@
   "claude_bin": "claude",
   "claude_config_dir": "",
   "gh_account": "",
+  "ignored_teams": [],
   "notifications": true
 }

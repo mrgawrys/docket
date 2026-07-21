@@ -7,6 +7,7 @@ export interface Config {
   claude_bin?: string;
   claude_config_dir?: string;
   gh_account?: string;
+  ignored_teams?: string[];
   notifications?: boolean;
 }
 

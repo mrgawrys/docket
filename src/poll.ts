@@ -1,4 +1,4 @@
-import { searchReviewRequests, type ReviewRequesters } from "./github";
+import { ghUser, myTeams, reviewRequesters, searchReviewRequests, type ReviewRequesters } from "./github";
 import { startReview, type Ctx } from "./reviewer";
 import { loadState } from "./state";
 import { reconcile } from "./sync";
@@ -23,10 +23,25 @@ export async function pollCycle(ctx: Ctx, dry: boolean): Promise<void> {
   if (!dry) reconcile(ctx);
   ctx.log(`polling ${ctx.cfg.orgs.join(", ")} for review requests`);
 
+  const ignored = ctx.cfg.ignored_teams ?? [];
+  // membership is stable within a cycle — fetch it at most once, lazily
+  let me: { login: string | null; teams: string[] | null } | null = null;
+
   for (const org of ctx.cfg.orgs) {
     for (const c of searchReviewRequests(ctx.gh, org)) {
       const key = `${c.repo}#${c.number}`;
       if (loadState(ctx.paths.statePath)[key]) continue; // known PR — never re-review
+      if (ignored.length > 0) {
+        me ??= { login: ghUser(ctx.gh), teams: myTeams(ctx.gh) };
+        const req = reviewRequesters(ctx.gh, c.repo, String(c.number));
+        const via = skipVia(me.login, req, me.teams, ignored);
+        if (via) {
+          // no state entry: a later direct request must resurface this PR
+          if (dry) console.log(`would skip (via ${via.join(", ")}): ${key}`);
+          else ctx.log(`SKIP ${key}: requested only via ${via.join(", ")}`);
+          continue;
+        }
+      }
       if (dry) {
         console.log(`would review: ${key} — ${c.title}`);
       } else {

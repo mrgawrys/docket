@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { skipVia } from "../src/poll";
 import { makeSandbox } from "./harness";
@@ -136,4 +136,101 @@ test("skipVia: skips only when every requested team I belong to is ignored", () 
   expect(skipVia(null, { users: [], teams: ["acme/ignored-team"] }, member, ignored)).toEqual([
     "acme/ignored-team",
   ]); // unknown login can't match a direct request, teams still decide
+});
+
+test("ignored_teams: team-only request is skipped with no state entry; direct request resurfaces it", async () => {
+  const sb = makeSandbox();
+  sb.writeConfig({
+    orgs: ["testorg"], repos: { "testorg/demo": sb.demoRepo },
+    ignored_teams: ["testorg/ignored-team"],
+  });
+  const teamOnly = JSON.stringify({
+    reviewRequests: [{ __typename: "Team", slug: "testorg/ignored-team" }],
+  });
+  const env = { GH_USER_TEAMS: "testorg/ignored-team", GH_REVIEW_REQUESTS_JSON: teamOnly };
+
+  // dry run announces the skip
+  let r = sb.run(["poll", "--dry-run"], env);
+  expect(r.code).toBe(0);
+  expect(r.out).toContain("would skip (via testorg/ignored-team): testorg/demo#7");
+  expect(r.out).not.toContain("would review: testorg/demo#7");
+
+  // real run: no entry written, no claude call, SKIP logged
+  r = sb.run(["poll"], env);
+  expect(r.code).toBe(0);
+  expect(sb.state()["testorg/demo#7"]).toBeUndefined();
+  expect(sb.claudeCalls()).toBe(0);
+  expect(readFileSync(sb.logPath, "utf8")).toContain(
+    "SKIP testorg/demo#7: requested only via testorg/ignored-team",
+  );
+
+  // later direct request -> reviewed as usual
+  const direct = JSON.stringify({
+    reviewRequests: [
+      { __typename: "User", login: "testuser" },
+      { __typename: "Team", slug: "testorg/ignored-team" },
+    ],
+  });
+  r = sb.run(["poll"], { ...env, GH_REVIEW_REQUESTS_JSON: direct });
+  expect(r.code).toBe(0);
+  await sb.waitEntry("testorg/demo#7", (e) => e.status === "ready");
+});
+
+test("ignored_teams: membership in a non-ignored requested team still reviews", async () => {
+  const sb = makeSandbox();
+  sb.writeConfig({
+    orgs: ["testorg"], repos: { "testorg/demo": sb.demoRepo },
+    ignored_teams: ["testorg/ignored-team"],
+  });
+  const r = sb.run(["poll"], {
+    GH_USER_TEAMS: "testorg/ignored-team\ntestorg/other-team",
+    GH_REVIEW_REQUESTS_JSON: JSON.stringify({
+      reviewRequests: [
+        { __typename: "Team", slug: "testorg/ignored-team" },
+        { __typename: "Team", slug: "testorg/other-team" },
+      ],
+    }),
+  });
+  expect(r.code).toBe(0);
+  await sb.waitEntry("testorg/demo#7", (e) => e.status === "ready");
+});
+
+test("ignored_teams: failed reviewRequests fetch fails open (PR reviewed)", async () => {
+  const sb = makeSandbox();
+  sb.writeConfig({
+    orgs: ["testorg"], repos: { "testorg/demo": sb.demoRepo },
+    ignored_teams: ["testorg/ignored-team"],
+  });
+  const r = sb.run(["poll"], {
+    GH_USER_TEAMS: "testorg/ignored-team",
+    GH_PR_VIEW_FAIL: "1",
+  });
+  expect(r.code).toBe(0);
+  await sb.waitEntry("testorg/demo#7", (e) => e.status === "ready");
+});
+
+test("ignored_teams: membership fetched at most once per poll cycle", () => {
+  const sb = makeSandbox();
+  const calls = join(sb.tmp, "teams-calls");
+  writeFileSync(calls, "");
+  sb.writeConfig({
+    orgs: ["testorg"], repos: { "testorg/demo": sb.demoRepo },
+    ignored_teams: ["testorg/ignored-team"],
+  });
+  const searchJson = JSON.stringify([
+    { number: 7, title: "A", url: "u", isDraft: false,
+      repository: { nameWithOwner: "testorg/demo" } },
+    { number: 21, title: "B", url: "u", isDraft: false,
+      repository: { nameWithOwner: "testorg/demo" } },
+  ]);
+  const r = sb.run(["poll", "--dry-run"], {
+    GH_SEARCH_JSON: searchJson,
+    GH_TEAMS_CALLS: calls,
+    GH_USER_TEAMS: "testorg/ignored-team",
+    GH_REVIEW_REQUESTS_JSON: JSON.stringify({
+      reviewRequests: [{ __typename: "Team", slug: "testorg/ignored-team" }],
+    }),
+  });
+  expect(r.code).toBe(0);
+  expect(readFileSync(calls, "utf8").split("\n").filter(Boolean)).toHaveLength(1);
 });
