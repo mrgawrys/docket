@@ -101,6 +101,14 @@ async function runLocked(ctx: Ctx, fn: () => Promise<number>): Promise<number> {
   }
 }
 
+// review/retry don't take the poll lock: they only mark state and spawn a
+// runner, and double-starts are stopped by the live-pid checks. Holding the
+// lock would make them silently no-op whenever a poll cycle is in flight.
+async function runUnlocked(ctx: Ctx, fn: () => Promise<number>): Promise<number> {
+  reconcileOrphans(ctx.paths.statePath, ctx.log);
+  return fn();
+}
+
 const startedMsg = (key: string, result: StartResult): number => {
   if (result === "started") {
     console.log(`${key}: review started in the background — you'll get a notification; follow with: reviews watch`);
@@ -112,7 +120,7 @@ const startedMsg = (key: string, result: StartResult): number => {
 
 commands["review"] = (args) =>
   withCtx((ctx) =>
-    runLocked(ctx, async () => {
+    runUnlocked(ctx, async () => {
       const raw = args[0];
       if (!raw) {
         console.error("usage: reviews review ORG/REPO#NUM|URL [note]");
@@ -138,7 +146,7 @@ commands["review"] = (args) =>
 
 commands["retry"] = (args) =>
   withCtx((ctx) =>
-    runLocked(ctx, async () => {
+    runUnlocked(ctx, async () => {
       const raw = args[0];
       if (!raw) {
         console.error("usage: reviews retry ORG/REPO#NUM [note]");
