@@ -201,7 +201,7 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
       status: "failed", title, url, local_path: localPath,
       error: "claude run failed, see auto-review.log", updated_at: timestamp(),
     }));
-    ctx.log(`FAILED ${key} — retry with: reviews retry ${key}`);
+    ctx.log(`FAILED ${key} — retry with: reviews retry ${key}, or check your setup: reviews doctor`);
     await notify(enabled, `Review FAILED: ${key}`, title);
     ctx.counters.failed++;
   }

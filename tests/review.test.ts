@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { makeSandbox } from "./harness";
 
 test("review + retry command family", async () => {
@@ -29,6 +30,7 @@ test("review + retry command family", async () => {
   expect(r.code).toBe(0);
   e = await sb.waitEntry("testorg/demo#50", (x) => x.status === "failed");
   expect(e.error).toBeTruthy();
+  expect(readFileSync(sb.logPath, "utf8")).toContain("reviews doctor");
 
   // scenario 5: retry flips failed -> ready; unknown key exits non-zero
   r = sb.run(["retry", "testorg/demo#50"]);
