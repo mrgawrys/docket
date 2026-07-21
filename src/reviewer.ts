@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
-import { appendFileSync, closeSync, existsSync, openSync } from "node:fs";
-import { join } from "node:path";
-import { claudeBin, notifyEnabled, type Config, type Paths } from "./config";
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { claudeBin, notifyEnabled, runLogPath, type Config, type Paths } from "./config";
 import type { GhCtx } from "./github";
 import type { Logger } from "./log";
 import { notify } from "./notify";
@@ -159,10 +159,13 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
   // gh.env carries GH_TOKEN when gh_account is pinned — claude runs gh itself
   const env: Record<string, string | undefined> = { ...ctx.gh.env };
   if (ctx.cfg.claude_config_dir) env.CLAUDE_CONFIG_DIR = ctx.cfg.claude_config_dir;
+  const runLog = runLogPath(ctx.paths, key);
+  mkdirSync(dirname(runLog), { recursive: true });
+  writeFileSync(runLog, "");
   const proc = Bun.spawn(
     [
       claudeBin(ctx.cfg), "-p", reviewPrompt(number, entry.note),
-      "--output-format", "json", "--permission-mode", "dontAsk",
+      "--output-format", "stream-json", "--verbose", "--permission-mode", "dontAsk",
       "--allowedTools", ALLOWED_TOOLS,
     ],
     { cwd: localPath, env: env as Record<string, string>, stdout: "pipe", stderr: "pipe" },
@@ -170,20 +173,21 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
   // Exposed so a SIGINT/SIGTERM handler can kill the child promptly — spawnSync
   // would otherwise block the JS thread until claude exits on its own.
   ctx.current.child = proc;
+  const stderrDone = new Response(proc.stderr).text();
+  // tee progress into the run log as it happens — `reviews` watches this file
+  for await (const chunk of proc.stdout) appendFileSync(runLog, chunk);
   const exitCode = await proc.exited;
   ctx.current.child = undefined;
-  const [stdout, stderr] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-  ]);
-  appendFileSync(ctx.paths.logPath, stderr);
+  appendFileSync(ctx.paths.logPath, await stderrDone);
 
   let sessionId = "";
   if (exitCode === 0) {
+    const last = readFileSync(runLog, "utf8").trimEnd().split("\n").filter(Boolean).at(-1) ?? "";
     try {
-      sessionId = JSON.parse(stdout).session_id ?? "";
+      const result = JSON.parse(last) as { type?: string; session_id?: string };
+      if (result.type === "result") sessionId = result.session_id ?? "";
     } catch {
-      // non-JSON output → treated as failure below
+      // non-JSON tail → treated as failure below
     }
   }
 

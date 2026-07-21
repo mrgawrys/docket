@@ -54,6 +54,7 @@ echo run >>"\${CLAUDE_CALLS:?}"
 printf '%s' "\${CLAUDE_CONFIG_DIR:-}" >"\${CFGDIR_CAPTURE:?}"
 printf '%s' "\${GH_TOKEN:-}" >"\${GHTOKEN_CAPTURE:?}"
 bun -e 'const fs=require("fs");let s={};try{s=JSON.parse(fs.readFileSync(process.env.AUTO_REVIEW_STATE_DIR+"/state.json","utf8"))}catch{};console.log((s["testorg/demo#7"]||{}).status||"absent")' >"\${STATUS_AT_CALL:?}"
+echo '{"type":"assistant","message":{"content":[{"type":"text","text":"Looking at the diff"},{"type":"tool_use","name":"Bash","input":{"command":"git fetch origin"}}]}}'
 if [ "\${CLAUDE_FAIL:-0}" = 1 ]; then echo "boom" >&2; exit 1; fi
 [ -n "\${CLAUDE_SLEEP:-}" ] && sleep "\$CLAUDE_SLEEP"
 echo '{"type":"result","subtype":"success","result":"ok","session_id":"sess-1234"}'

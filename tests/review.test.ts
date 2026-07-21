@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { makeSandbox } from "./harness";
 
 test("review + retry command family", async () => {
@@ -139,4 +141,30 @@ test("SIGTERM interrupts an in-flight exec runner promptly instead of waiting it
   expect(sb.state()["testorg/demo#60"].error).toBe("run interrupted");
   // proves the handler fired promptly rather than waiting out the 10s shim sleep
   expect(elapsed).toBeLessThan(8000);
+});
+
+test("runner streams progress into the run log while claude is still working", async () => {
+  const sb = makeSandbox();
+  sb.writeState({
+    "testorg/demo#61": {
+      status: "reviewing", title: "Slow", url: "u", local_path: sb.demoRepo,
+      updated_at: new Date().toISOString(),
+    },
+  });
+  const proc = sb.runAsync(["exec", "testorg/demo#61"], { CLAUDE_SLEEP: "2" });
+  const runLog = join(sb.stateDir, "runs", "testorg-demo-61.jsonl");
+
+  // assistant event must land in the run log before the run finishes
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    if (existsSync(runLog) && readFileSync(runLog, "utf8").includes('"type":"assistant"')) break;
+    await Bun.sleep(25);
+  }
+  expect(readFileSync(runLog, "utf8")).toContain('"type":"assistant"');
+  expect(sb.state()["testorg/demo#61"].status).toBe("reviewing");
+
+  await proc.exited;
+  const e = await sb.waitEntry("testorg/demo#61", (x) => x.status === "ready");
+  expect(e.session_id).toBe("sess-1234"); // parsed from the run log's result tail
+  expect(readFileSync(runLog, "utf8")).toContain('"type":"result"');
 });

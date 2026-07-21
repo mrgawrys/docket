@@ -66,6 +66,9 @@ export const claudeBin = (cfg: Config, env: NodeJS.ProcessEnv = process.env): st
 
 export const ghBin = (env: NodeJS.ProcessEnv = process.env): string => env.GH_BIN ?? "gh";
 
+export const runLogPath = (p: Paths, key: string): string =>
+  join(p.stateDir, "runs", key.replace(/[/#]/g, "-") + ".jsonl");
+
 export const notifyEnabled = (cfg: Config, env: NodeJS.ProcessEnv = process.env): boolean =>
   env.AUTO_REVIEW_NOTIFY !== undefined
     ? env.AUTO_REVIEW_NOTIFY === "1"
