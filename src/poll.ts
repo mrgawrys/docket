@@ -1,5 +1,5 @@
 import { searchReviewRequests } from "./github";
-import { reviewPr, type Ctx } from "./reviewer";
+import { startReview, type Ctx } from "./reviewer";
 import { loadState } from "./state";
 import { reconcile } from "./sync";
 
@@ -14,17 +14,17 @@ export async function pollCycle(ctx: Ctx, dry: boolean): Promise<void> {
       if (dry) {
         console.log(`would review: ${key} — ${c.title}`);
       } else {
-        await reviewPr(ctx, key, c.repo, String(c.number), c.title, c.url);
+        await startReview(ctx, key, c.repo, c.title, c.url);
       }
     }
   }
 
-  const { reviewed, failed, skipped, synced } = ctx.counters;
+  const { started, failed, skipped, synced } = ctx.counters;
   if (dry) {
     ctx.log("poll complete (dry run)");
-  } else if (reviewed + failed + skipped + synced === 0) {
+  } else if (started + failed + skipped + synced === 0) {
     ctx.log("poll complete: nothing new");
   } else {
-    ctx.log(`poll complete: ${reviewed} reviewed, ${failed} failed, ${skipped} skipped, ${synced} synced`);
+    ctx.log(`poll complete: ${started} started, ${failed} failed, ${skipped} skipped, ${synced} synced`);
   }
 }

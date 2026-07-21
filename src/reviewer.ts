@@ -1,9 +1,11 @@
-import { appendFileSync, existsSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { appendFileSync, closeSync, existsSync, openSync } from "node:fs";
 import { join } from "node:path";
 import { claudeBin, notifyEnabled, type Config, type Paths } from "./config";
 import type { GhCtx } from "./github";
 import type { Logger } from "./log";
 import { notify } from "./notify";
+import { pidAlive, selfArgs } from "./proc";
 import { loadState, splitKey, timestamp, updateEntry } from "./state";
 
 export const ALLOWED_TOOLS =
@@ -21,6 +23,7 @@ export function reviewPrompt(number: string, note?: string): string {
 }
 
 export interface Counters {
+  started: number;
   reviewed: number;
   failed: number;
   skipped: number;
@@ -52,31 +55,103 @@ export function removeWorktree(ctx: Ctx, key: string, logPrefix: string): void {
   }
 }
 
-export async function reviewPr(
+// Mark the PR as reviewing and hand it to a detached `reviews exec` runner.
+// Detached = own process group: ctrl+c on the caller and launchd's cleanup of
+// an exiting poll can't kill an in-flight review, and N runners go in parallel.
+export type StartResult = "started" | "skipped" | "already-running" | "spawn-failed";
+
+export async function startReview(
   ctx: Ctx,
   key: string,
   repo: string,
-  number: string,
   title: string,
   url: string,
   note?: string,
-): Promise<void> {
+): Promise<StartResult> {
   const { statePath } = ctx.paths;
   const localPath = ctx.cfg.repos[repo];
-  const enabled = notifyEnabled(ctx.cfg);
 
   if (!localPath || !existsSync(localPath)) {
     ctx.log(`SKIP ${key}: no local clone mapped`);
     updateEntry(statePath, key, () => ({
       status: "skipped", title, url, updated_at: timestamp(),
     }));
-    await notify(enabled, "auto-review: no local clone", key);
+    await notify(notifyEnabled(ctx.cfg), "auto-review: no local clone", key);
     ctx.counters.skipped++;
-    return;
+    return "skipped";
+  }
+
+  const existing = loadState(statePath)[key];
+  if (existing?.status === "reviewing" && existing.pid !== undefined && pidAlive(existing.pid)) {
+    ctx.log(`SKIP ${key}: already being reviewed (pid ${existing.pid})`);
+    return "already-running";
   }
 
   updateEntry(statePath, key, () => ({
-    status: "reviewing", title, url, local_path: localPath, updated_at: timestamp(),
+    status: "reviewing", title, url, local_path: localPath,
+    ...(note !== undefined ? { note } : {}), updated_at: timestamp(),
+  }));
+
+  const argv = selfArgs("exec", key);
+  const fd = openSync(ctx.paths.logPath, "a");
+  const child = spawn(argv[0]!, argv.slice(1), {
+    detached: true, stdio: ["ignore", fd, fd],
+    env: process.env as Record<string, string>,
+  });
+  child.unref();
+  closeSync(fd);
+
+  if (child.pid === undefined) {
+    updateEntry(statePath, key, (e) => ({
+      ...(e ?? { updated_at: "" }), status: "failed",
+      error: "could not spawn review runner", updated_at: timestamp(),
+    }));
+    ctx.counters.failed++;
+    return "spawn-failed";
+  }
+  const pid = child.pid;
+  // guard: with a fast review the runner may already have written its result
+  updateEntry(statePath, key, (e) =>
+    e && e.status === "reviewing" ? { ...e, pid } : e!,
+  );
+  ctx.log(`STARTED ${key} — background /code-review runner pid ${pid}`);
+  ctx.counters.started++;
+  return "started";
+}
+
+// The body of one review — runs inside the detached `reviews exec` process.
+export async function execReview(ctx: Ctx, key: string): Promise<number> {
+  const { statePath } = ctx.paths;
+  const entry = loadState(statePath)[key];
+  if (!entry) {
+    console.error(`unknown key: ${key} — start it with: reviews review ${key}`);
+    return 1;
+  }
+  if (
+    entry.status === "reviewing" && entry.pid !== undefined &&
+    entry.pid !== process.pid && pidAlive(entry.pid)
+  ) {
+    ctx.log(`SKIP ${key}: already being reviewed (pid ${entry.pid})`);
+    return 0;
+  }
+  const { repo, number } = splitKey(key);
+  const localPath = entry.local_path ?? ctx.cfg.repos[repo];
+  const title = entry.title ?? "";
+  const enabled = notifyEnabled(ctx.cfg);
+
+  if (!localPath || !existsSync(localPath)) {
+    ctx.log(`SKIP ${key}: no local clone mapped`);
+    updateEntry(statePath, key, (e) => ({
+      ...(e ?? { updated_at: "" }), status: "skipped", updated_at: timestamp(),
+    }));
+    await notify(enabled, "auto-review: no local clone", key);
+    ctx.counters.skipped++;
+    return 1;
+  }
+
+  updateEntry(statePath, key, (e) => ({
+    ...(e ?? { updated_at: "" }), status: "reviewing",
+    local_path: localPath, pid: process.pid, updated_at: timestamp(),
   }));
   ctx.current.key = key;
   ctx.log(`REVIEW ${key} in ${localPath} — headless /code-review running, this takes a few minutes`);
@@ -86,7 +161,7 @@ export async function reviewPr(
   if (ctx.cfg.claude_config_dir) env.CLAUDE_CONFIG_DIR = ctx.cfg.claude_config_dir;
   const proc = Bun.spawn(
     [
-      claudeBin(ctx.cfg), "-p", reviewPrompt(number, note),
+      claudeBin(ctx.cfg), "-p", reviewPrompt(number, entry.note),
       "--output-format", "json", "--permission-mode", "dontAsk",
       "--allowedTools", ALLOWED_TOOLS,
     ],
@@ -112,6 +187,7 @@ export async function reviewPr(
     }
   }
 
+  const url = entry.url ?? "";
   if (sessionId) {
     updateEntry(statePath, key, () => ({
       status: "ready", session_id: sessionId, title, url,
@@ -130,4 +206,5 @@ export async function reviewPr(
     ctx.counters.failed++;
   }
   ctx.current.key = "";
+  return 0;
 }

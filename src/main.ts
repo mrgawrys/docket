@@ -6,7 +6,7 @@ import { makeLogger } from "./log";
 import { acquireLock } from "./lock";
 import { dismissKey, interactiveList } from "./list";
 import { pollCycle } from "./poll";
-import { reviewPr, type Ctx } from "./reviewer";
+import { execReview, startReview, type Ctx, type StartResult } from "./reviewer";
 import { offCommand, onCommand } from "./scheduler";
 import {
   ensureState, loadState, normalizeKey, reconcileOrphans, setStatus, splitKey,
@@ -18,7 +18,8 @@ const USAGE = `reviews — pre-run Claude Code reviews for PRs awaiting you
 
 Usage:
   reviews                    interactive list (resume #, d# dismiss, r# retry, q quit)
-  reviews poll [--dry-run]   one poll cycle (what launchd runs)
+  reviews poll [--dry-run]   one poll cycle (what launchd runs); reviews run
+                             in parallel as detached background processes
   reviews sync               reconcile state with GitHub
   reviews review <pr> [note] force-review a PR (org/repo#N or a GitHub PR URL)
   reviews retry <key>        re-run a failed review
@@ -72,23 +73,19 @@ async function withCtx(fn: (ctx: Ctx) => Promise<number>): Promise<number> {
   const ctx: Ctx = {
     cfg, paths, log,
     gh: { gh: ghBin(), log, logPath: paths.logPath, env: ghEnv },
-    counters: { reviewed: 0, failed: 0, skipped: 0, synced: 0 },
+    counters: { started: 0, reviewed: 0, failed: 0, skipped: 0, synced: 0 },
     current: { key: "" },
   };
   return fn(ctx);
 }
 
+// Reviews themselves run detached, so lock holders are always short-lived:
+// the lock only stops overlapping poll/sync cycles from double-starting work.
 async function runLocked(ctx: Ctx, fn: () => Promise<number>): Promise<number> {
   const release = acquireLock(ctx.paths.lockDir, ctx.log);
   if (!release) return 0; // another live run holds the lock (bash exits 0 here)
   const onSignal = () => {
-    if (ctx.current.key) {
-      ctx.current.child?.kill("SIGTERM");
-      setStatus(ctx.paths.statePath, ctx.current.key, "canceled", "run interrupted");
-      ctx.log(`CANCELED ${ctx.current.key} (interrupted) — retry with: reviews retry ${ctx.current.key}`);
-    } else {
-      ctx.log("canceled (interrupted)");
-    }
+    ctx.log("canceled (interrupted)");
     release();
     process.exit(130);
   };
@@ -103,6 +100,15 @@ async function runLocked(ctx: Ctx, fn: () => Promise<number>): Promise<number> {
     process.off("SIGTERM", onSignal);
   }
 }
+
+const startedMsg = (key: string, result: StartResult): number => {
+  if (result === "started") {
+    console.log(`${key}: review started in the background — you'll get a notification; follow with: reviews watch`);
+  } else if (result === "already-running") {
+    console.log(`${key}: a review is already running`);
+  }
+  return result === "spawn-failed" ? 1 : 0;
+};
 
 commands["review"] = (args) =>
   withCtx((ctx) =>
@@ -125,8 +131,8 @@ commands["review"] = (args) =>
         console.error(`cannot fetch ${key} from GitHub (does the PR exist?)`);
         return 1;
       }
-      await reviewPr(ctx, key, repo, number, info.title ?? "", info.url ?? "", args[1]);
-      return 0;
+      const result = await startReview(ctx, key, repo, info.title ?? "", info.url ?? "", args[1]);
+      return startedMsg(key, result);
     }),
   );
 
@@ -150,11 +156,37 @@ commands["retry"] = (args) =>
         console.error(`unknown key: ${key}`);
         return 1;
       }
-      const { repo, number } = splitKey(key);
-      await reviewPr(ctx, key, repo, number, entry.title ?? "", entry.url ?? "", args[1]);
-      return 0;
+      const { repo } = splitKey(key);
+      const result = await startReview(ctx, key, repo, entry.title ?? "", entry.url ?? "", args[1]);
+      return startedMsg(key, result);
     }),
   );
+
+// internal: the detached runner `startReview` spawns — one foreground review
+commands["exec"] = (args) =>
+  withCtx(async (ctx) => {
+    const key = args[0];
+    if (!key) {
+      console.error("usage: reviews exec ORG/REPO#NUM");
+      return 1;
+    }
+    const onSignal = () => {
+      ctx.current.child?.kill("SIGTERM");
+      if (ctx.current.key) {
+        setStatus(ctx.paths.statePath, ctx.current.key, "canceled", "run interrupted");
+        ctx.log(`CANCELED ${ctx.current.key} (interrupted) — retry with: reviews retry ${ctx.current.key}`);
+      }
+      process.exit(130);
+    };
+    process.on("SIGINT", onSignal);
+    process.on("SIGTERM", onSignal);
+    try {
+      return await execReview(ctx, key);
+    } finally {
+      process.off("SIGINT", onSignal);
+      process.off("SIGTERM", onSignal);
+    }
+  });
 
 commands["sync"] = () =>
   withCtx((ctx) =>

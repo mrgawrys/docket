@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, statSync, watchFile } from "node:fs";
 import { userInfo } from "node:os";
 import { join } from "node:path";
+import { liveRunners } from "./list";
 import type { Ctx } from "./reviewer";
 import { loadState, type State } from "./state";
 
@@ -44,7 +45,10 @@ export async function statusCommand(ctx: Ctx): Promise<number> {
   } catch {
     // no live poll
   }
-  console.log(`state:   ${stateCounts(loadState(ctx.paths.statePath))}`);
+  const s = loadState(ctx.paths.statePath);
+  const running = liveRunners(s);
+  if (running.length) console.log(`running: ${running.join(", ")}`);
+  console.log(`state:   ${stateCounts(s)}`);
   console.log(`log:     last lines of ${ctx.paths.logPath}`);
   for (const line of tailLines(ctx.paths.logPath, 3)) console.log(`         ${line}`);
   return 0;

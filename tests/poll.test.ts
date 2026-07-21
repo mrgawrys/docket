@@ -6,7 +6,7 @@ import { makeSandbox } from "./harness";
 const lastLogLine = (sb: ReturnType<typeof makeSandbox>) =>
   readFileSync(sb.logPath, "utf8").trimEnd().split("\n").at(-1)!;
 
-test("poll: dry-run, real run, dedup (scenarios 1-3)", () => {
+test("poll: dry-run, real run, dedup (scenarios 1-3)", async () => {
   const sb = makeSandbox();
 
   // scenario 1: dry run lists non-draft only, writes no entries, no claude
@@ -17,17 +17,16 @@ test("poll: dry-run, real run, dedup (scenarios 1-3)", () => {
   expect(Object.keys(sb.state())).toHaveLength(0);
   expect(sb.claudeCalls()).toBe(0);
 
-  // scenario 2: real run -> ready entry with session id + local path
+  // scenario 2: real run starts a background runner -> ready entry appears
   r = sb.run(["poll"]);
   expect(r.code).toBe(0);
-  const e = sb.state()["testorg/demo#7"];
-  expect(e.status).toBe("ready");
+  expect(readFileSync(sb.logPath, "utf8")).toContain("poll complete: 1 started");
+  const e = await sb.waitEntry("testorg/demo#7", (x) => x.status === "ready");
   expect(e.session_id).toBe("sess-1234");
   expect(e.local_path).toBe(sb.demoRepo);
   expect(sb.statusAtCall()).toBe("reviewing"); // entry was 'reviewing' while claude ran
   expect(sb.promptCapture()).toContain("worktree for PR #7 at .worktrees/pr-7");
   expect(sb.promptCapture()).toContain("/code-review 7");
-  expect(lastLogLine(sb)).toContain("poll complete: 1 reviewed");
 
   // scenario 3: second run must not re-review a known PR
   r = sb.run(["poll"]);
@@ -36,7 +35,31 @@ test("poll: dry-run, real run, dedup (scenarios 1-3)", () => {
   expect(lastLogLine(sb)).toContain("poll complete: nothing new");
 });
 
-test("poll: orphaned reviewing entry becomes failed (scenario 6)", () => {
+test("poll: reviews run in parallel and survive the poll process exiting", async () => {
+  const sb = makeSandbox();
+  const searchJson = JSON.stringify([
+    { number: 7, title: "PR A", url: "https://example.test/pr/7", isDraft: false,
+      repository: { nameWithOwner: "testorg/demo" } },
+    { number: 21, title: "PR B", url: "https://example.test/pr/21", isDraft: false,
+      repository: { nameWithOwner: "testorg/demo" } },
+  ]);
+
+  const t0 = Date.now();
+  const r = sb.run(["poll"], { GH_SEARCH_JSON: searchJson, CLAUDE_SLEEP: "2" });
+  expect(r.code).toBe(0);
+
+  // poll exited while both reviews were still running (detached runners)
+  expect(sb.state()["testorg/demo#7"].status).toBe("reviewing");
+  expect(sb.state()["testorg/demo#21"].status).toBe("reviewing");
+
+  await sb.waitEntry("testorg/demo#7", (e) => e.status === "ready");
+  await sb.waitEntry("testorg/demo#21", (e) => e.status === "ready");
+  // two 2s reviews done this fast means they overlapped, not queued
+  expect(Date.now() - t0).toBeLessThan(4800);
+  expect(sb.claudeCalls()).toBe(2);
+});
+
+test("poll: orphaned reviewing entry (dead pid) becomes failed (scenario 6)", () => {
   const sb = makeSandbox();
   sb.writeState({
     "testorg/demo#9": { status: "reviewing", title: "Orphan", url: "u", updated_at: "2026-01-01T00:00:00Z" },
@@ -45,6 +68,20 @@ test("poll: orphaned reviewing entry becomes failed (scenario 6)", () => {
   const e = sb.state()["testorg/demo#9"];
   expect(e.status).toBe("failed");
   expect(e.error).toBeTruthy();
+});
+
+test("poll: reviewing entry with a live runner pid is left alone", () => {
+  const sb = makeSandbox();
+  sb.writeState({
+    "testorg/demo#7": {
+      status: "reviewing", title: "Live", url: "u", pid: process.pid,
+      updated_at: "2026-01-01T00:00:00Z",
+    },
+  });
+  const before = sb.claudeCalls();
+  expect(sb.run(["poll"]).code).toBe(0);
+  expect(sb.state()["testorg/demo#7"].status).toBe("reviewing");
+  expect(sb.claudeCalls()).toBe(before); // known key — not re-reviewed either
 });
 
 test("poll: unmapped repo is skipped and counted (scenario 12)", () => {

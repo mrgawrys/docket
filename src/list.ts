@@ -1,7 +1,6 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import * as readline from "node:readline/promises";
 import { claudeBin, type Config } from "./config";
+import { pidAlive } from "./proc";
 import { removeWorktree, type Ctx } from "./reviewer";
 import {
   loadState, pendingEntries, timestamp, updateEntry, type Entry, type State,
@@ -61,14 +60,10 @@ export function dismissKey(ctx: Ctx, key: string): void {
   console.log(`dismissed ${key}`);
 }
 
-function lockPid(ctx: Ctx): number | null {
-  try {
-    const pid = Number(readFileSync(join(ctx.paths.lockDir, "pid"), "utf8").trim());
-    process.kill(pid, 0);
-    return pid;
-  } catch {
-    return null;
-  }
+export function liveRunners(state: State): string[] {
+  return Object.entries(state)
+    .filter(([, e]) => e.status === "reviewing" && e.pid !== undefined && pidAlive(e.pid))
+    .map(([k]) => k);
 }
 
 export async function interactiveList(
@@ -77,17 +72,8 @@ export async function interactiveList(
 ): Promise<number> {
   const state = loadState(ctx.paths.statePath);
 
-  const pid = lockPid(ctx);
-  if (pid !== null) {
-    const current = Object.entries(state)
-      .filter(([, e]) => e.status === "reviewing")
-      .map(([k]) => k);
-    console.log(
-      current.length
-        ? `⏳ poll running (pid ${pid}) — reviewing: ${current.join(", ")}`
-        : `⏳ poll running (pid ${pid})`,
-    );
-  }
+  const current = liveRunners(state);
+  if (current.length) console.log(`⏳ reviewing now: ${current.join(", ")}`);
 
   const { keys, lines } = renderList(state);
   if (keys.length === 0) {

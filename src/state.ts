@@ -1,8 +1,9 @@
 import {
-  existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync,
+  existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync,
 } from "node:fs";
 import { dirname } from "node:path";
 import type { Logger } from "./log";
+import { pidAlive } from "./proc";
 
 export type Verdict = "approved" | "changes-requested" | "commented";
 export type Status =
@@ -14,6 +15,7 @@ export interface Entry {
   url?: string;
   local_path?: string;
   session_id?: string;
+  pid?: number;
   error?: string;
   flags?: string[];
   done_reason?: "merged" | "closed";
@@ -45,14 +47,42 @@ export function saveState(statePath: string, s: State): void {
   renameSync(tmp, statePath);
 }
 
+// Parallel background runners update state concurrently; a plain
+// read-modify-write would lose whichever update lands first.
+function withStateLock<T>(statePath: string, fn: () => T): T {
+  const lockDir = `${statePath}.lock`;
+  let deadline = Date.now() + 5000;
+  for (;;) {
+    try {
+      mkdirSync(lockDir);
+      break;
+    } catch {
+      if (Date.now() > deadline) {
+        // holder died mid-write; the critical section is milliseconds
+        rmSync(lockDir, { recursive: true, force: true });
+        deadline = Date.now() + 5000;
+        continue;
+      }
+      Bun.sleepSync(5);
+    }
+  }
+  try {
+    return fn();
+  } finally {
+    rmSync(lockDir, { recursive: true, force: true });
+  }
+}
+
 export function updateEntry(
   statePath: string,
   key: string,
   fn: (e: Entry | undefined) => Entry,
 ): void {
-  const s = loadState(statePath);
-  s[key] = fn(s[key]);
-  saveState(statePath, s);
+  withStateLock(statePath, () => {
+    const s = loadState(statePath);
+    s[key] = fn(s[key]);
+    saveState(statePath, s);
+  });
 }
 
 export function setStatus(statePath: string, key: string, status: Status, error?: string): void {
@@ -114,6 +144,9 @@ export function reconcileOrphans(statePath: string, log: Logger): void {
   const s = loadState(statePath);
   for (const [key, e] of Object.entries(s)) {
     if (e.status !== "reviewing") continue;
+    if (e.pid !== undefined && pidAlive(e.pid)) continue; // live background runner
+    // a just-spawned runner records its pid within moments — give it a grace period
+    if (e.pid === undefined && Date.now() - Date.parse(e.updated_at) < 2 * 60_000) continue;
     setStatus(statePath, key, "failed", "previous run died mid-review");
     log(`ORPHAN ${key}: previous run died mid-review, marked failed — retry with: reviews retry ${key}`);
   }

@@ -26,6 +26,7 @@ if [ "$1" = pr ] && [ "$2" = view ]; then
   echo '{"title": "Manual PR", "url": "https://example.test/pr/42"}'
   exit 0
 fi
+if [ -n "\${GH_SEARCH_JSON:-}" ]; then echo "\$GH_SEARCH_JSON"; exit 0; fi
 cat <<'JSON'
 [{"number": 7, "title": "Demo PR", "url": "https://example.test/pr/7",
   "isDraft": false, "repository": {"nameWithOwner": "testorg/demo"}},
@@ -56,6 +57,7 @@ export interface Sandbox {
   run(args: string[], extraEnv?: Record<string, string | undefined>): { code: number; out: string; err: string };
   runAsync(args: string[], extraEnv?: Record<string, string | undefined>): Bun.Subprocess;
   state(): Record<string, any>;
+  waitEntry(key: string, pred: (e: any) => boolean, timeoutMs?: number): Promise<any>;
   writeConfig(cfg: unknown): void;
   writeState(s: unknown): void;
   claudeCalls(): number;
@@ -120,6 +122,24 @@ export function makeSandbox(): Sandbox {
       return Bun.spawn(["bun", MAIN, ...args], { env: e as Record<string, string> });
     },
     state: () => JSON.parse(readFileSync(statePath, "utf8")),
+    // reviews run in detached background processes — poll/review/retry return
+    // before results land, so tests poll the state file
+    async waitEntry(key, pred, timeoutMs = 8000) {
+      const deadline = Date.now() + timeoutMs;
+      for (;;) {
+        let e: any;
+        try {
+          e = JSON.parse(readFileSync(statePath, "utf8"))[key];
+        } catch {
+          // state.json mid-write or absent
+        }
+        if (e && pred(e)) return e;
+        if (Date.now() > deadline) {
+          throw new Error(`waitEntry timeout for ${key}: ${JSON.stringify(e)}`);
+        }
+        await Bun.sleep(25);
+      }
+    },
     writeConfig,
     writeState: (s) => writeFileSync(statePath, JSON.stringify(s)),
     claudeCalls: () =>
