@@ -26,6 +26,11 @@ CLI, and a local clone of every repo you review.
    - `claude_bin` — claude binary (default `claude`)
    - `claude_config_dir` — set to use a specific `CLAUDE_CONFIG_DIR`
      (useful with multiple Claude accounts); empty = default
+   - `gh_account` — pin all GitHub access to this `gh` account (its token is
+     resolved via `gh auth token --user`). Without it, polling silently uses
+     whichever account `gh auth switch` last left active — with a personal +
+     work account that means the poller can go blind without any error.
+     Empty = active account.
    - `notifications` — macOS notifications on review completion (default true)
 3. `reviews poll --dry-run` — read-only; lists what would be
    reviewed. **Everything listed gets reviewed (and billed) once the poller
@@ -52,8 +57,13 @@ CLI, and a local clone of every repo you review.
 ## How it works
 
 Each poll runs `gh search prs --review-requested=@me` per org, skips drafts
-and already-known PRs, then runs `claude -p` headlessly with a locked-down
-tool allowlist. The review happens in an isolated git worktree at
+and already-known PRs, then hands each new PR to its own detached background
+runner (`reviews exec`) that runs `claude -p` headlessly with a locked-down
+tool allowlist. Runners are parallel and survive the poll process: ctrl+c on
+a poll, `reviews review`, or `reviews retry` never cancels an in-flight
+review — you get a notification when each one is ready. State updates are
+serialized through a lock, and a runner that dies mid-review is detected by
+its dead pid and marked failed. The review happens in an isolated git worktree at
 `<clone>/.worktrees/pr-<n>` — the clone's main working copy is never touched;
 the worktree stays for follow-up questions until the entry is dismissed.
 Add `.worktrees/` to your global git excludes (`~/.config/git/ignore`).

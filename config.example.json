@@ -7,5 +7,6 @@
   "poll_interval_minutes": 15,
   "claude_bin": "claude",
   "claude_config_dir": "",
+  "gh_account": "",
   "notifications": true
 }
