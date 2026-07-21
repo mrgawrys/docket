@@ -1,15 +1,7 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Logger } from "./log";
-
-function pidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
+import { pidAlive } from "./proc";
 
 export function acquireLock(lockDir: string, log: Logger): (() => void) | null {
   const tryMkdir = (): boolean => {

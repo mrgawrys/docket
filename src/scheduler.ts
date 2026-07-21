@@ -1,5 +1,6 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { join } from "node:path";
+import { selfArgs } from "./proc";
 import type { Ctx } from "./reviewer";
 import { launchdLabel } from "./status";
 
@@ -36,11 +37,7 @@ ${args}
 `;
 }
 
-export function pollProgramArgs(): string[] {
-  // dev: `bun src/main.ts` → execPath is the bun binary; compiled: it's `reviews`
-  if (basename(process.execPath) === "bun") return [process.execPath, Bun.main, "poll"];
-  return [process.execPath, "poll"];
-}
+export const pollProgramArgs = (): string[] => selfArgs("poll");
 
 const plistPath = (home: string) =>
   join(home, "Library", "LaunchAgents", `${launchdLabel()}.plist`);
