@@ -1,7 +1,7 @@
 import * as readline from "node:readline/promises";
 import { claudeBin, type Config } from "./config";
 import { pidAlive } from "./proc";
-import { removeWorktree, type Ctx } from "./reviewer";
+import { cleanupEntry, type Ctx } from "./reviewer";
 import {
   loadState, pendingEntries, timestamp, updateEntry, type Entry, type State,
 } from "./state";
@@ -56,7 +56,7 @@ export function dismissKey(ctx: Ctx, key: string): void {
     status: "done",
     updated_at: timestamp(),
   }));
-  removeWorktree(ctx, key, "DISMISS");
+  cleanupEntry(ctx, key, "DISMISS");
   console.log(`dismissed ${key}`);
 }
 

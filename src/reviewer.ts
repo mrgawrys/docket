@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { claudeBin, notifyEnabled, runLogPath, type Config, type Paths } from "./config";
 import type { GhCtx } from "./github";
@@ -39,7 +39,9 @@ export interface Ctx {
   current: { key: string; child?: { kill(sig?: number | string): void } };
 }
 
-export function removeWorktree(ctx: Ctx, key: string, logPrefix: string): void {
+// Retire an entry's on-disk artifacts: its run log and its PR worktree.
+export function cleanupEntry(ctx: Ctx, key: string, logPrefix: string): void {
+  rmSync(runLogPath(ctx.paths, key), { force: true });
   const { number } = splitKey(key);
   const path = loadState(ctx.paths.statePath)[key]?.local_path;
   const wt = join(".worktrees", `pr-${number}`);

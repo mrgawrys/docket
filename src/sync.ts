@@ -1,5 +1,5 @@
 import { ghUser, prView } from "./github";
-import { removeWorktree, type Ctx } from "./reviewer";
+import { cleanupEntry, type Ctx } from "./reviewer";
 import { loadState, markDone, markReviewed, splitKey, type Verdict } from "./state";
 
 export interface PrSyncInfo {
@@ -52,7 +52,7 @@ export function reconcile(ctx: Ctx): void {
     const d = decideSync(info, me);
     if (d.kind === "done") {
       markDone(statePath, key, d.reason);
-      removeWorktree(ctx, key, "SYNC");
+      cleanupEntry(ctx, key, "SYNC");
       ctx.log(`SYNC ${key}: PR ${d.reason} — marked done`);
       ctx.counters.synced++;
     } else if (d.kind === "reviewed") {

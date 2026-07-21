@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildResume, parseChoice, renderList } from "../src/list";
 import { makeSandbox } from "./harness";
@@ -69,4 +69,20 @@ test("dismiss command rejects an unknown key instead of fabricating an entry", (
   expect(r.code).not.toBe(0);
   expect(r.err).toContain("unknown key");
   expect(sb.state()).toEqual({});
+});
+
+test("dismiss also removes the run log", () => {
+  const sb = makeSandbox();
+  sb.gitInitDemo();
+  const runLog = join(sb.stateDir, "runs", "testorg-demo-7.jsonl");
+  mkdirSync(join(sb.stateDir, "runs"), { recursive: true });
+  writeFileSync(runLog, '{"type":"result"}\n');
+  sb.writeState({
+    "testorg/demo#7": {
+      status: "ready", session_id: "s", title: "Demo PR", url: "u",
+      local_path: sb.demoRepo, updated_at: "2026-01-01T00:00:00Z",
+    },
+  });
+  expect(sb.run(["dismiss", "testorg/demo#7"]).code).toBe(0);
+  expect(existsSync(runLog)).toBe(false);
 });
