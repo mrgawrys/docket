@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { skipVia } from "../src/poll";
 import { makeSandbox } from "./harness";
 
 const lastLogLine = (sb: ReturnType<typeof makeSandbox>) =>
@@ -110,4 +111,29 @@ test("poll reconciles too: merged -> done, worktree removed, no re-review (scena
   expect(existsSync(join(sb.demoRepo, ".worktrees", "pr-7"))).toBe(false);
   expect(sb.claudeCalls()).toBe(before);
   expect(lastLogLine(sb)).toContain("1 synced");
+});
+
+test("skipVia: skips only when every requested team I belong to is ignored", () => {
+  const ignored = ["acme/ignored-team"];
+  const member = ["acme/ignored-team", "acme/dev"];
+  // requested solely via an ignored team I'm in -> skip, naming the team
+  expect(
+    skipVia("me", { users: [], teams: ["acme/ignored-team", "acme/other"] }, member, ignored),
+  ).toEqual(["acme/ignored-team"]);
+  // directly requested -> always review, even if ignored teams also match
+  expect(
+    skipVia("me", { users: ["me"], teams: ["acme/ignored-team"] }, member, ignored),
+  ).toBeNull();
+  // also in a requested team that is NOT ignored -> review
+  expect(
+    skipVia("me", { users: [], teams: ["acme/ignored-team", "acme/dev"] }, member, ignored),
+  ).toBeNull();
+  // no membership overlap with requested teams -> fail open, review
+  expect(skipVia("me", { users: [], teams: ["acme/other"] }, member, ignored)).toBeNull();
+  // missing data (failed API calls) -> fail open, review
+  expect(skipVia("me", null, member, ignored)).toBeNull();
+  expect(skipVia("me", { users: [], teams: ["acme/ignored-team"] }, null, ignored)).toBeNull();
+  expect(skipVia(null, { users: [], teams: ["acme/ignored-team"] }, member, ignored)).toEqual([
+    "acme/ignored-team",
+  ]); // unknown login can't match a direct request, teams still decide
 });
