@@ -4,7 +4,12 @@ import { ghUser, prView, searchReviewRequests, type GhCtx } from "../src/github"
 import { makeSandbox } from "./harness";
 
 const sb = makeSandbox();
-const ctx: GhCtx = { gh: sb.env.GH_BIN!, log: () => {}, logPath: join(sb.tmp, "gh.log") };
+const ctx: GhCtx = {
+  gh: sb.env.GH_BIN!,
+  log: () => {},
+  logPath: join(sb.tmp, "gh.log"),
+  env: process.env as Record<string, string>,
+};
 
 afterEach(() => {
   delete process.env.GH_PR_VIEW_FAIL;

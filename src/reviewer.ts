@@ -81,7 +81,8 @@ export async function reviewPr(
   ctx.current.key = key;
   ctx.log(`REVIEW ${key} in ${localPath} — headless /code-review running, this takes a few minutes`);
 
-  const env: Record<string, string | undefined> = { ...process.env };
+  // gh.env carries GH_TOKEN when gh_account is pinned — claude runs gh itself
+  const env: Record<string, string | undefined> = { ...ctx.gh.env };
   if (ctx.cfg.claude_config_dir) env.CLAUDE_CONFIG_DIR = ctx.cfg.claude_config_dir;
   const proc = Bun.spawn(
     [

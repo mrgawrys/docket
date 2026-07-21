@@ -52,9 +52,26 @@ async function withCtx(fn: (ctx: Ctx) => Promise<number>): Promise<number> {
   }
   ensureState(paths.statePath);
   const log = makeLogger(paths.logPath);
+  let ghEnv = process.env as Record<string, string>;
+  if (cfg.gh_account) {
+    // pin every gh call (and claude's gh calls) to one account — the poller
+    // must not depend on whichever account `gh auth switch` left active
+    const p = Bun.spawnSync([ghBin(), "auth", "token", "--user", cfg.gh_account], {
+      stderr: "pipe",
+    });
+    const token = p.stdout.toString().trim();
+    if (p.exitCode !== 0 || !token) {
+      console.error(
+        `cannot resolve a token for gh account '${cfg.gh_account}' — ` +
+          `run: gh auth login (then gh auth status)\n${p.stderr.toString()}`,
+      );
+      return 1;
+    }
+    ghEnv = { ...ghEnv, GH_TOKEN: token };
+  }
   const ctx: Ctx = {
     cfg, paths, log,
-    gh: { gh: ghBin(), log, logPath: paths.logPath },
+    gh: { gh: ghBin(), log, logPath: paths.logPath, env: ghEnv },
     counters: { reviewed: 0, failed: 0, skipped: 0, synced: 0 },
     current: { key: "" },
   };

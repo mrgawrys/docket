@@ -44,6 +44,28 @@ test("scenario 9: missing config errors, pointing at config.example.json", () =>
   expect(r.err).toContain("config.example.json");
 });
 
+test("gh_account: pinned account's token reaches gh and claude as GH_TOKEN", () => {
+  const sb = makeSandbox();
+  sb.writeConfig({
+    orgs: ["testorg"], repos: { "testorg/demo": sb.demoRepo },
+    gh_account: "workuser",
+  });
+  expect(sb.run(["review", "testorg/demo#47"]).code).toBe(0);
+  expect(sb.ghTokenCapture()).toBe("tok-workuser");
+});
+
+test("gh_account: unresolvable account fails fast with a gh auth hint", () => {
+  const sb = makeSandbox();
+  sb.writeConfig({
+    orgs: ["testorg"], repos: { "testorg/demo": sb.demoRepo },
+    gh_account: "ghost",
+  });
+  const r = sb.run(["review", "testorg/demo#48"], { GH_AUTH_TOKEN_FAIL: "1" });
+  expect(r.code).not.toBe(0);
+  expect(r.err).toContain("ghost");
+  expect(r.err).toContain("gh auth");
+});
+
 test("scenario 10: claude_config_dir reaches claude as CLAUDE_CONFIG_DIR", () => {
   const sb = makeSandbox();
   sb.writeConfig({

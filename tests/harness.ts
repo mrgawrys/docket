@@ -8,6 +8,10 @@ const MAIN = join(import.meta.dir, "..", "src", "main.ts");
 // GH_PR_VIEW_FAIL, CLAUDE_FAIL. The claude shim records its calls, the
 // prompt, CLAUDE_CONFIG_DIR, and the state of testorg/demo#7 at call time.
 const GH_SHIM = `#!/usr/bin/env bash
+if [ "$1" = auth ] && [ "$2" = token ]; then
+  [ "\${GH_AUTH_TOKEN_FAIL:-0}" = 1 ] && { echo "no such account" >&2; exit 1; }
+  echo "tok-$4"; exit 0
+fi
 if [ "$1" = api ] && [ "$2" = user ]; then echo testuser; exit 0; fi
 if [ "$1" = pr ] && [ "$2" = view ]; then
   for a in "$@"; do
@@ -34,6 +38,7 @@ const CLAUDE_SHIM = `#!/usr/bin/env bash
 echo run >>"\${CLAUDE_CALLS:?}"
 [ "$1" = -p ] && printf '%s' "$2" >"\${PROMPT_CAPTURE:?}"
 printf '%s' "\${CLAUDE_CONFIG_DIR:-}" >"\${CFGDIR_CAPTURE:?}"
+printf '%s' "\${GH_TOKEN:-}" >"\${GHTOKEN_CAPTURE:?}"
 bun -e 'const fs=require("fs");let s={};try{s=JSON.parse(fs.readFileSync(process.env.AUTO_REVIEW_STATE_DIR+"/state.json","utf8"))}catch{};console.log((s["testorg/demo#7"]||{}).status||"absent")' >"\${STATUS_AT_CALL:?}"
 if [ "\${CLAUDE_FAIL:-0}" = 1 ]; then echo "boom" >&2; exit 1; fi
 [ -n "\${CLAUDE_SLEEP:-}" ] && sleep "\$CLAUDE_SLEEP"
@@ -56,6 +61,7 @@ export interface Sandbox {
   claudeCalls(): number;
   promptCapture(): string;
   cfgdirCapture(): string;
+  ghTokenCapture(): string;
   statusAtCall(): string;
   gitInitDemo(): void;
 }
@@ -89,6 +95,7 @@ export function makeSandbox(): Sandbox {
     CLAUDE_CALLS: capture("claude-calls"),
     PROMPT_CAPTURE: capture("prompt-capture"),
     CFGDIR_CAPTURE: capture("cfgdir-capture"),
+    GHTOKEN_CAPTURE: capture("ghtoken-capture"),
     STATUS_AT_CALL: capture("status-at-call"),
   };
 
@@ -119,6 +126,7 @@ export function makeSandbox(): Sandbox {
       readFileSync(env.CLAUDE_CALLS!, "utf8").split("\n").filter(Boolean).length,
     promptCapture: () => readFileSync(env.PROMPT_CAPTURE!, "utf8"),
     cfgdirCapture: () => readFileSync(env.CFGDIR_CAPTURE!, "utf8"),
+    ghTokenCapture: () => readFileSync(env.GHTOKEN_CAPTURE!, "utf8"),
     statusAtCall: () => readFileSync(env.STATUS_AT_CALL!, "utf8").trim(),
     gitInitDemo() {
       const g = (...a: string[]) =>

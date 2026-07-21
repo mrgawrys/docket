@@ -6,6 +6,7 @@ export interface Config {
   poll_interval_minutes?: number;
   claude_bin?: string;
   claude_config_dir?: string;
+  gh_account?: string;
   notifications?: boolean;
 }
 

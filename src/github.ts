@@ -5,6 +5,7 @@ export interface GhCtx {
   gh: string;
   log: Logger;
   logPath: string;
+  env: Record<string, string>;
 }
 
 export interface Candidate {
@@ -15,7 +16,7 @@ export interface Candidate {
 }
 
 function gh(ctx: GhCtx, args: string[]): string | null {
-  const p = Bun.spawnSync([ctx.gh, ...args], { stderr: "pipe", env: process.env as Record<string, string> });
+  const p = Bun.spawnSync([ctx.gh, ...args], { stderr: "pipe", env: ctx.env });
   const err = p.stderr.toString();
   if (err) appendFileSync(ctx.logPath, err);
   if (p.exitCode !== 0) return null;
