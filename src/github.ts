@@ -73,3 +73,35 @@ export function searchReviewRequests(ctx: GhCtx, org: string): Candidate[] {
       url: r.url,
     }));
 }
+
+export interface ReviewRequesters {
+  users: string[];
+  teams: string[]; // org-qualified slugs, e.g. "acme/some-team"
+}
+
+export function reviewRequesters(
+  ctx: GhCtx,
+  repo: string,
+  number: string,
+): ReviewRequesters | null {
+  const info = prView<{
+    reviewRequests?: Array<{ login?: string; slug?: string }>;
+  }>(ctx, repo, number, "reviewRequests");
+  if (!info?.reviewRequests) return null;
+  const users: string[] = [];
+  const teams: string[] = [];
+  for (const r of info.reviewRequests) {
+    if (r.login) users.push(r.login);
+    else if (r.slug) teams.push(r.slug);
+  }
+  return { users, teams };
+}
+
+export function myTeams(ctx: GhCtx): string[] | null {
+  const out = gh(ctx, [
+    "api", "user/teams", "--paginate",
+    "--jq", '.[] | .organization.login + "/" + .slug',
+  ]);
+  if (out === null) return null;
+  return out.split("\n").filter(Boolean);
+}

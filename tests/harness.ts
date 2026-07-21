@@ -13,12 +13,25 @@ if [ "$1" = auth ] && [ "$2" = token ]; then
   echo "tok-$4"; exit 0
 fi
 if [ "$1" = api ] && [ "$2" = user ]; then echo testuser; exit 0; fi
+if [ "$1" = api ] && [ "$2" = user/teams ]; then
+  [ "\${GH_TEAMS_FAIL:-0}" = 1 ] && { echo "boom" >&2; exit 1; }
+  [ -n "\${GH_TEAMS_CALLS:-}" ] && echo t >>"\$GH_TEAMS_CALLS"
+  printf '%s\n' "\${GH_USER_TEAMS:-}"
+  exit 0
+fi
 if [ "$1" = pr ] && [ "$2" = view ]; then
   for a in "$@"; do
     if [[ "$a" == *state*latestReviews* ]]; then
       [ "\${GH_PR_VIEW_FAIL:-0}" = 1 ] && { echo "boom" >&2; exit 1; }
       json="\${GH_PR_STATUS_JSON:-}"
       [ -n "$json" ] || json='{"state":"OPEN"}'
+      echo "$json"
+      exit 0
+    fi
+    if [ "$a" = reviewRequests ]; then
+      [ "\${GH_PR_VIEW_FAIL:-0}" = 1 ] && { echo "boom" >&2; exit 1; }
+      json="\${GH_REVIEW_REQUESTS_JSON:-}"
+      [ -n "$json" ] || json='{"reviewRequests":[]}'
       echo "$json"
       exit 0
     fi
