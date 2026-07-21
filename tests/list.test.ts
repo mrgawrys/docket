@@ -1,8 +1,10 @@
 import { expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { buildResume, parseChoice, renderList } from "../src/list";
-import { makeSandbox } from "./harness";
+import { paths } from "../src/config";
+import { buildResume, interactiveList, parseChoice, renderList } from "../src/list";
+import type { Ctx } from "../src/reviewer";
+import { makeSandbox, type Sandbox } from "./harness";
 
 test("renderList formats pending entries in updated_at order", () => {
   const { keys, lines } = renderList({
@@ -30,6 +32,69 @@ test("parseChoice", () => {
   expect(parseChoice("0", 5)).toBeNull();
   expect(parseChoice("dx", 5)).toBeNull();
   expect(parseChoice("banana", 5)).toBeNull();
+});
+
+test("parseChoice poll and sync take no number", () => {
+  expect(parseChoice("p", 5)).toEqual({ action: "poll" });
+  expect(parseChoice("s", 5)).toEqual({ action: "sync" });
+  expect(parseChoice("p", 0)).toEqual({ action: "poll" });
+  expect(parseChoice("p1", 5)).toBeNull();
+  expect(parseChoice("s2", 5)).toBeNull();
+});
+
+function makeCtx(sb: Sandbox): Ctx {
+  const p = paths({
+    AUTO_REVIEW_CONFIG_DIR: sb.configDir,
+    AUTO_REVIEW_STATE_DIR: sb.stateDir,
+  } as NodeJS.ProcessEnv);
+  const log = () => {};
+  return {
+    cfg: { orgs: [], repos: {} },
+    paths: p,
+    log,
+    gh: { gh: "gh", log, logPath: p.logPath, env: {} },
+    counters: { started: 0, reviewed: 0, failed: 0, skipped: 0, synced: 0 },
+    current: { key: "" },
+  };
+}
+
+test("interactiveList loops: poll/sync/retry/bad input re-prompt, q exits", async () => {
+  const sb = makeSandbox();
+  sb.writeState({
+    "testorg/demo#7": { status: "failed", title: "Demo", updated_at: "2026-01-01T00:00:00Z" },
+  });
+  const calls: string[] = [];
+  const answers = ["p", "s", "r1", "banana", "q"];
+  const code = await interactiveList(
+    makeCtx(sb),
+    {
+      retry: async (key) => { calls.push(`retry:${key}`); return 0; },
+      poll: async () => { calls.push("poll"); return 0; },
+      sync: async () => { calls.push("sync"); return 0; },
+    },
+    async () => answers.shift() ?? "q",
+  );
+  expect(code).toBe(0);
+  expect(calls).toEqual(["poll", "sync", "retry:testorg/demo#7"]);
+  expect(answers).toEqual([]);
+});
+
+test("interactiveList stays open on an empty list so poll can populate it", async () => {
+  const sb = makeSandbox();
+  sb.writeState({});
+  const calls: string[] = [];
+  const answers = ["p", "q"];
+  const code = await interactiveList(
+    makeCtx(sb),
+    {
+      retry: async () => 0,
+      poll: async () => { calls.push("poll"); return 0; },
+      sync: async () => 0,
+    },
+    async () => answers.shift() ?? "q",
+  );
+  expect(code).toBe(0);
+  expect(calls).toEqual(["poll"]);
 });
 
 test("buildResume guards and command construction", () => {

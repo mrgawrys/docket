@@ -20,9 +20,15 @@ export function renderList(s: State): { keys: string[]; lines: string[] } {
 export function parseChoice(
   input: string,
   max: number,
-): { action: "resume" | "dismiss" | "retry"; index: number } | "quit" | null {
+):
+  | { action: "resume" | "dismiss" | "retry"; index: number }
+  | { action: "poll" | "sync" }
+  | "quit"
+  | null {
   const t = input.trim();
   if (t === "" || t === "q") return "quit";
+  if (t === "p") return { action: "poll" };
+  if (t === "s") return { action: "sync" };
   const action = t.startsWith("d") ? "dismiss" : t.startsWith("r") ? "retry" : "resume";
   const num = action === "resume" ? t : t.slice(1);
   if (!/^\d+$/.test(num)) return null;
@@ -66,53 +72,89 @@ export function liveRunners(state: State): string[] {
     .map(([k]) => k);
 }
 
+export interface ListActions {
+  retry(key: string): Promise<number>;
+  poll(): Promise<number>;
+  sync(): Promise<number>;
+}
+
+// Loops until resume or quit: poll/sync/dismiss/retry re-render the list, so
+// the menu doubles as a live dashboard. Resume exits because it hands the
+// terminal to a Claude session.
 export async function interactiveList(
   ctx: Ctx,
-  retry: (key: string) => Promise<number>,
+  actions: ListActions,
+  ask?: (prompt: string) => Promise<string>,
 ): Promise<number> {
-  const state = loadState(ctx.paths.statePath);
-
-  const current = liveRunners(state);
-  if (current.length) console.log(`⏳ reviewing now: ${current.join(", ")}`);
-
-  const { keys, lines } = renderList(state);
-  if (keys.length === 0) {
-    console.log("No pending reviews.");
-    return 0;
+  // one readline interface for the whole session — a per-question interface
+  // would drop buffered input and hang forever on EOF (stdin closed = quit)
+  let rl: readline.Interface | undefined;
+  if (!ask) {
+    rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    const closed = new Promise<string>((res) => rl!.once("close", () => res("q")));
+    ask = (prompt) => Promise.race([rl!.question(prompt), closed]);
   }
-  for (const line of lines) console.log(line);
-
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  const answer = await rl.question("resume #  (d# dismiss, r# retry, q quit): ");
-  rl.close();
-
-  const choice = parseChoice(answer, keys.length);
-  if (choice === "quit") return 0;
-  if (choice === null) {
-    console.error("bad choice");
-    return 1;
+  try {
+    return await listLoop(ctx, actions, ask, () => rl?.close());
+  } finally {
+    rl?.close();
   }
-  const key = keys[choice.index]!;
+}
 
-  switch (choice.action) {
-    case "dismiss":
-      dismissKey(ctx, key);
-      return 0;
-    case "retry":
-      return retry(key);
-    case "resume": {
-      const entry = loadState(ctx.paths.statePath)[key]!;
-      const r = buildResume(entry, ctx.cfg);
-      if ("error" in r) {
-        console.error(`${key} ${r.error}`);
-        return 1;
+async function listLoop(
+  ctx: Ctx,
+  actions: ListActions,
+  ask: (prompt: string) => Promise<string>,
+  releaseStdin: () => void,
+): Promise<number> {
+  for (;;) {
+    const state = loadState(ctx.paths.statePath);
+
+    const current = liveRunners(state);
+    if (current.length) console.log(`⏳ reviewing now: ${current.join(", ")}`);
+
+    const { keys, lines } = renderList(state);
+    if (keys.length === 0) console.log("No pending reviews.");
+    for (const line of lines) console.log(line);
+
+    const answer = await ask("resume #  (d# dismiss, r# retry, p poll, s sync, q quit): ");
+
+    const choice = parseChoice(answer, keys.length);
+    if (choice === "quit") return 0;
+    if (choice === null) {
+      console.error("bad choice");
+      continue;
+    }
+
+    switch (choice.action) {
+      case "poll":
+        await actions.poll();
+        continue;
+      case "sync":
+        await actions.sync();
+        continue;
+      case "dismiss":
+        dismissKey(ctx, keys[choice.index]!);
+        continue;
+      case "retry":
+        await actions.retry(keys[choice.index]!);
+        continue;
+      case "resume": {
+        const key = keys[choice.index]!;
+        const entry = loadState(ctx.paths.statePath)[key]!;
+        const r = buildResume(entry, ctx.cfg);
+        if ("error" in r) {
+          console.error(`${key} ${r.error}`);
+          continue;
+        }
+        releaseStdin(); // the resumed claude session owns the terminal now
+        const p = Bun.spawn(r.argv, {
+          cwd: r.cwd,
+          env: { ...process.env, ...r.env } as Record<string, string>,
+          stdio: ["inherit", "inherit", "inherit"],
+        });
+        return await p.exited;
       }
-      const p = Bun.spawn(r.argv, {
-        cwd: r.cwd,
-        env: { ...process.env, ...r.env } as Record<string, string>,
-        stdio: ["inherit", "inherit", "inherit"],
-      });
-      return await p.exited;
     }
   }
 }
