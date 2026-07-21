@@ -72,7 +72,12 @@ export function killEntry(ctx: Ctx, key: string): number {
     console.error(`${key}: no live review to kill`);
     return 1;
   }
-  process.kill(e.pid, "SIGTERM"); // the runner's handler marks the entry canceled
+  try {
+    process.kill(e.pid, "SIGTERM"); // the runner's handler marks the entry canceled
+  } catch {
+    console.error(`${key}: runner already exited`); // reconcileOrphans will settle the entry
+    return 1;
+  }
   console.log(`${key}: killed — it will show as canceled; r# re-runs it`);
   return 0;
 }

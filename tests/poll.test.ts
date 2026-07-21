@@ -133,9 +133,7 @@ test("skipVia: skips only when every requested team I belong to is ignored", () 
   // missing data (failed API calls) -> fail open, review
   expect(skipVia("me", null, member, ignored)).toBeNull();
   expect(skipVia("me", { users: [], teams: ["acme/ignored-team"] }, null, ignored)).toBeNull();
-  expect(skipVia(null, { users: [], teams: ["acme/ignored-team"] }, member, ignored)).toEqual([
-    "acme/ignored-team",
-  ]); // unknown login can't match a direct request, teams still decide
+  expect(skipVia(null, { users: [], teams: ["acme/ignored-team"] }, member, ignored)).toBeNull(); // unknown login -> fail open
 });
 
 test("ignored_teams: team-only request is skipped with no state entry; direct request resurfaces it", async () => {
