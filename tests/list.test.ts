@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { buildResume, parseChoice, renderList } from "../src/list";
+import { buildResume, killEntry, parseChoice, renderList } from "../src/list";
 import { makeSandbox } from "./harness";
 
 test("renderList formats pending entries in updated_at order", () => {
@@ -30,6 +30,9 @@ test("parseChoice", () => {
   expect(parseChoice("0", 5)).toBeNull();
   expect(parseChoice("dx", 5)).toBeNull();
   expect(parseChoice("banana", 5)).toBeNull();
+  expect(parseChoice("w1", 5)).toEqual({ action: "watch", index: 0 });
+  expect(parseChoice("k2", 5)).toEqual({ action: "kill", index: 1 });
+  expect(parseChoice("wx", 5)).toBeNull();
 });
 
 test("buildResume guards and command construction", () => {
@@ -85,4 +88,38 @@ test("dismiss also removes the run log", () => {
   });
   expect(sb.run(["dismiss", "testorg/demo#7"]).code).toBe(0);
   expect(existsSync(runLog)).toBe(false);
+});
+
+test("killEntry SIGTERMs a live runner, which marks the entry canceled", async () => {
+  const sb = makeSandbox();
+  sb.writeState({
+    "testorg/demo#62": {
+      status: "reviewing", title: "Slow", url: "u", local_path: sb.demoRepo,
+      updated_at: new Date().toISOString(),
+    },
+  });
+  const proc = sb.runAsync(["exec", "testorg/demo#62"], { CLAUDE_SLEEP: "10" });
+  await sb.waitEntry("testorg/demo#62", (e) => e.status === "reviewing" && e.pid !== undefined);
+
+  const ctx = { paths: { statePath: sb.statePath } } as any;
+  expect(killEntry(ctx, "testorg/demo#62")).toBe(0);
+  await sb.waitEntry("testorg/demo#62", (e) => e.status === "canceled");
+  await proc.exited;
+});
+
+test("killEntry refuses when nothing is running for the key", () => {
+  const sb = makeSandbox();
+  sb.writeState({
+    "testorg/demo#7": { status: "ready", session_id: "s", updated_at: "t" },
+  });
+  const ctx = { paths: { statePath: sb.statePath } } as any;
+  expect(killEntry(ctx, "testorg/demo#7")).toBe(1);
+  expect(killEntry(ctx, "testorg/demo#99")).toBe(1);
+});
+
+test("buildResume points a reviewing entry at watch/kill", () => {
+  const r = buildResume({ status: "reviewing", updated_at: "t" }, { orgs: [], repos: {} });
+  expect(r).toHaveProperty("error");
+  expect((r as { error: string }).error).toContain("w#");
+  expect((r as { error: string }).error).toContain("k#");
 });

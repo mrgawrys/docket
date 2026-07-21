@@ -1,9 +1,11 @@
 import { existsSync, readFileSync, statSync, watchFile } from "node:fs";
 import { userInfo } from "node:os";
 import { join } from "node:path";
+import { runLogPath } from "./config";
 import { liveRunners } from "./list";
 import type { Ctx } from "./reviewer";
-import { loadState, type State } from "./state";
+import { followRunLog } from "./runlog";
+import { loadState, normalizeKey, type State } from "./state";
 
 export const launchdLabel = (): string => `com.${userInfo().username}.auto-review`;
 
@@ -59,7 +61,17 @@ export async function logCommand(ctx: Ctx, n: number): Promise<number> {
   return 0;
 }
 
-export async function watchCommand(ctx: Ctx): Promise<number> {
+export async function watchCommand(ctx: Ctx, rawKey?: string): Promise<number> {
+  if (rawKey !== undefined) {
+    let key: string;
+    try {
+      key = normalizeKey(rawKey);
+    } catch (e) {
+      console.error((e as Error).message);
+      return 1;
+    }
+    return followRunLog(runLogPath(ctx.paths, key));
+  }
   const path = ctx.paths.logPath;
   for (const line of tailLines(path, 10)) console.log(line);
   let offset = existsSync(path) ? statSync(path).size : 0;

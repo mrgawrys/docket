@@ -17,7 +17,8 @@ import { reconcile } from "./sync";
 const USAGE = `reviews — pre-run Claude Code reviews for PRs awaiting you
 
 Usage:
-  reviews                    interactive list (resume #, d# dismiss, r# retry, q quit)
+  reviews                    interactive list (resume #, d# dismiss, r# retry,
+                             w# watch live, k# kill runner, q quit)
   reviews poll [--dry-run]   one poll cycle (what launchd runs); reviews run
                              in parallel as detached background processes
   reviews sync               reconcile state with GitHub
@@ -26,7 +27,8 @@ Usage:
   reviews dismiss <key>      mark done + remove the PR worktree
   reviews status             poller state, live poll, state counts
   reviews log [n]            last n log lines (default 20)
-  reviews watch              follow the log live
+  reviews watch [pr]         follow the log live; with a PR (org/repo#N or
+                             URL), follow that running review instead
   reviews on | off           enable/disable the scheduled poller
 `;
 
@@ -240,7 +242,7 @@ commands["log"] = (args) => {
   const n = Number(args[0] ?? 20);
   return withCtx((ctx) => logCommand(ctx, Number.isFinite(n) && n >= 1 ? n : 20));
 };
-commands["watch"] = () => withCtx((ctx) => watchCommand(ctx));
+commands["watch"] = (args) => withCtx((ctx) => watchCommand(ctx, args[0]));
 commands["on"] = () => withCtx((ctx) => onCommand(ctx));
 commands["off"] = async () => offCommand();
 

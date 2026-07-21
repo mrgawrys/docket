@@ -51,8 +51,10 @@ CLI, and a local clone of every repo you review.
 
 - `reviews` — interactive list; pick a number to resume the session in the
   right clone, `d#` dismiss (also removes the PR's worktree), `r#` retry,
-  `p` poll for new review requests, `s` sync with GitHub. Everything except
-  resume and quit re-shows the refreshed list.
+  `w#` watch a running review live, `k#` kill a running review (marks it
+  canceled — no more tokens burned; `r#` starts it over).
+- `reviews watch ORG/REPO#N` — follow a running review from anywhere; plain
+  `reviews watch` follows the poller log as before.
 - `reviews sync` — refresh entries from GitHub before listing: merged/closed
   PRs are dismissed (worktree removed), PRs you already reviewed show your
   verdict. The poller does the same refresh on every poll.
