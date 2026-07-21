@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 import { ConfigError, ghBin, loadConfig, paths as resolvePaths } from "./config";
+import { doctorCommand } from "./doctor";
 import { prView } from "./github";
 import { makeLogger } from "./log";
 import { acquireLock } from "./lock";
@@ -24,6 +25,7 @@ Usage:
   reviews review <pr> [note] force-review a PR (org/repo#N or a GitHub PR URL)
   reviews retry <key>        re-run a failed review
   reviews dismiss <key>      mark done + remove the PR worktree
+  reviews doctor             check setup: config, clones, gh, claude, code-review plugin
   reviews status             poller state, live poll, state counts
   reviews log [n]            last n log lines (default 20)
   reviews watch              follow the log live
@@ -235,6 +237,7 @@ commands["dismiss"] = (args) =>
     return 0;
   });
 
+commands["doctor"] = () => doctorCommand();
 commands["status"] = () => withCtx((ctx) => statusCommand(ctx));
 commands["log"] = (args) => {
   const n = Number(args[0] ?? 20);
