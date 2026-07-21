@@ -59,7 +59,7 @@ test("watch <pr> renders that PR's run log", async () => {
   const proc = sb.runAsync(["watch", "testorg/demo#7"]);
   await Bun.sleep(2000); // follower prints existing content on startup
   proc.kill();
-  const out = await new Response(proc.stdout).text();
+  const out = await new Response(proc.stdout as ReadableStream).text();
   expect(out).toContain("→ Bash: git fetch origin");
   expect(out).toContain("✔ review finished");
 });

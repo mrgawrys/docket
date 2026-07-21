@@ -18,7 +18,7 @@ const USAGE = `reviews — pre-run Claude Code reviews for PRs awaiting you
 
 Usage:
   reviews                    interactive list (resume #, d# dismiss, r# retry,
-                             w# watch live, k# kill runner, q quit)
+                             w# watch live, k# kill runner, p poll, s sync, q quit)
   reviews poll [--dry-run]   one poll cycle (what launchd runs); reviews run
                              in parallel as detached background processes
   reviews sync               reconcile state with GitHub
@@ -101,6 +101,12 @@ async function runLocked(ctx: Ctx, fn: () => Promise<number>): Promise<number> {
     process.off("SIGINT", onSignal);
     process.off("SIGTERM", onSignal);
   }
+}
+
+// counters are per-cycle; the interactive menu can run several poll/sync
+// cycles in one process, so each starts from zero
+function resetCounters(ctx: Ctx): void {
+  ctx.counters = { started: 0, reviewed: 0, failed: 0, skipped: 0, synced: 0 };
 }
 
 // review/retry don't take the poll lock: they only mark state and spawn a
@@ -249,7 +255,24 @@ commands["off"] = async () => offCommand();
 async function main(): Promise<number> {
   const [cmd, ...rest] = Bun.argv.slice(2);
   if (cmd === undefined)
-    return withCtx((ctx) => interactiveList(ctx, (key) => commands["retry"]!([key])));
+    return withCtx((ctx) =>
+      interactiveList(ctx, {
+        retry: (key) => commands["retry"]!([key]),
+        poll: () =>
+          runLocked(ctx, async () => {
+            resetCounters(ctx);
+            await pollCycle(ctx, false);
+            return 0;
+          }),
+        sync: () =>
+          runLocked(ctx, async () => {
+            resetCounters(ctx);
+            reconcile(ctx);
+            ctx.log(`sync complete: ${ctx.counters.synced} updated`);
+            return 0;
+          }),
+      }),
+    );
   if (cmd === "-h" || cmd === "--help") return commands["help"]!([]);
   const fn = commands[cmd];
   if (!fn) {
