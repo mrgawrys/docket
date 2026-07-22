@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { selfArgs } from "./proc";
 import type { Ctx } from "./reviewer";
 
-export const launchdLabel = (): string => `com.${userInfo().username}.auto-review`;
+export const launchdLabel = (): string =>
+  `com.${userInfo().username}.auto-review`;
 
 export function launchdLoaded(): boolean {
   if (process.platform !== "darwin") return false;
@@ -79,13 +80,19 @@ export async function onCommand(ctx: Ctx): Promise<number> {
     return 1;
   }
   const uid = process.getuid!();
-  Bun.spawnSync(["launchctl", "bootout", `gui/${uid}/${label}`], { stderr: "ignore" });
-  const boot = Bun.spawnSync(["launchctl", "bootstrap", `gui/${uid}`, target], { stderr: "pipe" });
+  Bun.spawnSync(["launchctl", "bootout", `gui/${uid}/${label}`], {
+    stderr: "ignore",
+  });
+  const boot = Bun.spawnSync(["launchctl", "bootstrap", `gui/${uid}`, target], {
+    stderr: "pipe",
+  });
   if (boot.exitCode !== 0) {
     console.error(boot.stderr.toString());
     return boot.exitCode ?? 1;
   }
-  console.log(`poller enabled as ${label} — polls every ${minutes} min (RunAtLoad fired one now)`);
+  console.log(
+    `poller enabled as ${label} — polls every ${minutes} min (RunAtLoad fired one now)`,
+  );
   return 0;
 }
 
@@ -97,7 +104,9 @@ export async function offCommand(): Promise<number> {
   const home = process.env.HOME!;
   const label = launchdLabel();
   const uid = process.getuid!();
-  const out = Bun.spawnSync(["launchctl", "bootout", `gui/${uid}/${label}`], { stderr: "ignore" });
+  const out = Bun.spawnSync(["launchctl", "bootout", `gui/${uid}/${label}`], {
+    stderr: "ignore",
+  });
   console.log(
     out.exitCode === 0
       ? "poller disabled — 'reviews on' re-enables, manual runs still work"

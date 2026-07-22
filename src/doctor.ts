@@ -1,7 +1,12 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import {
-  ConfigError, claudeBin, claudeEnv, ghBin, loadConfig, paths as resolvePaths,
+  ConfigError,
+  claudeBin,
+  claudeEnv,
+  ghBin,
+  loadConfig,
+  paths as resolvePaths,
 } from "./config";
 import { ghAccountToken } from "./github";
 
@@ -15,7 +20,8 @@ function runs(cmd: string[], extraEnv: Record<string, string> = {}): RunResult {
   try {
     const p = Bun.spawnSync(cmd, {
       env: { ...process.env, ...extraEnv } as Record<string, string>,
-      stdout: "pipe", stderr: "pipe",
+      stdout: "pipe",
+      stderr: "pipe",
     });
     return { ok: p.exitCode === 0, out: p.stdout.toString().trim() };
   } catch {
@@ -49,7 +55,9 @@ export async function doctorCommand(): Promise<number> {
 
   const repos = Object.entries(cfg.repos);
   const bad = repos.filter(
-    ([, path]) => !existsSync(path) || !runs(["git", "-C", path, "rev-parse", "--git-dir"]).ok,
+    ([, path]) =>
+      !existsSync(path) ||
+      !runs(["git", "-C", path, "rev-parse", "--git-dir"]).ok,
   );
   if (bad.length === 0) {
     pass(`repo clones: ${repos.length} mapped, all present`);
@@ -62,7 +70,10 @@ export async function doctorCommand(): Promise<number> {
 
   const gh = ghBin();
   if (!runs([gh, "--version"]).ok) {
-    fail(`gh: ${gh} not runnable`, "install the GitHub CLI: https://cli.github.com");
+    fail(
+      `gh: ${gh} not runnable`,
+      "install the GitHub CLI: https://cli.github.com",
+    );
   } else if (!runs([gh, "auth", "status"]).ok) {
     fail("gh: not authenticated", "run: gh auth login");
   } else {
@@ -86,15 +97,21 @@ export async function doctorCommand(): Promise<number> {
   if (runs([claude, "--version"], claudeEnv(cfg)).ok) {
     pass(`claude: ${claude} runs`);
   } else {
-    fail(`claude: ${claude} not runnable`, "install Claude Code, or set claude_bin in config.json");
+    fail(
+      `claude: ${claude} not runnable`,
+      "install Claude Code, or set claude_bin in config.json",
+    );
   }
 
-  const claudeHome = cfg.claude_config_dir ?? join(process.env.HOME ?? "", ".claude");
+  const claudeHome =
+    cfg.claude_config_dir ?? join(process.env.HOME ?? "", ".claude");
   const registryPath = join(claudeHome, "plugins", "installed_plugins.json");
   let hasPlugin = false;
   try {
     const registry = await Bun.file(registryPath).json();
-    hasPlugin = Object.keys(registry.plugins ?? {}).some((k) => k.startsWith("code-review@"));
+    hasPlugin = Object.keys(registry.plugins ?? {}).some((k) =>
+      k.startsWith("code-review@"),
+    );
   } catch {
     // missing/unreadable registry → plugin not installed
   }

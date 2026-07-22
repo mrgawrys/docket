@@ -21,7 +21,9 @@ test("poll: dry-run, real run, dedup (scenarios 1-3)", async () => {
   // scenario 2: real run starts a background runner -> ready entry appears
   r = sb.run(["poll"]);
   expect(r.code).toBe(0);
-  expect(readFileSync(sb.logPath, "utf8")).toContain("poll complete: 1 started");
+  expect(readFileSync(sb.logPath, "utf8")).toContain(
+    "poll complete: 1 started",
+  );
   const e = await sb.waitEntry("testorg/demo#7", (x) => x.status === "ready");
   expect(e.session_id).toBe("sess-1234");
   expect(e.local_path).toBe(sb.demoRepo);
@@ -39,10 +41,20 @@ test("poll: dry-run, real run, dedup (scenarios 1-3)", async () => {
 test("poll: reviews run in parallel and survive the poll process exiting", async () => {
   const sb = makeSandbox();
   const searchJson = JSON.stringify([
-    { number: 7, title: "PR A", url: "https://example.test/pr/7", isDraft: false,
-      repository: { nameWithOwner: "testorg/demo" } },
-    { number: 21, title: "PR B", url: "https://example.test/pr/21", isDraft: false,
-      repository: { nameWithOwner: "testorg/demo" } },
+    {
+      number: 7,
+      title: "PR A",
+      url: "https://example.test/pr/7",
+      isDraft: false,
+      repository: { nameWithOwner: "testorg/demo" },
+    },
+    {
+      number: 21,
+      title: "PR B",
+      url: "https://example.test/pr/21",
+      isDraft: false,
+      repository: { nameWithOwner: "testorg/demo" },
+    },
   ]);
 
   const t0 = Date.now();
@@ -63,7 +75,12 @@ test("poll: reviews run in parallel and survive the poll process exiting", async
 test("poll: orphaned reviewing entry (dead pid) becomes failed (scenario 6)", () => {
   const sb = makeSandbox();
   sb.writeState({
-    "testorg/demo#9": { status: "reviewing", title: "Orphan", url: "u", updated_at: "2026-01-01T00:00:00Z" },
+    "testorg/demo#9": {
+      status: "reviewing",
+      title: "Orphan",
+      url: "u",
+      updated_at: "2026-01-01T00:00:00Z",
+    },
   });
   expect(sb.run(["poll"]).code).toBe(0);
   const e = sb.state()["testorg/demo#9"];
@@ -75,7 +92,10 @@ test("poll: reviewing entry with a live runner pid is left alone", () => {
   const sb = makeSandbox();
   sb.writeState({
     "testorg/demo#7": {
-      status: "reviewing", title: "Live", url: "u", pid: process.pid,
+      status: "reviewing",
+      title: "Live",
+      url: "u",
+      pid: process.pid,
       updated_at: "2026-01-01T00:00:00Z",
     },
   });
@@ -98,12 +118,18 @@ test("poll reconciles too: merged -> done, worktree removed, no re-review (scena
   sb.gitInitDemo();
   sb.writeState({
     "testorg/demo#7": {
-      status: "ready", session_id: "sess-1234", title: "Demo PR", url: "u",
-      local_path: sb.demoRepo, updated_at: "2026-01-01T00:00:00Z",
+      status: "ready",
+      session_id: "sess-1234",
+      title: "Demo PR",
+      url: "u",
+      local_path: sb.demoRepo,
+      updated_at: "2026-01-01T00:00:00Z",
     },
   });
   const before = sb.claudeCalls();
-  const r = sb.run(["poll"], { GH_PR_STATUS_JSON: JSON.stringify({ state: "MERGED" }) });
+  const r = sb.run(["poll"], {
+    GH_PR_STATUS_JSON: JSON.stringify({ state: "MERGED" }),
+  });
   expect(r.code).toBe(0);
   const e = sb.state()["testorg/demo#7"];
   expect(e.status).toBe("done");
@@ -118,39 +144,66 @@ test("skipVia: skips only when every requested team I belong to is ignored", () 
   const member = ["acme/ignored-team", "acme/dev"];
   // requested solely via an ignored team I'm in -> skip, naming the team
   expect(
-    skipVia("me", { users: [], teams: ["acme/ignored-team", "acme/other"] }, member, ignored),
+    skipVia(
+      "me",
+      { users: [], teams: ["acme/ignored-team", "acme/other"] },
+      member,
+      ignored,
+    ),
   ).toEqual(["acme/ignored-team"]);
   // directly requested -> always review, even if ignored teams also match
   expect(
-    skipVia("me", { users: ["me"], teams: ["acme/ignored-team"] }, member, ignored),
+    skipVia(
+      "me",
+      { users: ["me"], teams: ["acme/ignored-team"] },
+      member,
+      ignored,
+    ),
   ).toBeNull();
   // also in a requested team that is NOT ignored -> review
   expect(
-    skipVia("me", { users: [], teams: ["acme/ignored-team", "acme/dev"] }, member, ignored),
+    skipVia(
+      "me",
+      { users: [], teams: ["acme/ignored-team", "acme/dev"] },
+      member,
+      ignored,
+    ),
   ).toBeNull();
   // no membership overlap with requested teams -> fail open, review
-  expect(skipVia("me", { users: [], teams: ["acme/other"] }, member, ignored)).toBeNull();
+  expect(
+    skipVia("me", { users: [], teams: ["acme/other"] }, member, ignored),
+  ).toBeNull();
   // missing data (failed API calls) -> fail open, review
   expect(skipVia("me", null, member, ignored)).toBeNull();
-  expect(skipVia("me", { users: [], teams: ["acme/ignored-team"] }, null, ignored)).toBeNull();
-  expect(skipVia(null, { users: [], teams: ["acme/ignored-team"] }, member, ignored)).toBeNull(); // unknown login -> fail open
+  expect(
+    skipVia("me", { users: [], teams: ["acme/ignored-team"] }, null, ignored),
+  ).toBeNull();
+  expect(
+    skipVia(null, { users: [], teams: ["acme/ignored-team"] }, member, ignored),
+  ).toBeNull(); // unknown login -> fail open
 });
 
 test("ignored_teams: team-only request is skipped with no state entry; direct request resurfaces it", async () => {
   const sb = makeSandbox();
   sb.writeConfig({
-    orgs: ["testorg"], repos: { "testorg/demo": sb.demoRepo },
+    orgs: ["testorg"],
+    repos: { "testorg/demo": sb.demoRepo },
     ignored_teams: ["testorg/ignored-team"],
   });
   const teamOnly = JSON.stringify({
     reviewRequests: [{ __typename: "Team", slug: "testorg/ignored-team" }],
   });
-  const env = { GH_USER_TEAMS: "testorg/ignored-team", GH_REVIEW_REQUESTS_JSON: teamOnly };
+  const env = {
+    GH_USER_TEAMS: "testorg/ignored-team",
+    GH_REVIEW_REQUESTS_JSON: teamOnly,
+  };
 
   // dry run announces the skip
   let r = sb.run(["poll", "--dry-run"], env);
   expect(r.code).toBe(0);
-  expect(r.out).toContain("would skip (via testorg/ignored-team): testorg/demo#7");
+  expect(r.out).toContain(
+    "would skip (via testorg/ignored-team): testorg/demo#7",
+  );
   expect(r.out).not.toContain("would review: testorg/demo#7");
 
   // real run: no entry written, no claude call, SKIP logged
@@ -177,7 +230,8 @@ test("ignored_teams: team-only request is skipped with no state entry; direct re
 test("ignored_teams: membership in a non-ignored requested team still reviews", async () => {
   const sb = makeSandbox();
   sb.writeConfig({
-    orgs: ["testorg"], repos: { "testorg/demo": sb.demoRepo },
+    orgs: ["testorg"],
+    repos: { "testorg/demo": sb.demoRepo },
     ignored_teams: ["testorg/ignored-team"],
   });
   const r = sb.run(["poll"], {
@@ -196,7 +250,8 @@ test("ignored_teams: membership in a non-ignored requested team still reviews", 
 test("ignored_teams: failed reviewRequests fetch fails open (PR reviewed)", async () => {
   const sb = makeSandbox();
   sb.writeConfig({
-    orgs: ["testorg"], repos: { "testorg/demo": sb.demoRepo },
+    orgs: ["testorg"],
+    repos: { "testorg/demo": sb.demoRepo },
     ignored_teams: ["testorg/ignored-team"],
   });
   const r = sb.run(["poll"], {
@@ -212,14 +267,25 @@ test("ignored_teams: membership fetched at most once per poll cycle", () => {
   const calls = join(sb.tmp, "teams-calls");
   writeFileSync(calls, "");
   sb.writeConfig({
-    orgs: ["testorg"], repos: { "testorg/demo": sb.demoRepo },
+    orgs: ["testorg"],
+    repos: { "testorg/demo": sb.demoRepo },
     ignored_teams: ["testorg/ignored-team"],
   });
   const searchJson = JSON.stringify([
-    { number: 7, title: "A", url: "u", isDraft: false,
-      repository: { nameWithOwner: "testorg/demo" } },
-    { number: 21, title: "B", url: "u", isDraft: false,
-      repository: { nameWithOwner: "testorg/demo" } },
+    {
+      number: 7,
+      title: "A",
+      url: "u",
+      isDraft: false,
+      repository: { nameWithOwner: "testorg/demo" },
+    },
+    {
+      number: 21,
+      title: "B",
+      url: "u",
+      isDraft: false,
+      repository: { nameWithOwner: "testorg/demo" },
+    },
   ]);
   const r = sb.run(["poll", "--dry-run"], {
     GH_SEARCH_JSON: searchJson,
@@ -230,5 +296,7 @@ test("ignored_teams: membership fetched at most once per poll cycle", () => {
     }),
   });
   expect(r.code).toBe(0);
-  expect(readFileSync(calls, "utf8").split("\n").filter(Boolean)).toHaveLength(1);
+  expect(readFileSync(calls, "utf8").split("\n").filter(Boolean)).toHaveLength(
+    1,
+  );
 });

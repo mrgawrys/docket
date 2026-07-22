@@ -2,18 +2,34 @@ import { expect, test } from "bun:test";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { paths } from "../src/config";
-import { buildResume, interactiveList, killEntry, parseChoice, renderList } from "../src/list";
+import {
+  buildResume,
+  interactiveList,
+  killEntry,
+  parseChoice,
+  renderList,
+} from "../src/list";
 import type { Ctx } from "../src/reviewer";
 import { makeSandbox, type Sandbox } from "./harness";
 
 test("renderList formats pending entries in updated_at order", () => {
   const { keys, lines } = renderList({
-    "acme/w#2": { status: "ready", title: "Two", updated_at: "2026-01-02T00:00:00Z" },
+    "acme/w#2": {
+      status: "ready",
+      title: "Two",
+      updated_at: "2026-01-02T00:00:00Z",
+    },
     "acme/w#1": {
-      status: "changes-requested", title: "One", flags: ["re-requested", "new-commits"],
+      status: "changes-requested",
+      title: "One",
+      flags: ["re-requested", "new-commits"],
       updated_at: "2026-01-01T00:00:00Z",
     },
-    "acme/w#3": { status: "done", title: "Gone", updated_at: "2026-01-03T00:00:00Z" },
+    "acme/w#3": {
+      status: "done",
+      title: "Gone",
+      updated_at: "2026-01-03T00:00:00Z",
+    },
   });
   expect(keys).toEqual(["acme/w#1", "acme/w#2"]);
   expect(lines[0]).toContain("[changes-requested +re-requested +new-commits]");
@@ -64,16 +80,29 @@ function makeCtx(sb: Sandbox): Ctx {
 test("interactiveList loops: poll/sync/retry/bad input re-prompt, q exits", async () => {
   const sb = makeSandbox();
   sb.writeState({
-    "testorg/demo#7": { status: "failed", title: "Demo", updated_at: "2026-01-01T00:00:00Z" },
+    "testorg/demo#7": {
+      status: "failed",
+      title: "Demo",
+      updated_at: "2026-01-01T00:00:00Z",
+    },
   });
   const calls: string[] = [];
   const answers = ["p", "s", "r1", "banana", "q"];
   const code = await interactiveList(
     makeCtx(sb),
     {
-      retry: async (key) => { calls.push(`retry:${key}`); return 0; },
-      poll: async () => { calls.push("poll"); return 0; },
-      sync: async () => { calls.push("sync"); return 0; },
+      retry: async (key) => {
+        calls.push(`retry:${key}`);
+        return 0;
+      },
+      poll: async () => {
+        calls.push("poll");
+        return 0;
+      },
+      sync: async () => {
+        calls.push("sync");
+        return 0;
+      },
     },
     async () => answers.shift() ?? "q",
   );
@@ -91,7 +120,10 @@ test("interactiveList stays open on an empty list so poll can populate it", asyn
     makeCtx(sb),
     {
       retry: async () => 0,
-      poll: async () => { calls.push("poll"); return 0; },
+      poll: async () => {
+        calls.push("poll");
+        return 0;
+      },
       sync: async () => 0,
     },
     async () => answers.shift() ?? "q",
@@ -101,9 +133,18 @@ test("interactiveList stays open on an empty list so poll can populate it", asyn
 });
 
 test("buildResume guards and command construction", () => {
-  const cfg = { orgs: [], repos: {}, claude_bin: "/x/claude", claude_config_dir: "/x/home" };
-  expect(buildResume({ status: "reviewing", updated_at: "t" }, cfg)).toHaveProperty("error");
-  expect(buildResume({ status: "failed", updated_at: "t" }, cfg)).toHaveProperty("error");
+  const cfg = {
+    orgs: [],
+    repos: {},
+    claude_bin: "/x/claude",
+    claude_config_dir: "/x/home",
+  };
+  expect(
+    buildResume({ status: "reviewing", updated_at: "t" }, cfg),
+  ).toHaveProperty("error");
+  expect(
+    buildResume({ status: "failed", updated_at: "t" }, cfg),
+  ).toHaveProperty("error");
   const r = buildResume(
     { status: "ready", session_id: "s1", local_path: "/repo", updated_at: "t" },
     cfg,
@@ -120,8 +161,12 @@ test("dismiss command marks done and removes the worktree", () => {
   sb.gitInitDemo();
   sb.writeState({
     "testorg/demo#7": {
-      status: "ready", session_id: "s", title: "Demo PR", url: "u",
-      local_path: sb.demoRepo, updated_at: "2026-01-01T00:00:00Z",
+      status: "ready",
+      session_id: "s",
+      title: "Demo PR",
+      url: "u",
+      local_path: sb.demoRepo,
+      updated_at: "2026-01-01T00:00:00Z",
     },
   });
   const r = sb.run(["dismiss", "testorg/demo#7"]);
@@ -147,8 +192,12 @@ test("dismiss also removes the run log", () => {
   writeFileSync(runLog, '{"type":"result"}\n');
   sb.writeState({
     "testorg/demo#7": {
-      status: "ready", session_id: "s", title: "Demo PR", url: "u",
-      local_path: sb.demoRepo, updated_at: "2026-01-01T00:00:00Z",
+      status: "ready",
+      session_id: "s",
+      title: "Demo PR",
+      url: "u",
+      local_path: sb.demoRepo,
+      updated_at: "2026-01-01T00:00:00Z",
     },
   });
   expect(sb.run(["dismiss", "testorg/demo#7"]).code).toBe(0);
@@ -159,12 +208,18 @@ test("killEntry SIGTERMs a live runner, which marks the entry canceled", async (
   const sb = makeSandbox();
   sb.writeState({
     "testorg/demo#62": {
-      status: "reviewing", title: "Slow", url: "u", local_path: sb.demoRepo,
+      status: "reviewing",
+      title: "Slow",
+      url: "u",
+      local_path: sb.demoRepo,
       updated_at: new Date().toISOString(),
     },
   });
   const proc = sb.runAsync(["exec", "testorg/demo#62"], { CLAUDE_SLEEP: "10" });
-  await sb.waitEntry("testorg/demo#62", (e) => e.status === "reviewing" && e.pid !== undefined);
+  await sb.waitEntry(
+    "testorg/demo#62",
+    (e) => e.status === "reviewing" && e.pid !== undefined,
+  );
 
   const ctx = { paths: { statePath: sb.statePath } } as any;
   expect(killEntry(ctx, "testorg/demo#62")).toBe(0);
@@ -183,7 +238,10 @@ test("killEntry refuses when nothing is running for the key", () => {
 });
 
 test("buildResume points a reviewing entry at watch/kill", () => {
-  const r = buildResume({ status: "reviewing", updated_at: "t" }, { orgs: [], repos: {} });
+  const r = buildResume(
+    { status: "reviewing", updated_at: "t" },
+    { orgs: [], repos: {} },
+  );
   expect(r).toHaveProperty("error");
   expect((r as { error: string }).error).toContain("w#");
   expect((r as { error: string }).error).toContain("k#");

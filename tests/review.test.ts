@@ -7,13 +7,19 @@ test("review + retry command family", async () => {
   const sb = makeSandbox();
 
   // scenario 7: force-review with a note — starts in background, lands ready
-  let r = sb.run(["review", "testorg/demo#42", "author pushed changes, focus on the delta"]);
+  let r = sb.run([
+    "review",
+    "testorg/demo#42",
+    "author pushed changes, focus on the delta",
+  ]);
   expect(r.code).toBe(0);
   expect(r.out).toContain("background");
   let e = await sb.waitEntry("testorg/demo#42", (x) => x.status === "ready");
   expect(e.session_id).toBe("sess-1234");
   expect(e.title).toBe("Manual PR");
-  expect(sb.promptCapture()).toContain("worktree for PR #42 at .worktrees/pr-42");
+  expect(sb.promptCapture()).toContain(
+    "worktree for PR #42 at .worktrees/pr-42",
+  );
   expect(sb.promptCapture()).toContain("/code-review 42");
   expect(sb.promptCapture()).toContain("focus on the delta");
 
@@ -43,7 +49,9 @@ test("review + retry command family", async () => {
 
 test("scenario 9: missing config errors, pointing at config.example.json", () => {
   const sb = makeSandbox();
-  const r = sb.run(["review", "testorg/demo#1"], { AUTO_REVIEW_CONFIG_DIR: sb.tmp + "/nonexistent" });
+  const r = sb.run(["review", "testorg/demo#1"], {
+    AUTO_REVIEW_CONFIG_DIR: sb.tmp + "/nonexistent",
+  });
   expect(r.code).not.toBe(0);
   expect(r.err).toContain("config.example.json");
 });
@@ -51,7 +59,8 @@ test("scenario 9: missing config errors, pointing at config.example.json", () =>
 test("gh_account: pinned account's token reaches gh and claude as GH_TOKEN", async () => {
   const sb = makeSandbox();
   sb.writeConfig({
-    orgs: ["testorg"], repos: { "testorg/demo": sb.demoRepo },
+    orgs: ["testorg"],
+    repos: { "testorg/demo": sb.demoRepo },
     gh_account: "workuser",
   });
   expect(sb.run(["review", "testorg/demo#47"]).code).toBe(0);
@@ -62,7 +71,8 @@ test("gh_account: pinned account's token reaches gh and claude as GH_TOKEN", asy
 test("gh_account: unresolvable account fails fast with a gh auth hint", () => {
   const sb = makeSandbox();
   sb.writeConfig({
-    orgs: ["testorg"], repos: { "testorg/demo": sb.demoRepo },
+    orgs: ["testorg"],
+    repos: { "testorg/demo": sb.demoRepo },
     gh_account: "ghost",
   });
   const r = sb.run(["review", "testorg/demo#48"], { GH_AUTH_TOKEN_FAIL: "1" });
@@ -74,7 +84,8 @@ test("gh_account: unresolvable account fails fast with a gh auth hint", () => {
 test("scenario 10: claude_config_dir reaches claude as CLAUDE_CONFIG_DIR", async () => {
   const sb = makeSandbox();
   sb.writeConfig({
-    orgs: ["testorg"], repos: { "testorg/demo": sb.demoRepo },
+    orgs: ["testorg"],
+    repos: { "testorg/demo": sb.demoRepo },
     claude_config_dir: sb.tmp + "/claude-home",
   });
   expect(sb.run(["review", "testorg/demo#44"]).code).toBe(0);
@@ -86,9 +97,15 @@ test("scenario 11: claude_bin from config used when CLAUDE_BIN unset", async () 
   const sb = makeSandbox();
   const shim2 = sb.env.CLAUDE_BIN + "2";
   Bun.spawnSync(["cp", sb.env.CLAUDE_BIN!, shim2]);
-  sb.writeConfig({ orgs: ["testorg"], repos: { "testorg/demo": sb.demoRepo }, claude_bin: shim2 });
+  sb.writeConfig({
+    orgs: ["testorg"],
+    repos: { "testorg/demo": sb.demoRepo },
+    claude_bin: shim2,
+  });
   const before = sb.claudeCalls();
-  expect(sb.run(["review", "testorg/demo#45"], { CLAUDE_BIN: undefined }).code).toBe(0);
+  expect(
+    sb.run(["review", "testorg/demo#45"], { CLAUDE_BIN: undefined }).code,
+  ).toBe(0);
   await sb.waitEntry("testorg/demo#45", (x) => x.status === "ready");
   expect(sb.claudeCalls()).toBe(before + 1); // the copied shim appends to the same CLAUDE_CALLS file
 });
@@ -106,8 +123,12 @@ test("review: a live runner for the same key is not double-started", () => {
   const sb = makeSandbox();
   sb.writeState({
     "testorg/demo#42": {
-      status: "reviewing", title: "Live", url: "u", pid: process.pid,
-      updated_at: "2026-01-01T00:00:00Z", local_path: sb.demoRepo,
+      status: "reviewing",
+      title: "Live",
+      url: "u",
+      pid: process.pid,
+      updated_at: "2026-01-01T00:00:00Z",
+      local_path: sb.demoRepo,
     },
   });
   const before = sb.claudeCalls();
@@ -120,7 +141,10 @@ test("SIGTERM interrupts an in-flight exec runner promptly instead of waiting it
   const sb = makeSandbox();
   sb.writeState({
     "testorg/demo#60": {
-      status: "reviewing", title: "Slow", url: "u", local_path: sb.demoRepo,
+      status: "reviewing",
+      title: "Slow",
+      url: "u",
+      local_path: sb.demoRepo,
       updated_at: new Date().toISOString(),
     },
   });
@@ -148,7 +172,10 @@ test("runner streams progress into the run log while claude is still working", a
   const sb = makeSandbox();
   sb.writeState({
     "testorg/demo#61": {
-      status: "reviewing", title: "Slow", url: "u", local_path: sb.demoRepo,
+      status: "reviewing",
+      title: "Slow",
+      url: "u",
+      local_path: sb.demoRepo,
       updated_at: new Date().toISOString(),
     },
   });
@@ -158,7 +185,11 @@ test("runner streams progress into the run log while claude is still working", a
   // assistant event must land in the run log before the run finishes
   const deadline = Date.now() + 5000;
   while (Date.now() < deadline) {
-    if (existsSync(runLog) && readFileSync(runLog, "utf8").includes('"type":"assistant"')) break;
+    if (
+      existsSync(runLog) &&
+      readFileSync(runLog, "utf8").includes('"type":"assistant"')
+    )
+      break;
     await Bun.sleep(25);
   }
   expect(readFileSync(runLog, "utf8")).toContain('"type":"assistant"');

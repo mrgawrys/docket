@@ -11,9 +11,14 @@ export interface GhCtx {
 
 // Resolve a token for a pinned gh account. The single code path both withCtx
 // (to set GH_TOKEN) and doctor (to verify that exact setup) go through.
-export function ghAccountToken(gh: string, account: string): { token: string } | { error: string } {
+export function ghAccountToken(
+  gh: string,
+  account: string,
+): { token: string } | { error: string } {
   try {
-    const p = Bun.spawnSync([gh, "auth", "token", "--user", account], { stderr: "pipe" });
+    const p = Bun.spawnSync([gh, "auth", "token", "--user", account], {
+      stderr: "pipe",
+    });
     const token = p.stdout.toString().trim();
     if (p.exitCode !== 0 || !token) return { error: p.stderr.toString() };
     return { token };
@@ -45,7 +50,12 @@ export function ghUser(ctx: GhCtx): string | null {
   return login ? login : null;
 }
 
-export function prView<T>(ctx: GhCtx, repo: string, number: string, fields: string): T | null {
+export function prView<T>(
+  ctx: GhCtx,
+  repo: string,
+  number: string,
+  fields: string,
+): T | null {
   const out = gh(ctx, ["pr", "view", number, "--repo", repo, "--json", fields]);
   if (out === null) return null;
   try {
@@ -65,9 +75,16 @@ interface SearchRow {
 
 export function searchReviewRequests(ctx: GhCtx, org: string): Candidate[] {
   const out = gh(ctx, [
-    "search", "prs", "--review-requested=@me", "--state=open",
-    "--owner", org, "--limit", "100",
-    "--json", "number,title,url,isDraft,repository",
+    "search",
+    "prs",
+    "--review-requested=@me",
+    "--state=open",
+    "--owner",
+    org,
+    "--limit",
+    "100",
+    "--json",
+    "number,title,url,isDraft,repository",
   ]);
   let rows: SearchRow[] | null = null;
   try {
@@ -114,8 +131,11 @@ export function reviewRequesters(
 
 export function myTeams(ctx: GhCtx): string[] | null {
   const out = gh(ctx, [
-    "api", "user/teams", "--paginate",
-    "--jq", '.[] | .organization.login + "/" + .slug',
+    "api",
+    "user/teams",
+    "--paginate",
+    "--jq",
+    '.[] | .organization.login + "/" + .slug',
   ]);
   if (out === null) return null;
   return out.split("\n").filter(Boolean);

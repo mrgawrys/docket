@@ -9,8 +9,16 @@ interface ContentBlock {
 
 function toolLine(name: string, input: Record<string, unknown> = {}): string {
   const arg =
-    input.command ?? input.file_path ?? input.pattern ?? input.description ?? input.prompt ?? "";
-  const s = typeof arg === "string" ? arg.replace(/\s+/g, " ").trim() : JSON.stringify(arg);
+    input.command ??
+    input.file_path ??
+    input.pattern ??
+    input.description ??
+    input.prompt ??
+    "";
+  const s =
+    typeof arg === "string"
+      ? arg.replace(/\s+/g, " ").trim()
+      : JSON.stringify(arg);
   const short = s.length > 100 ? s.slice(0, 100) + "…" : s;
   return short ? `→ ${name}: ${short}` : `→ ${name}`;
 }
@@ -33,7 +41,11 @@ export function parseRunEvent(line: string): RunEvent | null {
 
 export function tailLines(path: string, n: number): string[] {
   if (!existsSync(path)) return [];
-  return readFileSync(path, "utf8").trimEnd().split("\n").filter(Boolean).slice(-n);
+  return readFileSync(path, "utf8")
+    .trimEnd()
+    .split("\n")
+    .filter(Boolean)
+    .slice(-n);
 }
 
 // One stream-json line -> human-readable line(s); null for noise.
@@ -46,9 +58,11 @@ export function renderRunEvent(line: string): string | null {
   if (ev.type === "assistant") {
     const parts = (ev.message?.content ?? [])
       .map((b) =>
-        b.type === "text" ? (b.text ?? "").trim()
-        : b.type === "tool_use" ? toolLine(b.name ?? "?", b.input)
-        : "",
+        b.type === "text"
+          ? (b.text ?? "").trim()
+          : b.type === "tool_use"
+            ? toolLine(b.name ?? "?", b.input)
+            : "",
       )
       .filter(Boolean);
     return parts.length ? parts.join("\n") : null;
@@ -69,7 +83,8 @@ export function followFile(
   onChunk: (text: string, truncated: boolean) => void,
   opts: { fromEnd?: boolean } = {},
 ): Promise<number> {
-  let seen = opts.fromEnd && existsSync(path) ? readFileSync(path, "utf8").length : 0;
+  let seen =
+    opts.fromEnd && existsSync(path) ? readFileSync(path, "utf8").length : 0;
   let truncated = false;
   const read = () => {
     if (!existsSync(path)) return; // watchFile fires even for a missing file

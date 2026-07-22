@@ -1,4 +1,10 @@
-import { ghUser, myTeams, reviewRequesters, searchReviewRequests, type ReviewRequesters } from "./github";
+import {
+  ghUser,
+  myTeams,
+  reviewRequesters,
+  searchReviewRequests,
+  type ReviewRequesters,
+} from "./github";
 import { startReview, type Ctx } from "./reviewer";
 import { loadState } from "./state";
 import { reconcile } from "./sync";
@@ -58,6 +64,8 @@ export async function pollCycle(ctx: Ctx, dry: boolean): Promise<void> {
   } else if (started + failed + skipped + synced === 0) {
     ctx.log("poll complete: nothing new");
   } else {
-    ctx.log(`poll complete: ${started} started, ${failed} failed, ${skipped} skipped, ${synced} synced`);
+    ctx.log(
+      `poll complete: ${started} started, ${failed} failed, ${skipped} skipped, ${synced} synced`,
+    );
   }
 }

@@ -1,4 +1,10 @@
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -74,10 +80,20 @@ export interface Sandbox {
   statePath: string;
   logPath: string;
   demoRepo: string;
-  run(args: string[], extraEnv?: Record<string, string | undefined>): { code: number; out: string; err: string };
-  runAsync(args: string[], extraEnv?: Record<string, string | undefined>): Bun.Subprocess;
+  run(
+    args: string[],
+    extraEnv?: Record<string, string | undefined>,
+  ): { code: number; out: string; err: string };
+  runAsync(
+    args: string[],
+    extraEnv?: Record<string, string | undefined>,
+  ): Bun.Subprocess;
   state(): Record<string, any>;
-  waitEntry(key: string, pred: (e: any) => boolean, timeoutMs?: number): Promise<any>;
+  waitEntry(
+    key: string,
+    pred: (e: any) => boolean,
+    timeoutMs?: number,
+  ): Promise<any>;
   writeConfig(cfg: unknown): void;
   writeState(s: unknown): void;
   claudeCalls(): number;
@@ -94,7 +110,8 @@ export function makeSandbox(): Sandbox {
   const stateDir = join(tmp, "ar");
   const bin = join(tmp, "bin");
   const demoRepo = join(tmp, "demo");
-  for (const d of [configDir, stateDir, bin, demoRepo]) mkdirSync(d, { recursive: true });
+  for (const d of [configDir, stateDir, bin, demoRepo])
+    mkdirSync(d, { recursive: true });
 
   const ghShim = join(bin, "gh");
   const claudeShim = join(bin, "claude");
@@ -127,19 +144,39 @@ export function makeSandbox(): Sandbox {
   writeConfig({ orgs: ["testorg"], repos: { "testorg/demo": demoRepo } });
 
   return {
-    tmp, env, configDir, stateDir, statePath,
+    tmp,
+    env,
+    configDir,
+    stateDir,
+    statePath,
     logPath: join(stateDir, "auto-review.log"),
     demoRepo,
     run(args, extraEnv = {}) {
-      const e: Record<string, string | undefined> = { ...process.env, ...env, ...extraEnv };
+      const e: Record<string, string | undefined> = {
+        ...process.env,
+        ...env,
+        ...extraEnv,
+      };
       for (const [k, v] of Object.entries(e)) if (v === undefined) delete e[k];
-      const p = Bun.spawnSync(["bun", MAIN, ...args], { env: e as Record<string, string> });
-      return { code: p.exitCode, out: p.stdout.toString(), err: p.stderr.toString() };
+      const p = Bun.spawnSync(["bun", MAIN, ...args], {
+        env: e as Record<string, string>,
+      });
+      return {
+        code: p.exitCode,
+        out: p.stdout.toString(),
+        err: p.stderr.toString(),
+      };
     },
     runAsync(args, extraEnv = {}) {
-      const e: Record<string, string | undefined> = { ...process.env, ...env, ...extraEnv };
+      const e: Record<string, string | undefined> = {
+        ...process.env,
+        ...env,
+        ...extraEnv,
+      };
       for (const [k, v] of Object.entries(e)) if (v === undefined) delete e[k];
-      return Bun.spawn(["bun", MAIN, ...args], { env: e as Record<string, string> });
+      return Bun.spawn(["bun", MAIN, ...args], {
+        env: e as Record<string, string>,
+      });
     },
     state: () => JSON.parse(readFileSync(statePath, "utf8")),
     // reviews run in detached background processes — poll/review/retry return
@@ -163,16 +200,29 @@ export function makeSandbox(): Sandbox {
     writeConfig,
     writeState: (s) => writeFileSync(statePath, JSON.stringify(s)),
     claudeCalls: () =>
-      readFileSync(env.CLAUDE_CALLS!, "utf8").split("\n").filter(Boolean).length,
+      readFileSync(env.CLAUDE_CALLS!, "utf8").split("\n").filter(Boolean)
+        .length,
     promptCapture: () => readFileSync(env.PROMPT_CAPTURE!, "utf8"),
     cfgdirCapture: () => readFileSync(env.CFGDIR_CAPTURE!, "utf8"),
     ghTokenCapture: () => readFileSync(env.GHTOKEN_CAPTURE!, "utf8"),
     statusAtCall: () => readFileSync(env.STATUS_AT_CALL!, "utf8").trim(),
     gitInitDemo() {
       const g = (...a: string[]) =>
-        Bun.spawnSync(["git", "-C", demoRepo, ...a], { env: process.env as Record<string, string> });
+        Bun.spawnSync(["git", "-C", demoRepo, ...a], {
+          env: process.env as Record<string, string>,
+        });
       g("init", "-q");
-      g("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init");
+      g(
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@t",
+        "commit",
+        "-q",
+        "--allow-empty",
+        "-m",
+        "init",
+      );
       g("worktree", "add", "--quiet", join(demoRepo, ".worktrees", "pr-7"));
     },
   };

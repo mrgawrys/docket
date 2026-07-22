@@ -3,12 +3,23 @@ import { decideSync } from "../src/sync";
 import { makeSandbox } from "./harness";
 
 test("decideSync: merged/closed/no-review/verdicts/flags", () => {
-  expect(decideSync({ state: "MERGED" }, "me")).toEqual({ kind: "done", reason: "merged" });
-  expect(decideSync({ state: "CLOSED" }, "me")).toEqual({ kind: "done", reason: "closed" });
+  expect(decideSync({ state: "MERGED" }, "me")).toEqual({
+    kind: "done",
+    reason: "merged",
+  });
+  expect(decideSync({ state: "CLOSED" }, "me")).toEqual({
+    kind: "done",
+    reason: "closed",
+  });
   expect(decideSync({ state: "OPEN" }, "me")).toEqual({ kind: "unchanged" });
   expect(
     decideSync(
-      { state: "OPEN", latestReviews: [{ author: { login: "other" }, state: "APPROVED", submittedAt: "t" }] },
+      {
+        state: "OPEN",
+        latestReviews: [
+          { author: { login: "other" }, state: "APPROVED", submittedAt: "t" },
+        ],
+      },
       "me",
     ),
   ).toEqual({ kind: "unchanged" });
@@ -16,35 +27,58 @@ test("decideSync: merged/closed/no-review/verdicts/flags", () => {
     decideSync(
       {
         state: "OPEN",
-        latestReviews: [{ author: { login: "me" }, state: "CHANGES_REQUESTED", submittedAt: "2026-07-19T10:00:00Z" }],
+        latestReviews: [
+          {
+            author: { login: "me" },
+            state: "CHANGES_REQUESTED",
+            submittedAt: "2026-07-19T10:00:00Z",
+          },
+        ],
         reviewRequests: [{ login: "me" }],
         commits: [{ committedDate: "2026-07-19T12:00:00Z" }],
       },
       "me",
     ),
   ).toEqual({
-    kind: "reviewed", verdict: "changes-requested",
-    reviewedAt: "2026-07-19T10:00:00Z", flags: ["re-requested", "new-commits"],
+    kind: "reviewed",
+    verdict: "changes-requested",
+    reviewedAt: "2026-07-19T10:00:00Z",
+    flags: ["re-requested", "new-commits"],
   });
   expect(
     decideSync(
       {
         state: "OPEN",
-        latestReviews: [{ author: { login: "me" }, state: "APPROVED", submittedAt: "2026-07-19T13:00:00Z" }],
+        latestReviews: [
+          {
+            author: { login: "me" },
+            state: "APPROVED",
+            submittedAt: "2026-07-19T13:00:00Z",
+          },
+        ],
         reviewRequests: [],
         commits: [{ committedDate: "2026-07-19T12:00:00Z" }],
       },
       "me",
     ),
-  ).toEqual({ kind: "reviewed", verdict: "approved", reviewedAt: "2026-07-19T13:00:00Z", flags: [] });
+  ).toEqual({
+    kind: "reviewed",
+    verdict: "approved",
+    reviewedAt: "2026-07-19T13:00:00Z",
+    flags: [],
+  });
 });
 
 test("sync command: scenarios 13-15", () => {
   const sb = makeSandbox();
   const ready = {
     "testorg/demo#7": {
-      status: "ready", session_id: "sess-1234", title: "Demo PR", url: "u",
-      local_path: sb.demoRepo, updated_at: "2026-01-01T00:00:00Z",
+      status: "ready",
+      session_id: "sess-1234",
+      title: "Demo PR",
+      url: "u",
+      local_path: sb.demoRepo,
+      updated_at: "2026-01-01T00:00:00Z",
     },
   };
   sb.writeState(ready);
@@ -54,7 +88,13 @@ test("sync command: scenarios 13-15", () => {
   let r = sb.run(["sync"], {
     GH_PR_STATUS_JSON: JSON.stringify({
       state: "OPEN",
-      latestReviews: [{ author: { login: "testuser" }, state: "CHANGES_REQUESTED", submittedAt: "2026-07-19T10:00:00Z" }],
+      latestReviews: [
+        {
+          author: { login: "testuser" },
+          state: "CHANGES_REQUESTED",
+          submittedAt: "2026-07-19T10:00:00Z",
+        },
+      ],
       reviewRequests: [{ login: "testuser" }],
       commits: [{ committedDate: "2026-07-19T12:00:00Z" }],
     }),
@@ -70,7 +110,13 @@ test("sync command: scenarios 13-15", () => {
   r = sb.run(["sync"], {
     GH_PR_STATUS_JSON: JSON.stringify({
       state: "OPEN",
-      latestReviews: [{ author: { login: "testuser" }, state: "APPROVED", submittedAt: "2026-07-19T13:00:00Z" }],
+      latestReviews: [
+        {
+          author: { login: "testuser" },
+          state: "APPROVED",
+          submittedAt: "2026-07-19T13:00:00Z",
+        },
+      ],
       reviewRequests: [],
       commits: [{ committedDate: "2026-07-19T12:00:00Z" }],
     }),

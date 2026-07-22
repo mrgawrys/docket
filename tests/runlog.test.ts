@@ -7,8 +7,16 @@ test("renderRunEvent: assistant text and tool calls become readable lines", () =
     message: {
       content: [
         { type: "text", text: "Looking at the diff" },
-        { type: "tool_use", name: "Bash", input: { command: "git fetch origin" } },
-        { type: "tool_use", name: "Read", input: { file_path: "/repo/src/a.ts" } },
+        {
+          type: "tool_use",
+          name: "Bash",
+          input: { command: "git fetch origin" },
+        },
+        {
+          type: "tool_use",
+          name: "Read",
+          input: { file_path: "/repo/src/a.ts" },
+        },
       ],
     },
   });
@@ -20,7 +28,11 @@ test("renderRunEvent: assistant text and tool calls become readable lines", () =
 test("renderRunEvent: long tool input is truncated to one line", () => {
   const line = JSON.stringify({
     type: "assistant",
-    message: { content: [{ type: "tool_use", name: "Bash", input: { command: "x".repeat(300) } }] },
+    message: {
+      content: [
+        { type: "tool_use", name: "Bash", input: { command: "x".repeat(300) } },
+      ],
+    },
   });
   const out = renderRunEvent(line)!;
   expect(out.startsWith("→ Bash: xxx")).toBe(true);
@@ -30,15 +42,25 @@ test("renderRunEvent: long tool input is truncated to one line", () => {
 
 test("renderRunEvent: init, result, and noise", () => {
   expect(
-    renderRunEvent(JSON.stringify({ type: "system", subtype: "init", session_id: "s-1" })),
+    renderRunEvent(
+      JSON.stringify({ type: "system", subtype: "init", session_id: "s-1" }),
+    ),
   ).toBe("session started (s-1)");
-  expect(renderRunEvent(JSON.stringify({ type: "result", subtype: "success" }))).toBe(
-    "✔ review finished",
-  );
-  expect(renderRunEvent(JSON.stringify({ type: "result", subtype: "error_during_execution" }))).toBe(
-    "✖ review failed (error_during_execution)",
-  );
-  expect(renderRunEvent(JSON.stringify({ type: "user", message: {} }))).toBeNull();
+  expect(
+    renderRunEvent(JSON.stringify({ type: "result", subtype: "success" })),
+  ).toBe("✔ review finished");
+  expect(
+    renderRunEvent(
+      JSON.stringify({ type: "result", subtype: "error_during_execution" }),
+    ),
+  ).toBe("✖ review failed (error_during_execution)");
+  expect(
+    renderRunEvent(JSON.stringify({ type: "user", message: {} })),
+  ).toBeNull();
   expect(renderRunEvent("not json at all")).toBeNull();
-  expect(renderRunEvent(JSON.stringify({ type: "assistant", message: { content: [] } }))).toBeNull();
+  expect(
+    renderRunEvent(
+      JSON.stringify({ type: "assistant", message: { content: [] } }),
+    ),
+  ).toBeNull();
 });

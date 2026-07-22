@@ -53,8 +53,19 @@ test("watch <pr> renders that PR's run log", async () => {
     join(sb.stateDir, "runs", "testorg-demo-7.jsonl"),
     JSON.stringify({
       type: "assistant",
-      message: { content: [{ type: "tool_use", name: "Bash", input: { command: "git fetch origin" } }] },
-    }) + "\n" + JSON.stringify({ type: "result", subtype: "success" }) + "\n",
+      message: {
+        content: [
+          {
+            type: "tool_use",
+            name: "Bash",
+            input: { command: "git fetch origin" },
+          },
+        ],
+      },
+    }) +
+      "\n" +
+      JSON.stringify({ type: "result", subtype: "success" }) +
+      "\n",
   );
   const proc = sb.runAsync(["watch", "testorg/demo#7"]);
   await Bun.sleep(2000); // follower prints existing content on startup

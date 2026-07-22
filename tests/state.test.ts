@@ -3,21 +3,34 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  loadState, markDone, markReviewed, normalizeKey, pendingEntries,
-  saveState, setStatus, splitKey, timestamp,
+  loadState,
+  markDone,
+  markReviewed,
+  normalizeKey,
+  pendingEntries,
+  saveState,
+  setStatus,
+  splitKey,
+  timestamp,
 } from "../src/state";
 
-const statePath = () => join(mkdtempSync(join(tmpdir(), "rv-state-")), "state.json");
+const statePath = () =>
+  join(mkdtempSync(join(tmpdir(), "rv-state-")), "state.json");
 
 test("normalizeKey accepts org/repo#N and PR URLs, rejects garbage", () => {
   expect(normalizeKey("acme/widgets#12")).toBe("acme/widgets#12");
-  expect(normalizeKey("https://github.com/acme/widgets/pull/12")).toBe("acme/widgets#12");
+  expect(normalizeKey("https://github.com/acme/widgets/pull/12")).toBe(
+    "acme/widgets#12",
+  );
   expect(() => normalizeKey("total garbage")).toThrow(/cannot parse/);
   expect(() => normalizeKey("acme/widgets")).toThrow(/cannot parse/);
 });
 
 test("splitKey splits on the last #", () => {
-  expect(splitKey("acme/widgets#12")).toEqual({ repo: "acme/widgets", number: "12" });
+  expect(splitKey("acme/widgets#12")).toEqual({
+    repo: "acme/widgets",
+    number: "12",
+  });
 });
 
 test("timestamp is second-precision UTC", () => {
@@ -40,7 +53,9 @@ test("load heals an empty (0-byte) state.json instead of crashing on JSON.parse"
 
 test("setStatus updates status + updated_at, records error only when given", () => {
   const p = statePath();
-  saveState(p, { "a/b#1": { status: "reviewing", updated_at: "2020-01-01T00:00:00Z" } });
+  saveState(p, {
+    "a/b#1": { status: "reviewing", updated_at: "2020-01-01T00:00:00Z" },
+  });
   setStatus(p, "a/b#1", "failed", "boom");
   const e = loadState(p)["a/b#1"]!;
   expect(e.status).toBe("failed");
@@ -52,8 +67,12 @@ test("setStatus updates status + updated_at, records error only when given", () 
 
 test("markDone and markReviewed", () => {
   const p = statePath();
-  saveState(p, { "a/b#1": { status: "ready", session_id: "s", updated_at: "t" } });
-  markReviewed(p, "a/b#1", "changes-requested", "2026-07-19T10:00:00Z", ["re-requested"]);
+  saveState(p, {
+    "a/b#1": { status: "ready", session_id: "s", updated_at: "t" },
+  });
+  markReviewed(p, "a/b#1", "changes-requested", "2026-07-19T10:00:00Z", [
+    "re-requested",
+  ]);
   let e = loadState(p)["a/b#1"]!;
   expect(e.status).toBe("changes-requested");
   expect(e.flags).toEqual(["re-requested"]);

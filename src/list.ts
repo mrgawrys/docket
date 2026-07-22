@@ -3,7 +3,13 @@ import { claudeBin, claudeEnv, runLogPath, type Config } from "./config";
 import { cleanupEntry, type Ctx } from "./reviewer";
 import { followRunLog } from "./runlog";
 import {
-  isLiveReview, liveRunners, loadState, pendingEntries, setStatus, type Entry, type State,
+  isLiveReview,
+  liveRunners,
+  loadState,
+  pendingEntries,
+  setStatus,
+  type Entry,
+  type State,
 } from "./state";
 
 export function renderList(s: State): { keys: string[]; lines: string[] } {
@@ -29,12 +35,15 @@ export function parseChoice(
   if (t === "" || t === "q") return "quit";
   if (t === "p") return { action: "poll" };
   if (t === "s") return { action: "sync" };
-  const action =
-    t.startsWith("d") ? "dismiss"
-    : t.startsWith("r") ? "retry"
-    : t.startsWith("w") ? "watch"
-    : t.startsWith("k") ? "kill"
-    : "resume";
+  const action = t.startsWith("d")
+    ? "dismiss"
+    : t.startsWith("r")
+      ? "retry"
+      : t.startsWith("w")
+        ? "watch"
+        : t.startsWith("k")
+          ? "kill"
+          : "resume";
   const num = action === "resume" ? t : t.slice(1);
   if (!/^\d+$/.test(num)) return null;
   const n = Number(num);
@@ -45,12 +54,18 @@ export function parseChoice(
 export function buildResume(
   entry: Entry,
   cfg: Config,
-): { argv: string[]; cwd: string; env: Record<string, string> } | { error: string } {
+):
+  | { argv: string[]; cwd: string; env: Record<string, string> }
+  | { error: string } {
   if (entry.status === "reviewing") {
-    return { error: "still being reviewed — w# to watch it live, k# to kill it" };
+    return {
+      error: "still being reviewed — w# to watch it live, k# to kill it",
+    };
   }
   if (!entry.session_id || !entry.local_path) {
-    return { error: `no session (${entry.status}) — use r# to (re)run the review` };
+    return {
+      error: `no session (${entry.status}) — use r# to (re)run the review`,
+    };
   }
   return {
     argv: [claudeBin(cfg), "--resume", entry.session_id],
@@ -99,8 +114,13 @@ export async function interactiveList(
   // would drop buffered input and hang forever on EOF (stdin closed = quit)
   let rl: readline.Interface | undefined;
   if (!ask) {
-    rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    const closed = new Promise<string>((res) => rl!.once("close", () => res("q")));
+    rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+    const closed = new Promise<string>((res) =>
+      rl!.once("close", () => res("q")),
+    );
     ask = (prompt) => Promise.race([rl!.question(prompt), closed]);
   }
   try {
@@ -155,7 +175,9 @@ async function listLoop(
         continue;
       case "watch": {
         const key = keys[choice.index]!;
-        console.log(`watching ${key} — Ctrl+C stops watching, the review keeps running`);
+        console.log(
+          `watching ${key} — Ctrl+C stops watching, the review keeps running`,
+        );
         releaseStdin(); // the follower owns the terminal until Ctrl+C
         return followRunLog(runLogPath(ctx.paths, key));
       }

@@ -1,10 +1,20 @@
 import { ghUser, prView } from "./github";
 import { cleanupEntry, type Ctx } from "./reviewer";
-import { loadState, markDone, markReviewed, splitKey, type Verdict } from "./state";
+import {
+  loadState,
+  markDone,
+  markReviewed,
+  splitKey,
+  type Verdict,
+} from "./state";
 
 export interface PrSyncInfo {
   state: string;
-  latestReviews?: { author?: { login?: string }; state?: string; submittedAt?: string }[];
+  latestReviews?: {
+    author?: { login?: string };
+    state?: string;
+    submittedAt?: string;
+  }[];
   reviewRequests?: { login?: string }[];
   commits?: { committedDate?: string }[];
 }
@@ -19,12 +29,20 @@ export function decideSync(info: PrSyncInfo, me: string): SyncDecision {
   if (info.state === "CLOSED") return { kind: "done", reason: "closed" };
   const rev = (info.latestReviews ?? []).find((r) => r.author?.login === me);
   if (!rev) return { kind: "unchanged" };
-  const verdict = (rev.state ?? "").toLowerCase().replaceAll("_", "-") as Verdict;
+  const verdict = (rev.state ?? "")
+    .toLowerCase()
+    .replaceAll("_", "-") as Verdict;
   const flags: string[] = [];
-  if ((info.reviewRequests ?? []).some((r) => r.login === me)) flags.push("re-requested");
+  if ((info.reviewRequests ?? []).some((r) => r.login === me))
+    flags.push("re-requested");
   const lastCommit = (info.commits ?? []).at(-1)?.committedDate ?? "";
   if (lastCommit > (rev.submittedAt ?? "")) flags.push("new-commits");
-  return { kind: "reviewed", verdict, reviewedAt: rev.submittedAt ?? "", flags };
+  return {
+    kind: "reviewed",
+    verdict,
+    reviewedAt: rev.submittedAt ?? "",
+    flags,
+  };
 }
 
 export function reconcile(ctx: Ctx): void {
@@ -43,7 +61,10 @@ export function reconcile(ctx: Ctx): void {
   for (const [key, entry] of active) {
     const { repo, number } = splitKey(key);
     const info = prView<PrSyncInfo>(
-      ctx.gh, repo, number, "state,latestReviews,reviewRequests,commits",
+      ctx.gh,
+      repo,
+      number,
+      "state,latestReviews,reviewRequests,commits",
     );
     if (!info) {
       ctx.log(`SYNC ${key}: gh pr view failed, leaving entry as-is`);
@@ -60,7 +81,9 @@ export function reconcile(ctx: Ctx): void {
       const next = `${d.verdict} ${d.flags.join(" ")}`;
       if (cur !== next) {
         markReviewed(statePath, key, d.verdict, d.reviewedAt, d.flags);
-        ctx.log(`SYNC ${key}: you reviewed (${d.verdict})${d.flags.length ? ` [${d.flags.join(" ")}]` : ""}`);
+        ctx.log(
+          `SYNC ${key}: you reviewed (${d.verdict})${d.flags.length ? ` [${d.flags.join(" ")}]` : ""}`,
+        );
         ctx.counters.synced++;
       }
     }

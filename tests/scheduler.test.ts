@@ -18,7 +18,12 @@ test("renderPlist substitutes every field", () => {
   expect(plist).toContain("/home/me/.local/bin");
 });
 
-test.if(process.platform === "darwin")("rendered plist passes plutil -lint", () => {
-  const p = Bun.spawnSync(["plutil", "-lint", "-"], { stdin: Buffer.from(plist) });
-  expect(p.exitCode).toBe(0);
-});
+test.if(process.platform === "darwin")(
+  "rendered plist passes plutil -lint",
+  () => {
+    const p = Bun.spawnSync(["plutil", "-lint", "-"], {
+      stdin: Buffer.from(plist),
+    });
+    expect(p.exitCode).toBe(0);
+  },
+);

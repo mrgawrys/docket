@@ -1,5 +1,11 @@
 import {
-  existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
 } from "node:fs";
 import { dirname } from "node:path";
 import type { Logger } from "./log";
@@ -7,7 +13,13 @@ import { pidAlive } from "./proc";
 
 export type Verdict = "approved" | "changes-requested" | "commented";
 export type Status =
-  | "reviewing" | "ready" | "failed" | "canceled" | "skipped" | "done" | Verdict;
+  | "reviewing"
+  | "ready"
+  | "failed"
+  | "canceled"
+  | "skipped"
+  | "done"
+  | Verdict;
 
 export interface Entry {
   status: Status;
@@ -33,7 +45,8 @@ export function timestamp(): string {
 export function ensureState(statePath: string): void {
   mkdirSync(dirname(statePath), { recursive: true });
   // size check mirrors the bash original's self-heal for a truncated/empty state.json
-  if (!existsSync(statePath) || statSync(statePath).size === 0) writeFileSync(statePath, "{}\n");
+  if (!existsSync(statePath) || statSync(statePath).size === 0)
+    writeFileSync(statePath, "{}\n");
 }
 
 export function loadState(statePath: string): State {
@@ -87,19 +100,40 @@ export function updateEntry(
 
 // Merge a patch over the existing entry (or a fresh one) and stamp updated_at,
 // so callers never hand-roll the missing-entry default or the timestamp.
-export function patchEntry(statePath: string, key: string, patch: Partial<Entry>): void {
-  updateEntry(statePath, key, (e) => ({
-    ...(e ?? { updated_at: "" }),
-    ...patch,
-    updated_at: timestamp(),
-  }) as Entry);
+export function patchEntry(
+  statePath: string,
+  key: string,
+  patch: Partial<Entry>,
+): void {
+  updateEntry(
+    statePath,
+    key,
+    (e) =>
+      ({
+        ...(e ?? { updated_at: "" }),
+        ...patch,
+        updated_at: timestamp(),
+      }) as Entry,
+  );
 }
 
-export function setStatus(statePath: string, key: string, status: Status, error?: string): void {
-  patchEntry(statePath, key, { status, ...(error !== undefined ? { error } : {}) });
+export function setStatus(
+  statePath: string,
+  key: string,
+  status: Status,
+  error?: string,
+): void {
+  patchEntry(statePath, key, {
+    status,
+    ...(error !== undefined ? { error } : {}),
+  });
 }
 
-export function markDone(statePath: string, key: string, reason: "merged" | "closed"): void {
+export function markDone(
+  statePath: string,
+  key: string,
+  reason: "merged" | "closed",
+): void {
   patchEntry(statePath, key, { status: "done", done_reason: reason });
 }
 
@@ -110,15 +144,21 @@ export function markReviewed(
   reviewedAt: string,
   flags: string[],
 ): void {
-  patchEntry(statePath, key, { status: verdict, my_review_at: reviewedAt, flags });
+  patchEntry(statePath, key, {
+    status: verdict,
+    my_review_at: reviewedAt,
+    flags,
+  });
 }
 
 // The one definition of "this review is running"; exceptPid lets the exec
 // runner ignore its own pid when checking for a rival.
 export function isLiveReview(e: Entry, exceptPid?: number): boolean {
   return (
-    e.status === "reviewing" && e.pid !== undefined &&
-    e.pid !== exceptPid && pidAlive(e.pid)
+    e.status === "reviewing" &&
+    e.pid !== undefined &&
+    e.pid !== exceptPid &&
+    pidAlive(e.pid)
   );
 }
 
@@ -139,7 +179,9 @@ export function normalizeKey(input: string): string {
   const url = input.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
   if (url) key = `${url[1]}/${url[2]}#${url[3]}`;
   if (!/^[^/#\s]+\/[^/#\s]+#\d+$/.test(key)) {
-    throw new Error(`cannot parse '${input}' — expected ORG/REPO#NUM or a GitHub PR URL`);
+    throw new Error(
+      `cannot parse '${input}' — expected ORG/REPO#NUM or a GitHub PR URL`,
+    );
   }
   return key;
 }
@@ -155,8 +197,14 @@ export function reconcileOrphans(statePath: string, log: Logger): void {
     if (e.status !== "reviewing") continue;
     if (isLiveReview(e)) continue; // live background runner
     // a just-spawned runner records its pid within moments — give it a grace period
-    if (e.pid === undefined && Date.now() - Date.parse(e.updated_at) < 2 * 60_000) continue;
+    if (
+      e.pid === undefined &&
+      Date.now() - Date.parse(e.updated_at) < 2 * 60_000
+    )
+      continue;
     setStatus(statePath, key, "failed", "previous run died mid-review");
-    log(`ORPHAN ${key}: previous run died mid-review, marked failed — retry with: reviews retry ${key}`);
+    log(
+      `ORPHAN ${key}: previous run died mid-review, marked failed — retry with: reviews retry ${key}`,
+    );
   }
 }

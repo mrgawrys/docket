@@ -121,5 +121,7 @@ test("doctor: code-review plugin missing → ✗ with install one-liner", () => 
   });
   const r = sb.run(["doctor"]);
   expect(r.code).toBe(1);
-  expect(r.out).toContain("claude plugin install code-review@claude-plugins-official");
+  expect(r.out).toContain(
+    "claude plugin install code-review@claude-plugins-official",
+  );
 });

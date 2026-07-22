@@ -53,7 +53,11 @@ export async function loadConfig(p: Paths = paths()): Promise<Config> {
   } catch (e) {
     throw new ConfigError(`invalid JSON in ${p.configPath}: ${e}`);
   }
-  if (!Array.isArray(cfg.orgs) || typeof cfg.repos !== "object" || cfg.repos === null) {
+  if (
+    !Array.isArray(cfg.orgs) ||
+    typeof cfg.repos !== "object" ||
+    cfg.repos === null
+  ) {
     throw new ConfigError(
       `invalid config at ${p.configPath} — need "orgs" (array) and "repos" (object); see config.example.json`,
     );
@@ -61,10 +65,13 @@ export async function loadConfig(p: Paths = paths()): Promise<Config> {
   return cfg;
 }
 
-export const claudeBin = (cfg: Config, env: NodeJS.ProcessEnv = process.env): string =>
-  env.CLAUDE_BIN ?? cfg.claude_bin ?? "claude";
+export const claudeBin = (
+  cfg: Config,
+  env: NodeJS.ProcessEnv = process.env,
+): string => env.CLAUDE_BIN ?? cfg.claude_bin ?? "claude";
 
-export const ghBin = (env: NodeJS.ProcessEnv = process.env): string => env.GH_BIN ?? "gh";
+export const ghBin = (env: NodeJS.ProcessEnv = process.env): string =>
+  env.GH_BIN ?? "gh";
 
 // Env every claude invocation needs (review runs, resumes, doctor's check) —
 // a missed spot here would give them silently different claude setups.
@@ -74,7 +81,10 @@ export const claudeEnv = (cfg: Config): Record<string, string> =>
 export const runLogPath = (p: Paths, key: string): string =>
   join(p.stateDir, "runs", key.replace(/[/#]/g, "-") + ".jsonl");
 
-export const notifyEnabled = (cfg: Config, env: NodeJS.ProcessEnv = process.env): boolean =>
+export const notifyEnabled = (
+  cfg: Config,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean =>
   env.AUTO_REVIEW_NOTIFY !== undefined
     ? env.AUTO_REVIEW_NOTIFY === "1"
     : cfg.notifications !== false;

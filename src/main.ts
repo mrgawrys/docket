@@ -1,16 +1,31 @@
 #!/usr/bin/env bun
 
-import { ConfigError, ghBin, loadConfig, paths as resolvePaths } from "./config";
+import {
+  ConfigError,
+  ghBin,
+  loadConfig,
+  paths as resolvePaths,
+} from "./config";
 import { doctorCommand } from "./doctor";
 import { ghAccountToken, prView } from "./github";
 import { makeLogger } from "./log";
 import { acquireLock } from "./lock";
 import { dismissKey, interactiveList } from "./list";
 import { pollCycle } from "./poll";
-import { execReview, startReview, type Ctx, type StartResult } from "./reviewer";
+import {
+  execReview,
+  startReview,
+  type Ctx,
+  type StartResult,
+} from "./reviewer";
 import { offCommand, onCommand } from "./scheduler";
 import {
-  ensureState, loadState, normalizeKey, reconcileOrphans, setStatus, splitKey,
+  ensureState,
+  loadState,
+  normalizeKey,
+  reconcileOrphans,
+  setStatus,
+  splitKey,
 } from "./state";
 import { logCommand, statusCommand, watchCommand } from "./status";
 import { reconcile } from "./sync";
@@ -65,7 +80,9 @@ async function withCtx(fn: (ctx: Ctx) => Promise<number>): Promise<number> {
     ghEnv = { ...ghEnv, GH_TOKEN: t.token };
   }
   const ctx: Ctx = {
-    cfg, paths, log,
+    cfg,
+    paths,
+    log,
     gh: { gh: ghBin(), log, logPath: paths.logPath, env: ghEnv },
     counters: { started: 0, reviewed: 0, failed: 0, skipped: 0, synced: 0 },
     current: { key: "" },
@@ -73,7 +90,10 @@ async function withCtx(fn: (ctx: Ctx) => Promise<number>): Promise<number> {
   return fn(ctx);
 }
 
-async function withSignals(onSignal: () => void, fn: () => Promise<number>): Promise<number> {
+async function withSignals(
+  onSignal: () => void,
+  fn: () => Promise<number>,
+): Promise<number> {
   process.on("SIGINT", onSignal);
   process.on("SIGTERM", onSignal);
   try {
@@ -113,7 +133,10 @@ function resetCounters(ctx: Ctx): void {
 // review/retry don't take the poll lock: they only mark state and spawn a
 // runner, and double-starts are stopped by the live-pid checks. Holding the
 // lock would make them silently no-op whenever a poll cycle is in flight.
-async function runUnlocked(ctx: Ctx, fn: () => Promise<number>): Promise<number> {
+async function runUnlocked(
+  ctx: Ctx,
+  fn: () => Promise<number>,
+): Promise<number> {
   reconcileOrphans(ctx.paths.statePath, ctx.log);
   return fn();
 }
@@ -134,7 +157,9 @@ function keyArg(raw: string | undefined, usage: string): string | null {
 
 const startedMsg = (key: string, result: StartResult): number => {
   if (result === "started") {
-    console.log(`${key}: review started in the background — you'll get a notification; follow with: reviews watch`);
+    console.log(
+      `${key}: review started in the background — you'll get a notification; follow with: reviews watch`,
+    );
   } else if (result === "already-running") {
     console.log(`${key}: a review is already running`);
   }
@@ -165,7 +190,14 @@ const retryKey = (ctx: Ctx, key: string, note?: string): Promise<number> =>
       return 1;
     }
     const { repo } = splitKey(key);
-    const result = await startReview(ctx, key, repo, entry.title ?? "", entry.url ?? "", note);
+    const result = await startReview(
+      ctx,
+      key,
+      repo,
+      entry.title ?? "",
+      entry.url ?? "",
+      note,
+    );
     return startedMsg(key, result);
   });
 
@@ -177,15 +209,30 @@ const help: Command = async () => {
 const review: Command = (args) =>
   withCtx((ctx) =>
     runUnlocked(ctx, async () => {
-      const key = keyArg(args[0], "usage: reviews review ORG/REPO#NUM|URL [note]");
+      const key = keyArg(
+        args[0],
+        "usage: reviews review ORG/REPO#NUM|URL [note]",
+      );
       if (!key) return 1;
       const { repo, number } = splitKey(key);
-      const info = prView<{ title?: string; url?: string }>(ctx.gh, repo, number, "title,url");
+      const info = prView<{ title?: string; url?: string }>(
+        ctx.gh,
+        repo,
+        number,
+        "title,url",
+      );
       if (!info) {
         console.error(`cannot fetch ${key} from GitHub (does the PR exist?)`);
         return 1;
       }
-      const result = await startReview(ctx, key, repo, info.title ?? "", info.url ?? "", args[1]);
+      const result = await startReview(
+        ctx,
+        key,
+        repo,
+        info.title ?? "",
+        info.url ?? "",
+        args[1],
+      );
       return startedMsg(key, result);
     }),
   );
@@ -208,8 +255,15 @@ const exec: Command = (args) =>
     const onSignal = () => {
       ctx.current.child?.kill("SIGTERM");
       if (ctx.current.key) {
-        setStatus(ctx.paths.statePath, ctx.current.key, "canceled", "run interrupted");
-        ctx.log(`CANCELED ${ctx.current.key} (interrupted) — retry with: reviews retry ${ctx.current.key}`);
+        setStatus(
+          ctx.paths.statePath,
+          ctx.current.key,
+          "canceled",
+          "run interrupted",
+        );
+        ctx.log(
+          `CANCELED ${ctx.current.key} (interrupted) — retry with: reviews retry ${ctx.current.key}`,
+        );
       }
       process.exit(130);
     };
@@ -218,7 +272,8 @@ const exec: Command = (args) =>
 
 const sync: Command = () => withCtx(syncLocked);
 
-const poll: Command = (args) => withCtx((ctx) => pollLocked(ctx, args.includes("--dry-run")));
+const poll: Command = (args) =>
+  withCtx((ctx) => pollLocked(ctx, args.includes("--dry-run")));
 
 const dismiss: Command = (args) =>
   withCtx(async (ctx) => {
@@ -236,7 +291,9 @@ const doctor: Command = () => doctorCommand();
 const status: Command = () => withCtx((ctx) => statusCommand(ctx));
 const log: Command = (args) => {
   const n = Number(args[0] ?? 20);
-  return withCtx((ctx) => logCommand(ctx, Number.isFinite(n) && n >= 1 ? n : 20));
+  return withCtx((ctx) =>
+    logCommand(ctx, Number.isFinite(n) && n >= 1 ? n : 20),
+  );
 };
 const watch: Command = (args) =>
   withCtx(async (ctx) => {
@@ -249,7 +306,19 @@ const on: Command = () => withCtx((ctx) => onCommand(ctx));
 const off: Command = async () => offCommand();
 
 const commands: Record<string, Command> = {
-  help, review, retry, exec, sync, poll, dismiss, doctor, status, log, watch, on, off,
+  help,
+  review,
+  retry,
+  exec,
+  sync,
+  poll,
+  dismiss,
+  doctor,
+  status,
+  log,
+  watch,
+  on,
+  off,
 };
 
 async function main(): Promise<number> {

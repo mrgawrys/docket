@@ -1,14 +1,35 @@
 import { spawn } from "node:child_process";
-import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, rmSync, writeSync } from "node:fs";
+import {
+  appendFileSync,
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  rmSync,
+  writeSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
-import { claudeBin, claudeEnv, runLogPath, type Config, type Paths } from "./config";
+import {
+  claudeBin,
+  claudeEnv,
+  runLogPath,
+  type Config,
+  type Paths,
+} from "./config";
 import type { GhCtx } from "./github";
 import type { Logger } from "./log";
 import { notify } from "./notify";
 import { selfArgs } from "./proc";
 import { parseRunEvent, tailLines } from "./runlog";
 import {
-  isLiveReview, loadState, patchEntry, setStatus, splitKey, timestamp, updateEntry, type Entry,
+  isLiveReview,
+  loadState,
+  patchEntry,
+  setStatus,
+  splitKey,
+  timestamp,
+  updateEntry,
+  type Entry,
 } from "./state";
 
 // Everything the /code-review skill's agents run, read-only. Deliberately
@@ -56,9 +77,12 @@ export function cleanupEntry(ctx: Ctx, key: string, logPrefix: string): void {
   const path = loadState(ctx.paths.statePath)[key]?.local_path;
   const wt = prWorktree(number);
   if (!path || !existsSync(join(path, wt))) return;
-  const p = Bun.spawnSync(["git", "-C", path, "worktree", "remove", "--force", wt], {
-    stderr: "pipe",
-  });
+  const p = Bun.spawnSync(
+    ["git", "-C", path, "worktree", "remove", "--force", wt],
+    {
+      stderr: "pipe",
+    },
+  );
   appendFileSync(ctx.paths.logPath, p.stderr.toString());
   if (p.exitCode === 0) {
     ctx.log(`${logPrefix} ${key}: removed worktree ${path}/${wt}`);
@@ -70,10 +94,18 @@ export function cleanupEntry(ctx: Ctx, key: string, logPrefix: string): void {
 // Mark the PR as reviewing and hand it to a detached `reviews exec` runner.
 // Detached = own process group: ctrl+c on the caller and launchd's cleanup of
 // an exiting poll can't kill an in-flight review, and N runners go in parallel.
-export type StartResult = "started" | "skipped" | "already-running" | "spawn-failed";
+export type StartResult =
+  | "started"
+  | "skipped"
+  | "already-running"
+  | "spawn-failed";
 
 // The one no-local-clone skip policy, shared by spawner and runner.
-async function skipNoClone(ctx: Ctx, key: string, extra: Partial<Entry>): Promise<void> {
+async function skipNoClone(
+  ctx: Ctx,
+  key: string,
+  extra: Partial<Entry>,
+): Promise<void> {
   ctx.log(`SKIP ${key}: no local clone mapped`);
   patchEntry(ctx.paths.statePath, key, { status: "skipped", ...extra });
   await notify(ctx.cfg, "auto-review: no local clone", key);
@@ -103,14 +135,19 @@ export async function startReview(
   }
 
   updateEntry(statePath, key, () => ({
-    status: "reviewing", title, url, local_path: localPath,
-    ...(note !== undefined ? { note } : {}), updated_at: timestamp(),
+    status: "reviewing",
+    title,
+    url,
+    local_path: localPath,
+    ...(note !== undefined ? { note } : {}),
+    updated_at: timestamp(),
   }));
 
   const argv = selfArgs("exec", key);
   const fd = openSync(ctx.paths.logPath, "a");
   const child = spawn(argv[0]!, argv.slice(1), {
-    detached: true, stdio: ["ignore", fd, fd],
+    detached: true,
+    stdio: ["ignore", fd, fd],
     env: process.env as Record<string, string>,
   });
   child.unref();
@@ -153,10 +190,14 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
   }
 
   patchEntry(statePath, key, {
-    status: "reviewing", local_path: localPath, pid: process.pid,
+    status: "reviewing",
+    local_path: localPath,
+    pid: process.pid,
   });
   ctx.current.key = key;
-  ctx.log(`REVIEW ${key} in ${localPath} — headless /code-review running, this takes a few minutes`);
+  ctx.log(
+    `REVIEW ${key} in ${localPath} — headless /code-review running, this takes a few minutes`,
+  );
 
   // gh.env carries GH_TOKEN when gh_account is pinned — claude runs gh itself
   const env = { ...ctx.gh.env, ...claudeEnv(ctx.cfg) };
@@ -164,9 +205,16 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
   mkdirSync(dirname(runLog), { recursive: true });
   const proc = Bun.spawn(
     [
-      claudeBin(ctx.cfg), "-p", reviewPrompt(number, entry.note),
-      "--output-format", "stream-json", "--verbose", "--permission-mode", "dontAsk",
-      "--allowedTools", ALLOWED_TOOLS,
+      claudeBin(ctx.cfg),
+      "-p",
+      reviewPrompt(number, entry.note),
+      "--output-format",
+      "stream-json",
+      "--verbose",
+      "--permission-mode",
+      "dontAsk",
+      "--allowedTools",
+      ALLOWED_TOOLS,
     ],
     { cwd: localPath, env, stdout: "pipe", stderr: "pipe" },
   );
@@ -195,18 +243,28 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
   const url = entry.url ?? "";
   if (sessionId) {
     updateEntry(statePath, key, () => ({
-      status: "ready", session_id: sessionId, title, url,
-      local_path: localPath, updated_at: timestamp(),
+      status: "ready",
+      session_id: sessionId,
+      title,
+      url,
+      local_path: localPath,
+      updated_at: timestamp(),
     }));
     ctx.log(`READY ${key} session=${sessionId} — run \`reviews\` to open it`);
     await notify(ctx.cfg, `Review ready: ${key}`, title);
     ctx.counters.reviewed++;
   } else {
     updateEntry(statePath, key, () => ({
-      status: "failed", title, url, local_path: localPath,
-      error: "claude run failed, see auto-review.log", updated_at: timestamp(),
+      status: "failed",
+      title,
+      url,
+      local_path: localPath,
+      error: "claude run failed, see auto-review.log",
+      updated_at: timestamp(),
     }));
-    ctx.log(`FAILED ${key} — retry with: reviews retry ${key}, or check your setup: reviews doctor`);
+    ctx.log(
+      `FAILED ${key} — retry with: reviews retry ${key}, or check your setup: reviews doctor`,
+    );
     await notify(ctx.cfg, `Review FAILED: ${key}`, title);
     ctx.counters.failed++;
   }

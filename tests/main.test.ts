@@ -5,7 +5,11 @@ const MAIN = join(import.meta.dir, "..", "src", "main.ts");
 
 function cli(...args: string[]) {
   const p = Bun.spawnSync(["bun", MAIN, ...args]);
-  return { code: p.exitCode, out: p.stdout.toString(), err: p.stderr.toString() };
+  return {
+    code: p.exitCode,
+    out: p.stdout.toString(),
+    err: p.stderr.toString(),
+  };
 }
 
 test("help prints usage and exits 0", () => {
