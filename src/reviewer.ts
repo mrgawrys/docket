@@ -8,8 +8,11 @@ import { notify } from "./notify";
 import { pidAlive, selfArgs } from "./proc";
 import { loadState, splitKey, timestamp, updateEntry } from "./state";
 
+// Everything the /code-review skill's agents run, read-only. Deliberately
+// absent: `gh pr comment` and broad `gh api` — the headless run must never
+// post to GitHub; the user opens the ready session and posts themselves.
 export const ALLOWED_TOOLS =
-  "Read,Grep,Glob,Task,Agent,TodoWrite,Skill(code-review),Skill(code-review:code-review),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*),Bash(gh pr list:*),Bash(git log:*),Bash(git show:*),Bash(git diff:*),Bash(git fetch:*),Bash(git worktree:*),Bash(git checkout:*),Bash(git branch:*),Bash(cd:*),Bash(echo:*)";
+  "Read,Grep,Glob,Task,Agent,TodoWrite,Skill(code-review),Skill(code-review:code-review),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*),Bash(gh pr list:*),Bash(gh api user:*),Bash(gh search:*),Bash(gh issue view:*),Bash(gh issue list:*),Bash(git log:*),Bash(git show:*),Bash(git diff:*),Bash(git blame:*),Bash(git fetch:*),Bash(git worktree:*),Bash(git checkout:*),Bash(git branch:*),Bash(cd:*),Bash(echo:*)";
 
 export function reviewPrompt(number: string, note?: string): string {
   let p =
