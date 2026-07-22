@@ -104,3 +104,5 @@ network, no tokens.
 - `bun test` — run the test suite (fully mocked, no network, no tokens)
 - `bun run dev` — run the CLI from source, e.g. `bun run dev status`
 - `bun run build` — compile the `reviews` binary into `dist/`
+- `bun run format` — format with Biome (`format:check` is enforced in CI, and a
+  Claude Code hook in `.claude/settings.json` auto-formats agent edits)
