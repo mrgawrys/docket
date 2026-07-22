@@ -25,4 +25,4 @@ rm -f "$HOME/.config/fish/functions/reviews.fish"
 ln -sf "$HERE/fish/reviews-completions.fish" "$HOME/.config/fish/completions/reviews.fish"
 
 echo "install complete — make sure ~/.local/bin is on PATH,"
-echo "edit $CONFIG_DIR/config.json, then 'reviews on'"
+echo "edit $CONFIG_DIR/config.json, run 'reviews doctor', then 'reviews on'"

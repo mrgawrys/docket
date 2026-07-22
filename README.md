@@ -12,7 +12,9 @@ and switch the poller on/off.
 ## Requirements
 
 macOS (launchd + osascript), `bun`, `gh` (authenticated), the `claude`
-CLI, and a local clone of every repo you review.
+CLI with the code-review plugin
+(`claude plugin install code-review@claude-plugins-official`), and a local
+clone of every repo you review.
 
 ## Setup
 
@@ -39,12 +41,15 @@ CLI, and a local clone of every repo you review.
      are requested personally, or via any team not listed here, is always
      reviewed. Empty = review everything.
    - `notifications` — macOS notifications on review completion (default true)
-3. `reviews poll --dry-run` — read-only; lists what would be
+3. `reviews doctor` — checks the whole review chain (config, clones, gh
+   auth, claude, code-review plugin) and prints a fix for anything broken.
+   Every line should be ✓ before going further.
+4. `reviews poll --dry-run` — read-only; lists what would be
    reviewed. **Everything listed gets reviewed (and billed) once the poller
    is on.** Seed a pre-existing backlog as done first:
    `jq '."ORG/REPO#N" = {status: "done", note: "seeded"}' state.json > s && mv s state.json`
    (state lives in `~/.local/state/auto-review/`).
-4. `reviews on` — renders the launchd plist for this machine into
+5. `reviews on` — renders the launchd plist for this machine into
    `~/Library/LaunchAgents/` and loads it. `reviews status` to confirm.
 
 ## Day to day
@@ -58,7 +63,7 @@ CLI, and a local clone of every repo you review.
 - `reviews sync` — refresh entries from GitHub before listing: merged/closed
   PRs are dismissed (worktree removed), PRs you already reviewed show your
   verdict. The poller does the same refresh on every poll.
-- `reviews status | log [N] | watch | on | off | help`
+- `reviews doctor | status | log [N] | watch | on | off | help`
 - `reviews review ORG/REPO#N ["note"]` — force-review any PR (e.g.
   author pushed changes without re-requesting review); accepts PR URLs too.
   The note is passed to the reviewer as extra context.

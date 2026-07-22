@@ -8,6 +8,11 @@ const MAIN = join(import.meta.dir, "..", "src", "main.ts");
 // GH_PR_VIEW_FAIL, CLAUDE_FAIL. The claude shim records its calls, the
 // prompt, CLAUDE_CONFIG_DIR, and the state of testorg/demo#7 at call time.
 const GH_SHIM = `#!/usr/bin/env bash
+if [ "$1" = --version ]; then echo "gh version 0.0-test"; exit 0; fi
+if [ "$1" = auth ] && [ "$2" = status ]; then
+  [ "\${GH_AUTH_STATUS_FAIL:-0}" = 1 ] && { echo "not logged in" >&2; exit 1; }
+  echo "Logged in"; exit 0
+fi
 if [ "$1" = auth ] && [ "$2" = token ]; then
   [ "\${GH_AUTH_TOKEN_FAIL:-0}" = 1 ] && { echo "no such account" >&2; exit 1; }
   echo "tok-$4"; exit 0
@@ -49,6 +54,7 @@ JSON
 `;
 
 const CLAUDE_SHIM = `#!/usr/bin/env bash
+if [ "$1" = --version ]; then echo "claude 0.0-test"; exit 0; fi
 echo run >>"\${CLAUDE_CALLS:?}"
 [ "$1" = -p ] && printf '%s' "$2" >"\${PROMPT_CAPTURE:?}"
 printf '%s' "\${CLAUDE_CONFIG_DIR:-}" >"\${CFGDIR_CAPTURE:?}"
