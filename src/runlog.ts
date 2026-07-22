@@ -15,19 +15,31 @@ function toolLine(name: string, input: Record<string, unknown> = {}): string {
   return short ? `→ ${name}: ${short}` : `→ ${name}`;
 }
 
-// One stream-json line -> human-readable line(s); null for noise.
-export function renderRunEvent(line: string): string | null {
-  let ev: {
-    type?: string;
-    subtype?: string;
-    session_id?: string;
-    message?: { content?: ContentBlock[] };
-  };
+export interface RunEvent {
+  type?: string;
+  subtype?: string;
+  session_id?: string;
+  message?: { content?: ContentBlock[] };
+}
+
+// One line of a claude stream-json run log; null for non-JSON.
+export function parseRunEvent(line: string): RunEvent | null {
   try {
-    ev = JSON.parse(line);
+    return JSON.parse(line) as RunEvent;
   } catch {
     return null;
   }
+}
+
+export function tailLines(path: string, n: number): string[] {
+  if (!existsSync(path)) return [];
+  return readFileSync(path, "utf8").trimEnd().split("\n").filter(Boolean).slice(-n);
+}
+
+// One stream-json line -> human-readable line(s); null for noise.
+export function renderRunEvent(line: string): string | null {
+  const ev = parseRunEvent(line);
+  if (ev === null) return null;
   if (ev.type === "system" && ev.subtype === "init") {
     return `session started (${ev.session_id ?? "?"})`;
   }
@@ -49,11 +61,40 @@ export function renderRunEvent(line: string): string | null {
   return null;
 }
 
-// Print the rendered log so far, then follow it until Ctrl+C.
+// Follow a growing file until Ctrl+C, reporting new content as it appears.
+// `truncated` marks a shrink since the last chunk (a retry rewrote the file).
+// fromEnd starts at the current end instead of replaying existing content.
+export function followFile(
+  path: string,
+  onChunk: (text: string, truncated: boolean) => void,
+  opts: { fromEnd?: boolean } = {},
+): Promise<number> {
+  let seen = opts.fromEnd && existsSync(path) ? readFileSync(path, "utf8").length : 0;
+  let truncated = false;
+  const read = () => {
+    if (!existsSync(path)) return; // watchFile fires even for a missing file
+    const content = readFileSync(path, "utf8");
+    if (content.length < seen) {
+      seen = 0;
+      truncated = true;
+    }
+    if (content.length > seen) {
+      onChunk(content.slice(seen), truncated);
+      truncated = false;
+      seen = content.length;
+    }
+  };
+  read();
+  watchFile(path, { interval: 500 }, read);
+  return new Promise(() => {}); // runs until Ctrl+C
+}
+
+// Print the rendered run log so far, then follow it until Ctrl+C.
 export function followRunLog(path: string): Promise<number> {
-  let seen = 0;
   let carry = ""; // partial line the runner hasn't finished writing yet
-  const emit = (text: string) => {
+  if (!existsSync(path)) console.log(`waiting for review output (${path}) …`);
+  return followFile(path, (text, truncated) => {
+    if (truncated) carry = "";
     carry += text;
     const lines = carry.split("\n");
     carry = lines.pop() ?? "";
@@ -61,21 +102,5 @@ export function followRunLog(path: string): Promise<number> {
       const rendered = renderRunEvent(l);
       if (rendered !== null) console.log(rendered);
     }
-  };
-  const read = () => {
-    if (!existsSync(path)) return;
-    const content = readFileSync(path, "utf8");
-    if (content.length < seen) {
-      seen = 0; // truncated: a retry restarted the run log
-      carry = "";
-    }
-    if (content.length > seen) {
-      emit(content.slice(seen));
-      seen = content.length;
-    }
-  };
-  if (!existsSync(path)) console.log(`waiting for review output (${path}) …`);
-  read();
-  watchFile(path, { interval: 500 }, read);
-  return new Promise(() => {}); // runs until Ctrl+C
+  });
 }

@@ -1,8 +1,19 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { userInfo } from "node:os";
 import { join } from "node:path";
 import { selfArgs } from "./proc";
 import type { Ctx } from "./reviewer";
-import { launchdLabel } from "./status";
+
+export const launchdLabel = (): string => `com.${userInfo().username}.auto-review`;
+
+export function launchdLoaded(): boolean {
+  if (process.platform !== "darwin") return false;
+  const p = Bun.spawnSync(
+    ["launchctl", "print", `gui/${process.getuid!()}/${launchdLabel()}`],
+    { stdout: "ignore", stderr: "ignore" },
+  );
+  return p.exitCode === 0;
+}
 
 export function renderPlist(o: {
   label: string;
@@ -37,8 +48,6 @@ ${args}
 `;
 }
 
-export const pollProgramArgs = (): string[] => selfArgs("poll");
-
 const plistPath = (home: string) =>
   join(home, "Library", "LaunchAgents", `${launchdLabel()}.plist`);
 
@@ -58,7 +67,7 @@ export async function onCommand(ctx: Ctx): Promise<number> {
     target,
     renderPlist({
       label,
-      programArgs: pollProgramArgs(),
+      programArgs: selfArgs("poll"),
       interval: minutes * 60,
       stateDir: ctx.paths.stateDir,
       home,

@@ -85,22 +85,22 @@ export function updateEntry(
   });
 }
 
-export function setStatus(statePath: string, key: string, status: Status, error?: string): void {
+// Merge a patch over the existing entry (or a fresh one) and stamp updated_at,
+// so callers never hand-roll the missing-entry default or the timestamp.
+export function patchEntry(statePath: string, key: string, patch: Partial<Entry>): void {
   updateEntry(statePath, key, (e) => ({
     ...(e ?? { updated_at: "" }),
-    status,
+    ...patch,
     updated_at: timestamp(),
-    ...(error !== undefined ? { error } : {}),
-  }));
+  }) as Entry);
+}
+
+export function setStatus(statePath: string, key: string, status: Status, error?: string): void {
+  patchEntry(statePath, key, { status, ...(error !== undefined ? { error } : {}) });
 }
 
 export function markDone(statePath: string, key: string, reason: "merged" | "closed"): void {
-  updateEntry(statePath, key, (e) => ({
-    ...(e ?? { updated_at: "" }),
-    status: "done",
-    done_reason: reason,
-    updated_at: timestamp(),
-  }));
+  patchEntry(statePath, key, { status: "done", done_reason: reason });
 }
 
 export function markReviewed(
@@ -110,13 +110,22 @@ export function markReviewed(
   reviewedAt: string,
   flags: string[],
 ): void {
-  updateEntry(statePath, key, (e) => ({
-    ...(e ?? { updated_at: "" }),
-    status: verdict,
-    my_review_at: reviewedAt,
-    flags,
-    updated_at: timestamp(),
-  }));
+  patchEntry(statePath, key, { status: verdict, my_review_at: reviewedAt, flags });
+}
+
+// The one definition of "this review is running"; exceptPid lets the exec
+// runner ignore its own pid when checking for a rival.
+export function isLiveReview(e: Entry, exceptPid?: number): boolean {
+  return (
+    e.status === "reviewing" && e.pid !== undefined &&
+    e.pid !== exceptPid && pidAlive(e.pid)
+  );
+}
+
+export function liveRunners(s: State): string[] {
+  return Object.entries(s)
+    .filter(([, e]) => isLiveReview(e))
+    .map(([k]) => k);
 }
 
 export function pendingEntries(s: State): [string, Entry][] {
@@ -144,7 +153,7 @@ export function reconcileOrphans(statePath: string, log: Logger): void {
   const s = loadState(statePath);
   for (const [key, e] of Object.entries(s)) {
     if (e.status !== "reviewing") continue;
-    if (e.pid !== undefined && pidAlive(e.pid)) continue; // live background runner
+    if (isLiveReview(e)) continue; // live background runner
     // a just-spawned runner records its pid within moments — give it a grace period
     if (e.pid === undefined && Date.now() - Date.parse(e.updated_at) < 2 * 60_000) continue;
     setStatus(statePath, key, "failed", "previous run died mid-review");

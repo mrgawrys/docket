@@ -1,10 +1,9 @@
 import * as readline from "node:readline/promises";
-import { claudeBin, runLogPath, type Config } from "./config";
-import { pidAlive } from "./proc";
+import { claudeBin, claudeEnv, runLogPath, type Config } from "./config";
 import { cleanupEntry, type Ctx } from "./reviewer";
 import { followRunLog } from "./runlog";
 import {
-  loadState, pendingEntries, timestamp, updateEntry, type Entry, type State,
+  isLiveReview, liveRunners, loadState, pendingEntries, setStatus, type Entry, type State,
 } from "./state";
 
 export function renderList(s: State): { keys: string[]; lines: string[] } {
@@ -53,45 +52,33 @@ export function buildResume(
   if (!entry.session_id || !entry.local_path) {
     return { error: `no session (${entry.status}) — use r# to (re)run the review` };
   }
-  const env: Record<string, string> = {};
-  if (cfg.claude_config_dir) env.CLAUDE_CONFIG_DIR = cfg.claude_config_dir;
   return {
     argv: [claudeBin(cfg), "--resume", entry.session_id],
     cwd: entry.local_path,
-    env,
+    env: claudeEnv(cfg),
   };
 }
 
 export function dismissKey(ctx: Ctx, key: string): void {
-  updateEntry(ctx.paths.statePath, key, (e) => ({
-    ...(e ?? { updated_at: "" }),
-    status: "done",
-    updated_at: timestamp(),
-  }));
+  setStatus(ctx.paths.statePath, key, "done");
   cleanupEntry(ctx, key, "DISMISS");
   console.log(`dismissed ${key}`);
 }
 
 export function killEntry(ctx: Ctx, key: string): number {
   const e = loadState(ctx.paths.statePath)[key];
-  if (!e || e.status !== "reviewing" || e.pid === undefined || !pidAlive(e.pid)) {
+  if (!e || !isLiveReview(e)) {
     console.error(`${key}: no live review to kill`);
     return 1;
   }
   try {
-    process.kill(e.pid, "SIGTERM"); // the runner's handler marks the entry canceled
+    process.kill(e.pid!, "SIGTERM"); // the runner's handler marks the entry canceled
   } catch {
     console.error(`${key}: runner already exited`); // reconcileOrphans will settle the entry
     return 1;
   }
   console.log(`${key}: killed — it will show as canceled; r# re-runs it`);
   return 0;
-}
-
-export function liveRunners(state: State): string[] {
-  return Object.entries(state)
-    .filter(([, e]) => e.status === "reviewing" && e.pid !== undefined && pidAlive(e.pid))
-    .map(([k]) => k);
 }
 
 export interface ListActions {

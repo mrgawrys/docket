@@ -1,8 +1,9 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import {
-  ConfigError, claudeBin, ghBin, loadConfig, paths as resolvePaths,
+  ConfigError, claudeBin, claudeEnv, ghBin, loadConfig, paths as resolvePaths,
 } from "./config";
+import { ghAccountToken } from "./github";
 
 interface RunResult {
   ok: boolean;
@@ -69,8 +70,9 @@ export async function doctorCommand(): Promise<number> {
   }
 
   if (cfg.gh_account) {
-    const token = runs([gh, "auth", "token", "--user", cfg.gh_account]);
-    if (token.ok && token.out) {
+    // the exact resolution path withCtx uses — doctor must not drift from it
+    const token = ghAccountToken(gh, cfg.gh_account);
+    if ("token" in token) {
       pass(`gh account pin: token resolves for '${cfg.gh_account}'`);
     } else {
       fail(
@@ -81,8 +83,7 @@ export async function doctorCommand(): Promise<number> {
   }
 
   const claude = claudeBin(cfg);
-  const claudeEnv = cfg.claude_config_dir ? { CLAUDE_CONFIG_DIR: cfg.claude_config_dir } : {};
-  if (runs([claude, "--version"], claudeEnv).ok) {
+  if (runs([claude, "--version"], claudeEnv(cfg)).ok) {
     pass(`claude: ${claude} runs`);
   } else {
     fail(`claude: ${claude} not runnable`, "install Claude Code, or set claude_bin in config.json");

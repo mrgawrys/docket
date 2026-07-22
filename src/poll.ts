@@ -26,11 +26,13 @@ export async function pollCycle(ctx: Ctx, dry: boolean): Promise<void> {
   const ignored = ctx.cfg.ignored_teams ?? [];
   // membership is stable within a cycle — fetch it at most once, lazily
   let me: { login: string | null; teams: string[] | null } | null = null;
+  // snapshot is safe: each candidate key appears at most once per cycle
+  const known = loadState(ctx.paths.statePath);
 
   for (const org of ctx.cfg.orgs) {
     for (const c of searchReviewRequests(ctx.gh, org)) {
       const key = `${c.repo}#${c.number}`;
-      if (loadState(ctx.paths.statePath)[key]) continue; // known PR — never re-review
+      if (known[key]) continue; // known PR — never re-review
       if (ignored.length > 0) {
         me ??= { login: ghUser(ctx.gh), teams: myTeams(ctx.gh) };
         const req = reviewRequesters(ctx.gh, c.repo, String(c.number));

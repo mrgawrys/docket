@@ -1,5 +1,7 @@
-export async function notify(enabled: boolean, title: string, body: string): Promise<void> {
-  if (!enabled || process.platform !== "darwin") return;
+import { notifyEnabled, type Config } from "./config";
+
+export async function notify(cfg: Config, title: string, body: string): Promise<void> {
+  if (!notifyEnabled(cfg) || process.platform !== "darwin") return;
   const strip = (s: string) => s.replaceAll('"', "");
   const script = `display notification "${strip(body)}" with title "${strip(title)}"`;
   try {

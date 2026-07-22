@@ -1,13 +1,9 @@
-import { existsSync, readFileSync, statSync, watchFile } from "node:fs";
-import { userInfo } from "node:os";
-import { join } from "node:path";
 import { runLogPath } from "./config";
-import { liveRunners } from "./list";
+import { lockHolderPid } from "./lock";
 import type { Ctx } from "./reviewer";
-import { followRunLog } from "./runlog";
-import { loadState, normalizeKey, type State } from "./state";
-
-export const launchdLabel = (): string => `com.${userInfo().username}.auto-review`;
+import { followFile, followRunLog, tailLines } from "./runlog";
+import { launchdLoaded } from "./scheduler";
+import { liveRunners, loadState, type State } from "./state";
 
 export function stateCounts(s: State): string {
   const entries = Object.values(s);
@@ -20,33 +16,14 @@ export function stateCounts(s: State): string {
     .join(", ");
 }
 
-function launchdLoaded(): boolean {
-  if (process.platform !== "darwin") return false;
-  const p = Bun.spawnSync(
-    ["launchctl", "print", `gui/${process.getuid!()}/${launchdLabel()}`],
-    { stdout: "ignore", stderr: "ignore" },
-  );
-  return p.exitCode === 0;
-}
-
-function tailLines(path: string, n: number): string[] {
-  if (!existsSync(path)) return [];
-  return readFileSync(path, "utf8").trimEnd().split("\n").filter(Boolean).slice(-n);
-}
-
 export async function statusCommand(ctx: Ctx): Promise<number> {
   console.log(
     launchdLoaded()
       ? "poller:  ON (launchd) — 'reviews off' to disable"
       : "poller:  OFF — 'reviews on' to enable, or run 'reviews poll' manually",
   );
-  try {
-    const pid = Number(readFileSync(join(ctx.paths.lockDir, "pid"), "utf8").trim());
-    process.kill(pid, 0);
-    console.log(`poll:    running right now (pid ${pid})`);
-  } catch {
-    // no live poll
-  }
+  const pollPid = lockHolderPid(ctx.paths.lockDir);
+  if (pollPid !== null) console.log(`poll:    running right now (pid ${pollPid})`);
   const s = loadState(ctx.paths.statePath);
   const running = liveRunners(s);
   if (running.length) console.log(`running: ${running.join(", ")}`);
@@ -61,29 +38,10 @@ export async function logCommand(ctx: Ctx, n: number): Promise<number> {
   return 0;
 }
 
-export async function watchCommand(ctx: Ctx, rawKey?: string): Promise<number> {
-  if (rawKey !== undefined) {
-    let key: string;
-    try {
-      key = normalizeKey(rawKey);
-    } catch (e) {
-      console.error((e as Error).message);
-      return 1;
-    }
-    return followRunLog(runLogPath(ctx.paths, key));
-  }
+// `key` arrives already normalized — main.ts owns argument parsing.
+export async function watchCommand(ctx: Ctx, key?: string): Promise<number> {
+  if (key !== undefined) return followRunLog(runLogPath(ctx.paths, key));
   const path = ctx.paths.logPath;
   for (const line of tailLines(path, 10)) console.log(line);
-  let offset = existsSync(path) ? statSync(path).size : 0;
-  watchFile(path, { interval: 500 }, () => {
-    if (!existsSync(path)) return; // fires even for a missing file (fresh install, log deleted mid-watch)
-    const size = statSync(path).size;
-    if (size < offset) offset = 0; // log rotated/truncated
-    if (size > offset) {
-      const fd = readFileSync(path, "utf8");
-      process.stdout.write(fd.slice(offset));
-      offset = size;
-    }
-  });
-  return new Promise(() => {}); // runs until Ctrl+C
+  return followFile(path, (text) => process.stdout.write(text), { fromEnd: true });
 }

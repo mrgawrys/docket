@@ -66,6 +66,11 @@ export const claudeBin = (cfg: Config, env: NodeJS.ProcessEnv = process.env): st
 
 export const ghBin = (env: NodeJS.ProcessEnv = process.env): string => env.GH_BIN ?? "gh";
 
+// Env every claude invocation needs (review runs, resumes, doctor's check) —
+// a missed spot here would give them silently different claude setups.
+export const claudeEnv = (cfg: Config): Record<string, string> =>
+  cfg.claude_config_dir ? { CLAUDE_CONFIG_DIR: cfg.claude_config_dir } : {};
+
 export const runLogPath = (p: Paths, key: string): string =>
   join(p.stateDir, "runs", key.replace(/[/#]/g, "-") + ".jsonl");
 

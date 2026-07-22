@@ -2,7 +2,7 @@
 
 import { ConfigError, ghBin, loadConfig, paths as resolvePaths } from "./config";
 import { doctorCommand } from "./doctor";
-import { prView } from "./github";
+import { ghAccountToken, prView } from "./github";
 import { makeLogger } from "./log";
 import { acquireLock } from "./lock";
 import { dismissKey, interactiveList } from "./list";
@@ -36,13 +36,6 @@ Usage:
 
 type Command = (args: string[]) => Promise<number>;
 
-export const commands: Record<string, Command> = {
-  help: async () => {
-    console.log(USAGE);
-    return 0;
-  },
-};
-
 async function withCtx(fn: (ctx: Ctx) => Promise<number>): Promise<number> {
   const paths = resolvePaths();
   let cfg;
@@ -61,18 +54,15 @@ async function withCtx(fn: (ctx: Ctx) => Promise<number>): Promise<number> {
   if (cfg.gh_account) {
     // pin every gh call (and claude's gh calls) to one account — the poller
     // must not depend on whichever account `gh auth switch` left active
-    const p = Bun.spawnSync([ghBin(), "auth", "token", "--user", cfg.gh_account], {
-      stderr: "pipe",
-    });
-    const token = p.stdout.toString().trim();
-    if (p.exitCode !== 0 || !token) {
+    const t = ghAccountToken(ghBin(), cfg.gh_account);
+    if ("error" in t) {
       console.error(
         `cannot resolve a token for gh account '${cfg.gh_account}' — ` +
-          `run: gh auth login (then gh auth status)\n${p.stderr.toString()}`,
+          `run: gh auth login (then gh auth status)\n${t.error}`,
       );
       return 1;
     }
-    ghEnv = { ...ghEnv, GH_TOKEN: token };
+    ghEnv = { ...ghEnv, GH_TOKEN: t.token };
   }
   const ctx: Ctx = {
     cfg, paths, log,
@@ -81,6 +71,17 @@ async function withCtx(fn: (ctx: Ctx) => Promise<number>): Promise<number> {
     current: { key: "" },
   };
   return fn(ctx);
+}
+
+async function withSignals(onSignal: () => void, fn: () => Promise<number>): Promise<number> {
+  process.on("SIGINT", onSignal);
+  process.on("SIGTERM", onSignal);
+  try {
+    return await fn();
+  } finally {
+    process.off("SIGINT", onSignal);
+    process.off("SIGTERM", onSignal);
+  }
 }
 
 // Reviews themselves run detached, so lock holders are always short-lived:
@@ -93,15 +94,13 @@ async function runLocked(ctx: Ctx, fn: () => Promise<number>): Promise<number> {
     release();
     process.exit(130);
   };
-  process.on("SIGINT", onSignal);
-  process.on("SIGTERM", onSignal);
   try {
-    reconcileOrphans(ctx.paths.statePath, ctx.log);
-    return await fn();
+    return await withSignals(onSignal, async () => {
+      reconcileOrphans(ctx.paths.statePath, ctx.log);
+      return fn();
+    });
   } finally {
     release();
-    process.off("SIGINT", onSignal);
-    process.off("SIGTERM", onSignal);
   }
 }
 
@@ -119,6 +118,20 @@ async function runUnlocked(ctx: Ctx, fn: () => Promise<number>): Promise<number>
   return fn();
 }
 
+// Normalize a PR argument, printing the usage/parse error itself; null = bail.
+function keyArg(raw: string | undefined, usage: string): string | null {
+  if (!raw) {
+    console.error(usage);
+    return null;
+  }
+  try {
+    return normalizeKey(raw);
+  } catch (e) {
+    console.error((e as Error).message);
+    return null;
+  }
+}
+
 const startedMsg = (key: string, result: StartResult): number => {
   if (result === "started") {
     console.log(`${key}: review started in the background — you'll get a notification; follow with: reviews watch`);
@@ -128,21 +141,44 @@ const startedMsg = (key: string, result: StartResult): number => {
   return result === "spawn-failed" ? 1 : 0;
 };
 
-commands["review"] = (args) =>
+// Cycle bodies shared by the subcommands and the interactive menu.
+const pollLocked = (ctx: Ctx, dry: boolean): Promise<number> =>
+  runLocked(ctx, async () => {
+    resetCounters(ctx);
+    await pollCycle(ctx, dry);
+    return 0;
+  });
+
+const syncLocked = (ctx: Ctx): Promise<number> =>
+  runLocked(ctx, async () => {
+    resetCounters(ctx);
+    reconcile(ctx);
+    ctx.log(`sync complete: ${ctx.counters.synced} updated`);
+    return 0;
+  });
+
+const retryKey = (ctx: Ctx, key: string, note?: string): Promise<number> =>
+  runUnlocked(ctx, async () => {
+    const entry = loadState(ctx.paths.statePath)[key];
+    if (!entry) {
+      console.error(`unknown key: ${key}`);
+      return 1;
+    }
+    const { repo } = splitKey(key);
+    const result = await startReview(ctx, key, repo, entry.title ?? "", entry.url ?? "", note);
+    return startedMsg(key, result);
+  });
+
+const help: Command = async () => {
+  console.log(USAGE);
+  return 0;
+};
+
+const review: Command = (args) =>
   withCtx((ctx) =>
     runUnlocked(ctx, async () => {
-      const raw = args[0];
-      if (!raw) {
-        console.error("usage: reviews review ORG/REPO#NUM|URL [note]");
-        return 1;
-      }
-      let key: string;
-      try {
-        key = normalizeKey(raw);
-      } catch (e) {
-        console.error((e as Error).message);
-        return 1;
-      }
+      const key = keyArg(args[0], "usage: reviews review ORG/REPO#NUM|URL [note]");
+      if (!key) return 1;
       const { repo, number } = splitKey(key);
       const info = prView<{ title?: string; url?: string }>(ctx.gh, repo, number, "title,url");
       if (!info) {
@@ -154,39 +190,20 @@ commands["review"] = (args) =>
     }),
   );
 
-commands["retry"] = (args) =>
-  withCtx((ctx) =>
-    runUnlocked(ctx, async () => {
-      const raw = args[0];
-      if (!raw) {
-        console.error("usage: reviews retry ORG/REPO#NUM [note]");
-        return 1;
-      }
-      let key: string;
-      try {
-        key = normalizeKey(raw);
-      } catch (e) {
-        console.error((e as Error).message);
-        return 1;
-      }
-      const entry = loadState(ctx.paths.statePath)[key];
-      if (!entry) {
-        console.error(`unknown key: ${key}`);
-        return 1;
-      }
-      const { repo } = splitKey(key);
-      const result = await startReview(ctx, key, repo, entry.title ?? "", entry.url ?? "", args[1]);
-      return startedMsg(key, result);
-    }),
-  );
+const retry: Command = (args) =>
+  withCtx(async (ctx) => {
+    const key = keyArg(args[0], "usage: reviews retry ORG/REPO#NUM [note]");
+    if (!key) return 1;
+    return retryKey(ctx, key, args[1]);
+  });
 
 // internal: the detached runner `startReview` spawns — one foreground review
-commands["exec"] = (args) =>
-  withCtx(async (ctx) => {
+const exec: Command = (args) =>
+  withCtx((ctx) => {
     const key = args[0];
     if (!key) {
       console.error("usage: reviews exec ORG/REPO#NUM");
-      return 1;
+      return Promise.resolve(1);
     }
     const onSignal = () => {
       ctx.current.child?.kill("SIGTERM");
@@ -196,47 +213,17 @@ commands["exec"] = (args) =>
       }
       process.exit(130);
     };
-    process.on("SIGINT", onSignal);
-    process.on("SIGTERM", onSignal);
-    try {
-      return await execReview(ctx, key);
-    } finally {
-      process.off("SIGINT", onSignal);
-      process.off("SIGTERM", onSignal);
-    }
+    return withSignals(onSignal, () => execReview(ctx, key));
   });
 
-commands["sync"] = () =>
-  withCtx((ctx) =>
-    runLocked(ctx, async () => {
-      reconcile(ctx);
-      ctx.log(`sync complete: ${ctx.counters.synced} updated`);
-      return 0;
-    }),
-  );
+const sync: Command = () => withCtx(syncLocked);
 
-commands["poll"] = (args) =>
-  withCtx((ctx) =>
-    runLocked(ctx, async () => {
-      await pollCycle(ctx, args.includes("--dry-run"));
-      return 0;
-    }),
-  );
+const poll: Command = (args) => withCtx((ctx) => pollLocked(ctx, args.includes("--dry-run")));
 
-commands["dismiss"] = (args) =>
+const dismiss: Command = (args) =>
   withCtx(async (ctx) => {
-    const raw = args[0];
-    if (!raw) {
-      console.error("usage: reviews dismiss ORG/REPO#NUM");
-      return 1;
-    }
-    let key: string;
-    try {
-      key = normalizeKey(raw);
-    } catch (e) {
-      console.error((e as Error).message);
-      return 1;
-    }
+    const key = keyArg(args[0], "usage: reviews dismiss ORG/REPO#NUM");
+    if (!key) return 1;
     if (!loadState(ctx.paths.statePath)[key]) {
       console.error(`unknown key: ${key}`);
       return 1;
@@ -245,38 +232,37 @@ commands["dismiss"] = (args) =>
     return 0;
   });
 
-commands["doctor"] = () => doctorCommand();
-commands["status"] = () => withCtx((ctx) => statusCommand(ctx));
-commands["log"] = (args) => {
+const doctor: Command = () => doctorCommand();
+const status: Command = () => withCtx((ctx) => statusCommand(ctx));
+const log: Command = (args) => {
   const n = Number(args[0] ?? 20);
   return withCtx((ctx) => logCommand(ctx, Number.isFinite(n) && n >= 1 ? n : 20));
 };
-commands["watch"] = (args) => withCtx((ctx) => watchCommand(ctx, args[0]));
-commands["on"] = () => withCtx((ctx) => onCommand(ctx));
-commands["off"] = async () => offCommand();
+const watch: Command = (args) =>
+  withCtx(async (ctx) => {
+    if (args[0] === undefined) return watchCommand(ctx);
+    const key = keyArg(args[0], "usage: reviews watch [ORG/REPO#NUM|URL]");
+    if (!key) return 1;
+    return watchCommand(ctx, key);
+  });
+const on: Command = () => withCtx((ctx) => onCommand(ctx));
+const off: Command = async () => offCommand();
+
+const commands: Record<string, Command> = {
+  help, review, retry, exec, sync, poll, dismiss, doctor, status, log, watch, on, off,
+};
 
 async function main(): Promise<number> {
   const [cmd, ...rest] = Bun.argv.slice(2);
   if (cmd === undefined)
     return withCtx((ctx) =>
       interactiveList(ctx, {
-        retry: (key) => commands["retry"]!([key]),
-        poll: () =>
-          runLocked(ctx, async () => {
-            resetCounters(ctx);
-            await pollCycle(ctx, false);
-            return 0;
-          }),
-        sync: () =>
-          runLocked(ctx, async () => {
-            resetCounters(ctx);
-            reconcile(ctx);
-            ctx.log(`sync complete: ${ctx.counters.synced} updated`);
-            return 0;
-          }),
+        retry: (key) => retryKey(ctx, key),
+        poll: () => pollLocked(ctx, false),
+        sync: () => syncLocked(ctx),
       }),
     );
-  if (cmd === "-h" || cmd === "--help") return commands["help"]!([]);
+  if (cmd === "-h" || cmd === "--help") return help([]);
   const fn = commands[cmd];
   if (!fn) {
     console.error(`unknown subcommand: ${cmd} (try: reviews help)`);

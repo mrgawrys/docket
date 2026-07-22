@@ -6,6 +6,20 @@ export interface GhCtx {
   log: Logger;
   logPath: string;
   env: Record<string, string>;
+  login?: string; // cached by ghUser — the login can't change within a process
+}
+
+// Resolve a token for a pinned gh account. The single code path both withCtx
+// (to set GH_TOKEN) and doctor (to verify that exact setup) go through.
+export function ghAccountToken(gh: string, account: string): { token: string } | { error: string } {
+  try {
+    const p = Bun.spawnSync([gh, "auth", "token", "--user", account], { stderr: "pipe" });
+    const token = p.stdout.toString().trim();
+    if (p.exitCode !== 0 || !token) return { error: p.stderr.toString() };
+    return { token };
+  } catch {
+    return { error: `cannot run ${gh}` };
+  }
 }
 
 export interface Candidate {
@@ -24,8 +38,10 @@ function gh(ctx: GhCtx, args: string[]): string | null {
 }
 
 export function ghUser(ctx: GhCtx): string | null {
+  if (ctx.login !== undefined) return ctx.login;
   const out = gh(ctx, ["api", "user", "--jq", ".login"]);
   const login = out?.trim();
+  if (login) ctx.login = login; // only cache success — a flaky call can retry
   return login ? login : null;
 }
 
@@ -53,14 +69,13 @@ export function searchReviewRequests(ctx: GhCtx, org: string): Candidate[] {
     "--owner", org, "--limit", "100",
     "--json", "number,title,url,isDraft,repository",
   ]);
-  if (out === null) {
-    ctx.log(`gh search failed for org ${org}`);
-    return [];
-  }
-  let rows: SearchRow[];
+  let rows: SearchRow[] | null = null;
   try {
-    rows = JSON.parse(out) as SearchRow[];
+    if (out !== null) rows = JSON.parse(out) as SearchRow[];
   } catch {
+    // fall through to the failure path
+  }
+  if (rows === null) {
     ctx.log(`gh search failed for org ${org}`);
     return [];
   }
