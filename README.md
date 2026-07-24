@@ -52,8 +52,15 @@ that doesn't need it. `reviews doctor` enforces exactly this.
      in CLAUDE.md, if any); auto-review discovers it afterwards and removes it
      on dismiss. Tokens `{number}` and `{repo}` (org/repo) are substituted; a
      prompt with no token is used as-is. A prompt that doesn't run
-     `/code-review` needs no plugin (doctor checks this). The tool allowlist
-     is unchanged either way — reviews stay read-only and never post to GitHub.
+     `/code-review` needs no plugin (doctor checks this).
+   - `extra_allowed_tools` — entries appended to the built-in tool allowlist
+     for the headless run, in claude's `--allowedTools` grammar (e.g.
+     `"Bash(bun test:*)"`, `"Skill(my-review)"`). Needed when a custom
+     `review_prompt` uses tools the baseline doesn't cover — headless runs
+     can't prompt, so anything outside the allowlist is silently denied. The
+     baseline is read-only and never posts to GitHub; entries you add here run
+     without prompts, so adding posting tools (e.g. `Bash(gh pr comment:*)`)
+     gives that guarantee up knowingly. Empty = baseline only.
 3. `reviews doctor` — checks the whole review chain (config, clones, gh
    auth, claude, code-review plugin) and prints a fix for anything broken.
    Every line should be ✓ before going further.

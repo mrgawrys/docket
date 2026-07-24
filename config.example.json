@@ -10,5 +10,6 @@
   "gh_account": "",
   "ignored_teams": [],
   "notifications": true,
-  "review_prompt": "Review the PR by running /code-review {number}."
+  "review_prompt": "Review the PR by running /code-review {number}.",
+  "extra_allowed_tools": []
 }
