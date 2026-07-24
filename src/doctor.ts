@@ -104,6 +104,12 @@ export async function doctorCommand(): Promise<number> {
     );
   }
 
+  // Extras run without prompts in the headless review — surface them so the
+  // config's effective allowlist is visible at a glance.
+  if (cfg.extra_allowed_tools?.length) {
+    pass(`extra allowed tools: ${cfg.extra_allowed_tools.length} configured`);
+  }
+
   // A blank review_prompt runs the default (which needs the plugin) but is
   // almost certainly a mistake — flag it so the config reads honestly.
   if (cfg.review_prompt !== undefined && !cfg.review_prompt.trim()) {

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
-import type { Config } from "../src/config";
+import { ALLOWED_TOOLS, type Config } from "../src/config";
 import { reviewPrompt } from "../src/reviewer";
 import { makeSandbox } from "./harness";
 
@@ -121,6 +121,27 @@ test("review + retry command family", async () => {
   e = await sb.waitEntry("testorg/demo#50", (x) => x.status === "ready");
   expect(e.session_id).toBe("sess-1234");
   expect(sb.run(["retry", "nope/nope#1"]).code).not.toBe(0);
+});
+
+test("extra_allowed_tools land in claude's --allowedTools after the baseline", async () => {
+  const sb = makeSandbox();
+  sb.writeConfig({
+    orgs: ["testorg"],
+    repos: { "testorg/demo": sb.demoRepo },
+    extra_allowed_tools: ["Bash(bun test:*)", "Skill(my-review)"],
+  });
+  expect(sb.run(["review", "testorg/demo#7"]).code).toBe(0);
+  await sb.waitEntry("testorg/demo#7", (x) => x.status === "ready");
+  expect(sb.allowedCapture()).toBe(
+    `${ALLOWED_TOOLS},Bash(bun test:*),Skill(my-review)`,
+  );
+});
+
+test("no extra_allowed_tools → claude gets exactly the baseline allowlist", async () => {
+  const sb = makeSandbox();
+  expect(sb.run(["review", "testorg/demo#7"]).code).toBe(0);
+  await sb.waitEntry("testorg/demo#7", (x) => x.status === "ready");
+  expect(sb.allowedCapture()).toBe(ALLOWED_TOOLS);
 });
 
 test("scenario 9: missing config errors, pointing at config.example.json", () => {

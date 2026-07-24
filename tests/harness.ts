@@ -67,6 +67,11 @@ const CLAUDE_SHIM = `#!/usr/bin/env bash
 if [ "$1" = --version ]; then echo "claude 0.0-test"; exit 0; fi
 echo run >>"\${CLAUDE_CALLS:?}"
 [ "$1" = -p ] && printf '%s' "$2" >"\${PROMPT_CAPTURE:?}"
+prev=""
+for a in "$@"; do
+  [ "$prev" = --allowedTools ] && printf '%s' "$a" >"\${ALLOWED_CAPTURE:?}"
+  prev="$a"
+done
 printf '%s' "\${CLAUDE_CONFIG_DIR:-}" >"\${CFGDIR_CAPTURE:?}"
 printf '%s' "\${GH_TOKEN:-}" >"\${GHTOKEN_CAPTURE:?}"
 bun -e 'const fs=require("fs");let s={};try{s=JSON.parse(fs.readFileSync(process.env.AUTO_REVIEW_STATE_DIR+"/state.json","utf8"))}catch{};console.log((s["testorg/demo#7"]||{}).status||"absent")' >"\${STATUS_AT_CALL:?}"
@@ -104,6 +109,7 @@ export interface Sandbox {
   writeState(s: unknown): void;
   claudeCalls(): number;
   promptCapture(): string;
+  allowedCapture(): string;
   cfgdirCapture(): string;
   ghTokenCapture(): string;
   statusAtCall(): string;
@@ -139,6 +145,7 @@ export function makeSandbox(): Sandbox {
     GH_BIN: ghShim,
     CLAUDE_CALLS: capture("claude-calls"),
     PROMPT_CAPTURE: capture("prompt-capture"),
+    ALLOWED_CAPTURE: capture("allowed-capture"),
     CFGDIR_CAPTURE: capture("cfgdir-capture"),
     GHTOKEN_CAPTURE: capture("ghtoken-capture"),
     STATUS_AT_CALL: capture("status-at-call"),
@@ -209,6 +216,7 @@ export function makeSandbox(): Sandbox {
       readFileSync(env.CLAUDE_CALLS!, "utf8").split("\n").filter(Boolean)
         .length,
     promptCapture: () => readFileSync(env.PROMPT_CAPTURE!, "utf8"),
+    allowedCapture: () => readFileSync(env.ALLOWED_CAPTURE!, "utf8"),
     cfgdirCapture: () => readFileSync(env.CFGDIR_CAPTURE!, "utf8"),
     ghTokenCapture: () => readFileSync(env.GHTOKEN_CAPTURE!, "utf8"),
     statusAtCall: () => readFileSync(env.STATUS_AT_CALL!, "utf8").trim(),

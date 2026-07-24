@@ -126,6 +126,34 @@ test("doctor: code-review plugin missing → ✗ with install one-liner", () => 
   );
 });
 
+test("doctor: extra_allowed_tools configured → ✓ reports how many", () => {
+  const sb = makeSandbox();
+  sb.gitInitDemo();
+  sb.writeConfig({
+    orgs: ["testorg"],
+    repos: { "testorg/demo": sb.demoRepo },
+    claude_config_dir: claudeHome(sb, true),
+    extra_allowed_tools: ["Bash(bun test:*)", "Skill(my-review)"],
+  });
+  const r = sb.run(["doctor"]);
+  expect(r.code).toBe(0);
+  expect(r.out).toMatch(/✓.*extra allowed tools: 2/);
+});
+
+test("doctor: malformed extra_allowed_tools fails the config check", () => {
+  const sb = makeSandbox();
+  sb.gitInitDemo();
+  sb.writeConfig({
+    orgs: ["testorg"],
+    repos: { "testorg/demo": sb.demoRepo },
+    extra_allowed_tools: "Bash(bun test:*)",
+  });
+  const r = sb.run(["doctor"]);
+  expect(r.code).toBe(1);
+  expect(r.out).toMatch(/✗.*config/);
+  expect(r.out).toContain("extra_allowed_tools");
+});
+
 test("doctor: custom review_prompt without /code-review → plugin not required", () => {
   const sb = makeSandbox();
   sb.gitInitDemo();
