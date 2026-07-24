@@ -58,9 +58,12 @@ Add `review_prompt?: string` to the `Config` interface (`src/config.ts`).
   to enforce it (it only validates `orgs`/`repos` today), so `reviewPrompt`
   falls back to the default and `doctor` reports it (see below).
 
-The default string lives in **one** exported constant in `reviewer.ts`
-(`DEFAULT_REVIEW_PROMPT`) so `config.ts`, the example, doctor, and tests all
-reference the same source of truth.
+The default string lives in **one** exported constant, `DEFAULT_REVIEW_PROMPT`
+in `config.ts` (alongside an `effectiveReviewPrompt(cfg)` resolver), so the
+example, `reviewPrompt`, doctor, and tests all reference the same source of
+truth. It sits in `config.ts` rather than `reviewer.ts` because doctor already
+imports config and stays deliberately light; `reviewer.ts` would drag the whole
+runner graph into doctor.
 
 ### Doctor
 

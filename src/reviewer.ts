@@ -12,6 +12,7 @@ import { dirname, join } from "node:path";
 import {
   claudeBin,
   claudeEnv,
+  effectiveReviewPrompt,
   runLogPath,
   type Config,
   type Paths,
@@ -42,13 +43,25 @@ export const ALLOWED_TOOLS =
 // to create it here and cleanupEntry removes it; one definition keeps them in sync.
 export const prWorktree = (number: string): string => `.worktrees/pr-${number}`;
 
-export function reviewPrompt(number: string, note?: string): string {
+// Fixed worktree hygiene wraps a configurable task body. The preamble (create
+// the worktree, inspect only inside it) and the suffix (keep it afterwards) are
+// a contract with cleanupEntry and are NOT configurable; only the middle is.
+export function reviewPrompt(
+  number: string,
+  repo: string,
+  cfg: Config,
+  note?: string,
+): string {
+  const body = effectiveReviewPrompt(cfg)
+    .replaceAll("{number}", number)
+    .replaceAll("{repo}", repo)
+    .replaceAll("{worktree}", prWorktree(number));
   let p =
     `Create a git worktree for PR #${number} at ${prWorktree(number)} ` +
     `(fetch the PR branch first). Do ALL branch checkouts and code inspection ` +
-    `inside that worktree — never modify the main working copy. Then review ` +
-    `the PR by running /code-review ${number}. Keep the worktree in place ` +
-    `afterwards so follow-up questions can use it.`;
+    `inside that worktree — never modify the main working copy.\n\n` +
+    `${body}\n\n` +
+    `Keep the worktree in place afterwards so follow-up questions can use it.`;
   if (note) p += `\n\nAdditional context from the reviewer: ${note}`;
   return p;
 }
@@ -207,7 +220,7 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
     [
       claudeBin(ctx.cfg),
       "-p",
-      reviewPrompt(number, entry.note),
+      reviewPrompt(number, repo, ctx.cfg, entry.note),
       "--output-format",
       "stream-json",
       "--verbose",

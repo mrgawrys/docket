@@ -12,9 +12,11 @@ and switch the poller on/off.
 ## Requirements
 
 macOS (launchd + osascript), `bun`, `gh` (authenticated), the `claude`
-CLI with the code-review plugin
-(`claude plugin install code-review@claude-plugins-official`), and a local
-clone of every repo you review.
+CLI, and a local clone of every repo you review. The default review runs
+Claude Code's code-review plugin
+(`claude plugin install code-review@claude-plugins-official`); it is required
+only while `review_prompt` runs `/code-review` (see below) — a custom prompt
+that doesn't need it. `reviews doctor` enforces exactly this.
 
 ## Setup
 
@@ -41,6 +43,15 @@ clone of every repo you review.
      are requested personally, or via any team not listed here, is always
      reviewed. Empty = review everything.
    - `notifications` — macOS notifications on review completion (default true)
+   - `review_prompt` — the review task handed to claude. Omit (or leave
+     blank) to run the default, `Review the PR by running /code-review
+     {number}.` Every run is first told to create a git worktree at
+     `.worktrees/pr-N` and inspect only inside it — that part is fixed and
+     not configurable; `review_prompt` is only the task that follows.
+     Tokens `{number}`, `{repo}` (org/repo), and `{worktree}` are substituted;
+     a prompt with no token is used as-is. A prompt that doesn't run
+     `/code-review` needs no plugin (doctor checks this). The tool allowlist
+     is unchanged either way — reviews stay read-only and never post to GitHub.
 3. `reviews doctor` — checks the whole review chain (config, clones, gh
    auth, claude, code-review plugin) and prints a fix for anything broken.
    Every line should be ✓ before going further.

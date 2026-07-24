@@ -125,3 +125,50 @@ test("doctor: code-review plugin missing → ✗ with install one-liner", () => 
     "claude plugin install code-review@claude-plugins-official",
   );
 });
+
+test("doctor: custom review_prompt without /code-review → plugin not required", () => {
+  const sb = makeSandbox();
+  sb.gitInitDemo();
+  sb.writeConfig({
+    orgs: ["testorg"],
+    repos: { "testorg/demo": sb.demoRepo },
+    claude_config_dir: claudeHome(sb, false),
+    review_prompt: "Review this PR carefully and summarize the risks.",
+  });
+  const r = sb.run(["doctor"]);
+  expect(r.code).toBe(0);
+  expect(r.out).toContain("not required");
+  expect(r.out).not.toContain(
+    "claude plugin install code-review@claude-plugins-official",
+  );
+});
+
+test("doctor: custom review_prompt that keeps /code-review still requires the plugin", () => {
+  const sb = makeSandbox();
+  sb.gitInitDemo();
+  sb.writeConfig({
+    orgs: ["testorg"],
+    repos: { "testorg/demo": sb.demoRepo },
+    claude_config_dir: claudeHome(sb, false),
+    review_prompt: "Please run /code-review {number} and be thorough.",
+  });
+  const r = sb.run(["doctor"]);
+  expect(r.code).toBe(1);
+  expect(r.out).toContain(
+    "claude plugin install code-review@claude-plugins-official",
+  );
+});
+
+test("doctor: blank review_prompt → ✗ telling the user to remove or fill it", () => {
+  const sb = makeSandbox();
+  sb.gitInitDemo();
+  sb.writeConfig({
+    orgs: ["testorg"],
+    repos: { "testorg/demo": sb.demoRepo },
+    claude_config_dir: claudeHome(sb, true),
+    review_prompt: "   ",
+  });
+  const r = sb.run(["doctor"]);
+  expect(r.code).toBe(1);
+  expect(r.out).toMatch(/✗.*review_prompt/);
+});

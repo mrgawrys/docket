@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   ConfigError,
+  DEFAULT_REVIEW_PROMPT,
   claudeBin,
+  effectiveReviewPrompt,
   ghBin,
   loadConfig,
   notifyEnabled,
@@ -81,4 +83,30 @@ test("binary + notification resolution", () => {
       AUTO_REVIEW_NOTIFY: "0",
     } as NodeJS.ProcessEnv),
   ).toBe(false);
+});
+
+test("effectiveReviewPrompt: absent review_prompt → the /code-review default", () => {
+  expect(effectiveReviewPrompt({ orgs: [], repos: {} })).toBe(
+    DEFAULT_REVIEW_PROMPT,
+  );
+  expect(DEFAULT_REVIEW_PROMPT).toContain("/code-review {number}");
+});
+
+test("effectiveReviewPrompt: empty or whitespace review_prompt falls back to default", () => {
+  expect(
+    effectiveReviewPrompt({ orgs: [], repos: {}, review_prompt: "" }),
+  ).toBe(DEFAULT_REVIEW_PROMPT);
+  expect(
+    effectiveReviewPrompt({ orgs: [], repos: {}, review_prompt: "   \n" }),
+  ).toBe(DEFAULT_REVIEW_PROMPT);
+});
+
+test("effectiveReviewPrompt: a set prompt is used verbatim", () => {
+  expect(
+    effectiveReviewPrompt({
+      orgs: [],
+      repos: {},
+      review_prompt: "Review this PR for security issues.",
+    }),
+  ).toBe("Review this PR for security issues.");
 });

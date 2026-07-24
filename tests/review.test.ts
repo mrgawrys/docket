@@ -1,7 +1,65 @@
 import { expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import type { Config } from "../src/config";
+import { reviewPrompt } from "../src/reviewer";
 import { makeSandbox } from "./harness";
+
+const bareCfg = (review_prompt?: string): Config => ({
+  orgs: [],
+  repos: {},
+  ...(review_prompt === undefined ? {} : { review_prompt }),
+});
+
+test("reviewPrompt: default runs /code-review with the number substituted", () => {
+  const p = reviewPrompt("42", "org/repo", bareCfg());
+  expect(p).toContain("worktree for PR #42 at .worktrees/pr-42");
+  expect(p).toContain("never modify the main working copy");
+  expect(p).toContain("Review the PR by running /code-review 42.");
+  expect(p).toContain("Keep the worktree in place afterwards");
+  expect(p).not.toContain("{number}");
+});
+
+test("reviewPrompt: worktree preamble and suffix are fixed even with a custom prompt", () => {
+  const p = reviewPrompt(
+    "7",
+    "org/repo",
+    bareCfg("Just eyeball it, no tools."),
+  );
+  expect(p).toContain("worktree for PR #7 at .worktrees/pr-7");
+  expect(p).toContain("never modify the main working copy");
+  expect(p).toContain("Just eyeball it, no tools.");
+  expect(p).toContain("Keep the worktree in place afterwards");
+});
+
+test("reviewPrompt: substitutes {number}, {repo} and {worktree} tokens", () => {
+  const p = reviewPrompt(
+    "99",
+    "Recruitee/api",
+    bareCfg("Review PR {number} in {repo}; worktree is {worktree}."),
+  );
+  expect(p).toContain(
+    "Review PR 99 in Recruitee/api; worktree is .worktrees/pr-99.",
+  );
+});
+
+test("reviewPrompt: a custom prompt with no token is used verbatim", () => {
+  const p = reviewPrompt("5", "org/repo", bareCfg("Review this PR carefully."));
+  expect(p).toContain("Review this PR carefully.");
+});
+
+test("reviewPrompt: an empty review_prompt falls back to the default body", () => {
+  const p = reviewPrompt("8", "org/repo", bareCfg("  "));
+  expect(p).toContain("Review the PR by running /code-review 8.");
+});
+
+test("reviewPrompt: a reviewer note is appended after everything", () => {
+  const p = reviewPrompt("3", "org/repo", bareCfg(), "focus on the migration");
+  expect(p).toContain(
+    "Additional context from the reviewer: focus on the migration",
+  );
+  expect(p.trimEnd().endsWith("focus on the migration")).toBe(true);
+});
 
 test("review + retry command family", async () => {
   const sb = makeSandbox();
