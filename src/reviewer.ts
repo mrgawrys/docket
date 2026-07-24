@@ -12,6 +12,7 @@ import { basename, dirname, join } from "node:path";
 import {
   claudeBin,
   claudeEnv,
+  effectiveAllowedTools,
   effectiveReviewPrompt,
   ghBin,
   runLogPath,
@@ -38,12 +39,6 @@ import {
   pickReviewWorktrees,
   type WorktreeInfo,
 } from "./worktree";
-
-// Everything the /code-review skill's agents run, read-only. Deliberately
-// absent: `gh pr comment` and broad `gh api` — the headless run must never
-// post to GitHub; the user opens the ready session and posts themselves.
-export const ALLOWED_TOOLS =
-  "Read,Grep,Glob,Task,Agent,TodoWrite,Skill(code-review),Skill(code-review:code-review),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*),Bash(gh pr list:*),Bash(gh api user:*),Bash(gh search:*),Bash(gh issue view:*),Bash(gh issue list:*),Bash(git log:*),Bash(git show:*),Bash(git diff:*),Bash(git blame:*),Bash(git fetch:*),Bash(git worktree:*),Bash(git checkout:*),Bash(git branch:*),Bash(cd:*),Bash(echo:*)";
 
 // Fixed worktree hygiene wraps a configurable task body. The preamble (work in
 // an isolated worktree, never touch the main copy) and the suffix (keep it
@@ -295,7 +290,7 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
       "--permission-mode",
       "dontAsk",
       "--allowedTools",
-      ALLOWED_TOOLS,
+      effectiveAllowedTools(ctx.cfg),
     ],
     { cwd: localPath, env, stdout: "pipe", stderr: "pipe" },
   );

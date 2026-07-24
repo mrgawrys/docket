@@ -3,9 +3,11 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  ALLOWED_TOOLS,
   ConfigError,
   DEFAULT_REVIEW_PROMPT,
   claudeBin,
+  effectiveAllowedTools,
   effectiveReviewPrompt,
   ghBin,
   loadConfig,
@@ -99,6 +101,48 @@ test("effectiveReviewPrompt: empty or whitespace review_prompt falls back to def
   expect(
     effectiveReviewPrompt({ orgs: [], repos: {}, review_prompt: "   \n" }),
   ).toBe(DEFAULT_REVIEW_PROMPT);
+});
+
+test("effectiveAllowedTools: no extras → the baseline verbatim", () => {
+  expect(effectiveAllowedTools({ orgs: [], repos: {} })).toBe(ALLOWED_TOOLS);
+  expect(
+    effectiveAllowedTools({ orgs: [], repos: {}, extra_allowed_tools: [] }),
+  ).toBe(ALLOWED_TOOLS);
+});
+
+test("effectiveAllowedTools: extras are appended after the baseline", () => {
+  const got = effectiveAllowedTools({
+    orgs: [],
+    repos: {},
+    extra_allowed_tools: ["Bash(bun test:*)", "Skill(my-review)"],
+  });
+  expect(got).toBe(`${ALLOWED_TOOLS},Bash(bun test:*),Skill(my-review)`);
+});
+
+test("loadConfig: extra_allowed_tools must be an array of strings", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "rv-cfg-"));
+  const p = paths({
+    AUTO_REVIEW_CONFIG_DIR: dir,
+    AUTO_REVIEW_STATE_DIR: dir,
+  } as NodeJS.ProcessEnv);
+  const base = { orgs: ["o"], repos: { "o/r": "/tmp" } };
+  writeFileSync(
+    join(dir, "config.json"),
+    JSON.stringify({ ...base, extra_allowed_tools: "Bash(bun test:*)" }),
+  );
+  await expect(loadConfig(p)).rejects.toThrow(/extra_allowed_tools/);
+  writeFileSync(
+    join(dir, "config.json"),
+    JSON.stringify({ ...base, extra_allowed_tools: [1] }),
+  );
+  await expect(loadConfig(p)).rejects.toThrow(ConfigError);
+  writeFileSync(
+    join(dir, "config.json"),
+    JSON.stringify({ ...base, extra_allowed_tools: ["Bash(bun test:*)"] }),
+  );
+  expect((await loadConfig(p)).extra_allowed_tools).toEqual([
+    "Bash(bun test:*)",
+  ]);
 });
 
 test("effectiveReviewPrompt: a set prompt is used verbatim", () => {
