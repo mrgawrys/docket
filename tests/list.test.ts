@@ -176,6 +176,28 @@ test("dismiss command marks done and removes the worktree", () => {
   expect(existsSync(join(sb.demoRepo, ".worktrees", "pr-7"))).toBe(false);
 });
 
+test("dismiss removes a recorded worktree wherever the agent put it", () => {
+  const sb = makeSandbox();
+  sb.gitInitDemo();
+  // a worktree the agent created outside the repo tree, per its own conventions
+  const wt = join(sb.tmp, "elsewhere", "recruitee-pr-7");
+  Bun.spawnSync(
+    ["git", "-C", sb.demoRepo, "worktree", "add", "--quiet", "--detach", wt],
+    { env: process.env as Record<string, string> },
+  );
+  expect(existsSync(wt)).toBe(true);
+  sb.writeState({
+    "testorg/demo#7": {
+      status: "ready",
+      local_path: sb.demoRepo,
+      worktrees: [wt],
+      updated_at: "2026-01-01T00:00:00Z",
+    },
+  });
+  expect(sb.run(["dismiss", "testorg/demo#7"]).code).toBe(0);
+  expect(existsSync(wt)).toBe(false);
+});
+
 test("dismiss command rejects an unknown key instead of fabricating an entry", () => {
   const sb = makeSandbox();
   const r = sb.run(["dismiss", "nope/nope#1"]);

@@ -28,7 +28,7 @@ test("poll: dry-run, real run, dedup (scenarios 1-3)", async () => {
   expect(e.session_id).toBe("sess-1234");
   expect(e.local_path).toBe(sb.demoRepo);
   expect(sb.statusAtCall()).toBe("reviewing"); // entry was 'reviewing' while claude ran
-  expect(sb.promptCapture()).toContain("worktree for PR #7 at .worktrees/pr-7");
+  expect(sb.promptCapture()).toContain("worktree to review PR #7");
   expect(sb.promptCapture()).toContain("/code-review 7");
 
   // scenario 3: second run must not re-review a known PR

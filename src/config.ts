@@ -13,7 +13,7 @@ export interface Config {
 }
 
 // The review task handed to claude, minus the fixed worktree hygiene that wraps
-// it (see reviewPrompt). {number}/{repo}/{worktree} are substituted at run time.
+// it (see reviewPrompt). {number}/{repo} are substituted at run time.
 export const DEFAULT_REVIEW_PROMPT =
   "Review the PR by running /code-review {number}.";
 

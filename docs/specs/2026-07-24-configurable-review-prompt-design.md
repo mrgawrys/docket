@@ -40,11 +40,19 @@ The config body supports substitution of:
 
 - `{number}` — the PR number (e.g. `42`)
 - `{repo}` — `org/repo` (e.g. `Recruitee/api`)
-- `{worktree}` — the worktree path (e.g. `.worktrees/pr-42`)
 
 Substitution is a literal `replaceAll` per token. A prompt with no tokens is
 used verbatim — the fixed preamble has already established "PR #42, worktree
 checked out on its branch," so `"review this PR carefully"` works on its own.
+
+> **Follow-up (worktree ownership, same branch).** The preamble no longer
+> dictates a worktree path (`.worktrees/pr-N`). The review agent chooses the
+> location per its own/CLAUDE.md conventions; auto-review discovers the created
+> worktree by diffing `git worktree list` around the run and matching the PR
+> head sha, records the absolute path in `entry.worktrees`, and `cleanupEntry`
+> removes it there — with a `pr-<N>` basename fallback for legacy entries. This
+> superseded an earlier `{worktree}` token, which had no knowable value once the
+> agent owns the path. See `src/worktree.ts`.
 
 ### Config
 
@@ -101,7 +109,7 @@ exact config works.**
 ## Testing
 
 - `reviewPrompt`: default (no config), custom with `{number}`, custom with no
-  token, custom with `{repo}`/`{worktree}`, and each of those with a note.
+  token, custom with `{repo}`, and each of those with a note.
 - Empty `review_prompt` falls back to the default.
 - `doctor`: plugin required + present, plugin required + missing, custom
   prompt without `/code-review` (plugin not required), empty prompt fails.

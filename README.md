@@ -45,11 +45,13 @@ that doesn't need it. `reviews doctor` enforces exactly this.
    - `notifications` — macOS notifications on review completion (default true)
    - `review_prompt` — the review task handed to claude. Omit (or leave
      blank) to run the default, `Review the PR by running /code-review
-     {number}.` Every run is first told to create a git worktree at
-     `.worktrees/pr-N` and inspect only inside it — that part is fixed and
-     not configurable; `review_prompt` is only the task that follows.
-     Tokens `{number}`, `{repo}` (org/repo), and `{worktree}` are substituted;
-     a prompt with no token is used as-is. A prompt that doesn't run
+     {number}.` Every run is first told to do its work in a git worktree and
+     never touch the main working copy — that part is fixed and not
+     configurable; `review_prompt` is only the task that follows. The agent
+     picks *where* the worktree goes (following your own worktree conventions
+     in CLAUDE.md, if any); auto-review discovers it afterwards and removes it
+     on dismiss. Tokens `{number}` and `{repo}` (org/repo) are substituted; a
+     prompt with no token is used as-is. A prompt that doesn't run
      `/code-review` needs no plugin (doctor checks this). The tool allowlist
      is unchanged either way — reviews stay read-only and never post to GitHub.
 3. `reviews doctor` — checks the whole review chain (config, clones, gh
@@ -91,10 +93,11 @@ tool allowlist. Runners are parallel and survive the poll process: ctrl+c on
 a poll, `reviews review`, or `reviews retry` never cancels an in-flight
 review — you get a notification when each one is ready. State updates are
 serialized through a lock, and a runner that dies mid-review is detected by
-its dead pid and marked failed. The review happens in an isolated git worktree at
-`<clone>/.worktrees/pr-<n>` — the clone's main working copy is never touched;
-the worktree stays for follow-up questions until the entry is dismissed.
-Add `.worktrees/` to your global git excludes (`~/.config/git/ignore`).
+its dead pid and marked failed. The review happens in an isolated git worktree
+so the clone's main working copy is never touched. The review agent chooses the
+worktree's location (honoring any worktree conventions in your CLAUDE.md);
+auto-review records where it landed and removes it when the entry is dismissed.
+The worktree stays for follow-up questions until then.
 
 Entry lifecycle: `reviewing` → `ready` | `failed` | `canceled` (Ctrl+C), plus
 `skipped` (no local clone mapped) and `done` (dismissed). Orphaned

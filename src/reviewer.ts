@@ -8,11 +8,12 @@ import {
   rmSync,
   writeSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import {
   claudeBin,
   claudeEnv,
   effectiveReviewPrompt,
+  ghBin,
   runLogPath,
   type Config,
   type Paths,
@@ -32,6 +33,11 @@ import {
   updateEntry,
   type Entry,
 } from "./state";
+import {
+  parseWorktrees,
+  pickReviewWorktrees,
+  type WorktreeInfo,
+} from "./worktree";
 
 // Everything the /code-review skill's agents run, read-only. Deliberately
 // absent: `gh pr comment` and broad `gh api` — the headless run must never
@@ -39,13 +45,11 @@ import {
 export const ALLOWED_TOOLS =
   "Read,Grep,Glob,Task,Agent,TodoWrite,Skill(code-review),Skill(code-review:code-review),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*),Bash(gh pr list:*),Bash(gh api user:*),Bash(gh search:*),Bash(gh issue view:*),Bash(gh issue list:*),Bash(git log:*),Bash(git show:*),Bash(git diff:*),Bash(git blame:*),Bash(git fetch:*),Bash(git worktree:*),Bash(git checkout:*),Bash(git branch:*),Bash(cd:*),Bash(echo:*)";
 
-// Where a PR's worktree lives, relative to the clone — the prompt tells claude
-// to create it here and cleanupEntry removes it; one definition keeps them in sync.
-export const prWorktree = (number: string): string => `.worktrees/pr-${number}`;
-
-// Fixed worktree hygiene wraps a configurable task body. The preamble (create
-// the worktree, inspect only inside it) and the suffix (keep it afterwards) are
-// a contract with cleanupEntry and are NOT configurable; only the middle is.
+// Fixed worktree hygiene wraps a configurable task body. The preamble (work in
+// an isolated worktree, never touch the main copy) and the suffix (keep it
+// afterwards) are NOT configurable; only the middle is. We deliberately do not
+// dictate the worktree's path — the agent follows its own conventions — and
+// discover where it landed afterwards (see recordWorktrees).
 export function reviewPrompt(
   number: string,
   repo: string,
@@ -54,12 +58,12 @@ export function reviewPrompt(
 ): string {
   const body = effectiveReviewPrompt(cfg)
     .replaceAll("{number}", number)
-    .replaceAll("{repo}", repo)
-    .replaceAll("{worktree}", prWorktree(number));
+    .replaceAll("{repo}", repo);
   let p =
-    `Create a git worktree for PR #${number} at ${prWorktree(number)} ` +
-    `(fetch the PR branch first). Do ALL branch checkouts and code inspection ` +
-    `inside that worktree — never modify the main working copy.\n\n` +
+    `Create a git worktree to review PR #${number} (fetch the PR branch ` +
+    `first), following your usual worktree conventions. Do ALL branch ` +
+    `checkouts and code inspection inside that worktree — never modify the ` +
+    `main working copy.\n\n` +
     `${body}\n\n` +
     `Keep the worktree in place afterwards so follow-up questions can use it.`;
   if (note) p += `\n\nAdditional context from the reviewer: ${note}`;
@@ -83,25 +87,85 @@ export interface Ctx {
   current: { key: string; child?: { kill(sig?: number | string): void } };
 }
 
-// Retire an entry's on-disk artifacts: its run log and its PR worktree.
-export function cleanupEntry(ctx: Ctx, key: string, logPrefix: string): void {
-  rmSync(runLogPath(ctx.paths, key), { force: true });
-  const { number } = splitKey(key);
-  const path = loadState(ctx.paths.statePath)[key]?.local_path;
-  const wt = prWorktree(number);
-  if (!path || !existsSync(join(path, wt))) return;
+// The PR's head commit, used to pin which freshly-created worktree is the
+// review's. Best-effort: on any gh failure we return undefined and record every
+// newly-appeared worktree instead (see pickReviewWorktrees).
+function prHeadSha(
+  ctx: Ctx,
+  clone: string,
+  number: string,
+): string | undefined {
   const p = Bun.spawnSync(
-    ["git", "-C", path, "worktree", "remove", "--force", wt],
+    [ghBin(), "pr", "view", number, "--json", "headRefOid"],
     {
+      cwd: clone,
+      env: { ...process.env, ...ctx.gh.env } as Record<string, string>,
+      stdout: "pipe",
       stderr: "pipe",
     },
   );
-  appendFileSync(ctx.paths.logPath, p.stderr.toString());
-  if (p.exitCode === 0) {
-    ctx.log(`${logPrefix} ${key}: removed worktree ${path}/${wt}`);
-  } else {
-    ctx.log(`${logPrefix} ${key}: could not remove worktree ${path}/${wt}`);
+  if (p.exitCode !== 0) return undefined;
+  try {
+    const sha = JSON.parse(p.stdout.toString()).headRefOid;
+    return typeof sha === "string" && sha ? sha : undefined;
+  } catch {
+    return undefined;
   }
+}
+
+// List a clone's registered worktrees (absolute paths + head/branch), or [].
+function listWorktrees(clone: string): WorktreeInfo[] {
+  const p = Bun.spawnSync(
+    ["git", "-C", clone, "worktree", "list", "--porcelain"],
+    { stdout: "pipe", stderr: "pipe" },
+  );
+  return p.exitCode === 0 ? parseWorktrees(p.stdout.toString()) : [];
+}
+
+// Legacy/orphan fallback for entries written before we recorded worktree paths:
+// match any registered worktree named pr-<number> (the old convention, and the
+// native `.claude/worktrees/pr-N` layout).
+function legacyWorktrees(clone: string, number: string): string[] {
+  return listWorktrees(clone)
+    .map((w) => w.path)
+    .filter((p) => basename(p) === `pr-${number}`);
+}
+
+function removeWorktree(
+  ctx: Ctx,
+  clone: string,
+  wt: string,
+  key: string,
+  logPrefix: string,
+): void {
+  if (!existsSync(wt)) return; // already gone; prune will drop the admin record
+  const p = Bun.spawnSync(
+    ["git", "-C", clone, "worktree", "remove", "--force", wt],
+    { stderr: "pipe" },
+  );
+  appendFileSync(ctx.paths.logPath, p.stderr.toString());
+  ctx.log(
+    p.exitCode === 0
+      ? `${logPrefix} ${key}: removed worktree ${wt}`
+      : `${logPrefix} ${key}: could not remove worktree ${wt}`,
+  );
+}
+
+// Retire an entry's on-disk artifacts: its run log and the worktree(s) the
+// review created — by their recorded absolute paths, wherever the agent put
+// them, falling back to the pr-<number> convention for legacy entries.
+export function cleanupEntry(ctx: Ctx, key: string, logPrefix: string): void {
+  rmSync(runLogPath(ctx.paths, key), { force: true });
+  const { number } = splitKey(key);
+  const entry = loadState(ctx.paths.statePath)[key];
+  const clone = entry?.local_path;
+  if (!clone || !existsSync(clone)) return;
+
+  const recorded = entry?.worktrees ?? [];
+  const targets = recorded.length ? recorded : legacyWorktrees(clone, number);
+  for (const wt of targets) removeWorktree(ctx, clone, wt, key, logPrefix);
+
+  Bun.spawnSync(["git", "-C", clone, "worktree", "prune"], { stderr: "pipe" });
 }
 
 // Mark the PR as reviewing and hand it to a detached `reviews exec` runner.
@@ -212,6 +276,10 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
     `REVIEW ${key} in ${localPath} — headless /code-review running, this takes a few minutes`,
   );
 
+  // Snapshot before the agent runs so we can tell which worktree it creates.
+  const sha = prHeadSha(ctx, localPath, number);
+  const worktreesBefore = listWorktrees(localPath).map((w) => w.path);
+
   // gh.env carries GH_TOKEN when gh_account is pinned — claude runs gh itself
   const env = { ...ctx.gh.env, ...claudeEnv(ctx.cfg) };
   const runLog = runLogPath(ctx.paths, key);
@@ -245,6 +313,15 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
   const exitCode = await proc.exited;
   ctx.current.child = undefined;
   appendFileSync(ctx.paths.logPath, await stderrDone);
+
+  // Discover the worktree the agent made (any location) and record it so
+  // cleanupEntry can remove it later. Persisted after the status write below,
+  // which rewrites the entry wholesale.
+  const worktrees = pickReviewWorktrees(
+    worktreesBefore,
+    listWorktrees(localPath),
+    sha,
+  );
 
   let sessionId = "";
   if (exitCode === 0) {
@@ -281,6 +358,7 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
     await notify(ctx.cfg, `Review FAILED: ${key}`, title);
     ctx.counters.failed++;
   }
+  if (worktrees.length) patchEntry(statePath, key, { worktrees });
   ctx.current.key = "";
   return 0;
 }
