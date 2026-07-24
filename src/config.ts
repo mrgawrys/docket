@@ -9,7 +9,18 @@ export interface Config {
   gh_account?: string;
   ignored_teams?: string[];
   notifications?: boolean;
+  review_prompt?: string;
 }
+
+// The review task handed to claude, minus the fixed worktree hygiene that wraps
+// it (see reviewPrompt). {number}/{repo} are substituted at run time.
+export const DEFAULT_REVIEW_PROMPT =
+  "Review the PR by running /code-review {number}.";
+
+// The task body actually used: the configured override, or the default when it
+// is absent or blank. doctor reports a blank override separately.
+export const effectiveReviewPrompt = (cfg: Config): string =>
+  cfg.review_prompt?.trim() ? cfg.review_prompt : DEFAULT_REVIEW_PROMPT;
 
 export interface Paths {
   configDir: string;

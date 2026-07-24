@@ -1,7 +1,85 @@
 import { expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
+import type { Config } from "../src/config";
+import { reviewPrompt } from "../src/reviewer";
 import { makeSandbox } from "./harness";
+
+const bareCfg = (review_prompt?: string): Config => ({
+  orgs: [],
+  repos: {},
+  ...(review_prompt === undefined ? {} : { review_prompt }),
+});
+
+test("reviewPrompt: default runs /code-review with the number substituted", () => {
+  const p = reviewPrompt("42", "org/repo", bareCfg());
+  expect(p).toContain("worktree to review PR #42");
+  expect(p).toContain("never modify the main working copy");
+  expect(p).toContain("Review the PR by running /code-review 42.");
+  expect(p).toContain("Keep the worktree in place afterwards");
+  expect(p).not.toContain("{number}");
+});
+
+test("reviewPrompt: does not dictate a worktree path — the agent's conventions decide", () => {
+  const p = reviewPrompt("42", "org/repo", bareCfg());
+  expect(p).not.toContain(".worktrees/pr-42");
+});
+
+test("reviewPrompt: worktree preamble and suffix are fixed even with a custom prompt", () => {
+  const p = reviewPrompt(
+    "7",
+    "org/repo",
+    bareCfg("Just eyeball it, no tools."),
+  );
+  expect(p).toContain("worktree to review PR #7");
+  expect(p).toContain("never modify the main working copy");
+  expect(p).toContain("Just eyeball it, no tools.");
+  expect(p).toContain("Keep the worktree in place afterwards");
+});
+
+test("reviewPrompt: substitutes {number} and {repo} tokens", () => {
+  const p = reviewPrompt(
+    "99",
+    "Recruitee/api",
+    bareCfg("Review PR {number} in {repo}."),
+  );
+  expect(p).toContain("Review PR 99 in Recruitee/api.");
+});
+
+test("reviewPrompt: a custom prompt with no token is used verbatim", () => {
+  const p = reviewPrompt("5", "org/repo", bareCfg("Review this PR carefully."));
+  expect(p).toContain("Review this PR carefully.");
+});
+
+test("reviewPrompt: an empty review_prompt falls back to the default body", () => {
+  const p = reviewPrompt("8", "org/repo", bareCfg("  "));
+  expect(p).toContain("Review the PR by running /code-review 8.");
+});
+
+test("reviewPrompt: a reviewer note is appended after everything", () => {
+  const p = reviewPrompt("3", "org/repo", bareCfg(), "focus on the migration");
+  expect(p).toContain(
+    "Additional context from the reviewer: focus on the migration",
+  );
+  expect(p.trimEnd().endsWith("focus on the migration")).toBe(true);
+});
+
+test("runner records the worktree the agent created, wherever it put it", async () => {
+  const sb = makeSandbox();
+  sb.gitInitDemo();
+  const agentWt = join(sb.tmp, "agent-chosen", "recruitee-pr-7");
+  const r = sb.run(["review", "testorg/demo#7"], {
+    CLAUDE_MAKE_WORKTREE: agentWt,
+  });
+  expect(r.code).toBe(0);
+  const e = await sb.waitEntry("testorg/demo#7", (x) => x.status === "ready");
+  // git reports the canonical (symlink-resolved) path — compare on realpath
+  expect(e.worktrees).toEqual([realpathSync(agentWt)]);
+  // and it is removable on dismiss even though we never dictated the path
+  expect(existsSync(agentWt)).toBe(true);
+  expect(sb.run(["dismiss", "testorg/demo#7"]).code).toBe(0);
+  expect(existsSync(agentWt)).toBe(false);
+});
 
 test("review + retry command family", async () => {
   const sb = makeSandbox();
@@ -17,9 +95,7 @@ test("review + retry command family", async () => {
   let e = await sb.waitEntry("testorg/demo#42", (x) => x.status === "ready");
   expect(e.session_id).toBe("sess-1234");
   expect(e.title).toBe("Manual PR");
-  expect(sb.promptCapture()).toContain(
-    "worktree for PR #42 at .worktrees/pr-42",
-  );
+  expect(sb.promptCapture()).toContain("worktree to review PR #42");
   expect(sb.promptCapture()).toContain("/code-review 42");
   expect(sb.promptCapture()).toContain("focus on the delta");
 

@@ -4,6 +4,7 @@ import {
   ConfigError,
   claudeBin,
   claudeEnv,
+  effectiveReviewPrompt,
   ghBin,
   loadConfig,
   paths as resolvePaths,
@@ -103,25 +104,39 @@ export async function doctorCommand(): Promise<number> {
     );
   }
 
-  const claudeHome =
-    cfg.claude_config_dir ?? join(process.env.HOME ?? "", ".claude");
-  const registryPath = join(claudeHome, "plugins", "installed_plugins.json");
-  let hasPlugin = false;
-  try {
-    const registry = await Bun.file(registryPath).json();
-    hasPlugin = Object.keys(registry.plugins ?? {}).some((k) =>
-      k.startsWith("code-review@"),
-    );
-  } catch {
-    // missing/unreadable registry → plugin not installed
-  }
-  if (hasPlugin) {
-    pass("code-review plugin installed");
-  } else {
+  // A blank review_prompt runs the default (which needs the plugin) but is
+  // almost certainly a mistake — flag it so the config reads honestly.
+  if (cfg.review_prompt !== undefined && !cfg.review_prompt.trim()) {
     fail(
-      `code-review plugin: not found in ${registryPath}`,
-      "run: claude plugin install code-review@claude-plugins-official",
+      "review_prompt is set but blank",
+      "remove the key or give it a value; the default /code-review prompt runs meanwhile",
     );
+  }
+
+  // The plugin is only a dependency when the effective prompt runs /code-review.
+  if (effectiveReviewPrompt(cfg).includes("/code-review")) {
+    const claudeHome =
+      cfg.claude_config_dir ?? join(process.env.HOME ?? "", ".claude");
+    const registryPath = join(claudeHome, "plugins", "installed_plugins.json");
+    let hasPlugin = false;
+    try {
+      const registry = await Bun.file(registryPath).json();
+      hasPlugin = Object.keys(registry.plugins ?? {}).some((k) =>
+        k.startsWith("code-review@"),
+      );
+    } catch {
+      // missing/unreadable registry → plugin not installed
+    }
+    if (hasPlugin) {
+      pass("code-review plugin installed");
+    } else {
+      fail(
+        `code-review plugin: not found in ${registryPath}`,
+        "run: claude plugin install code-review@claude-plugins-official",
+      );
+    }
+  } else {
+    pass("code-review plugin: not required (custom review_prompt)");
   }
 
   return failed === 0 ? 0 : 1;

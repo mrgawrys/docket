@@ -33,6 +33,9 @@ export interface Entry {
   done_reason?: "merged" | "closed";
   my_review_at?: string;
   note?: string;
+  // Absolute paths of git worktrees this review created, discovered after the
+  // run wherever the agent put them; cleanupEntry removes exactly these.
+  worktrees?: string[];
   updated_at: string;
 }
 

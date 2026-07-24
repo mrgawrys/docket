@@ -32,6 +32,10 @@ if [ "$1" = api ] && [ "$2" = user/teams ]; then
 fi
 if [ "$1" = pr ] && [ "$2" = view ]; then
   for a in "$@"; do
+    if [ "$a" = headRefOid ]; then
+      echo "{\"headRefOid\":\"$(git -C "$PWD" rev-parse HEAD 2>/dev/null)\"}"
+      exit 0
+    fi
     if [[ "$a" == *state*latestReviews* ]]; then
       [ "\${GH_PR_VIEW_FAIL:-0}" = 1 ] && { echo "boom" >&2; exit 1; }
       json="\${GH_PR_STATUS_JSON:-}"
@@ -66,6 +70,8 @@ echo run >>"\${CLAUDE_CALLS:?}"
 printf '%s' "\${CLAUDE_CONFIG_DIR:-}" >"\${CFGDIR_CAPTURE:?}"
 printf '%s' "\${GH_TOKEN:-}" >"\${GHTOKEN_CAPTURE:?}"
 bun -e 'const fs=require("fs");let s={};try{s=JSON.parse(fs.readFileSync(process.env.AUTO_REVIEW_STATE_DIR+"/state.json","utf8"))}catch{};console.log((s["testorg/demo#7"]||{}).status||"absent")' >"\${STATUS_AT_CALL:?}"
+# optionally simulate the agent creating a review worktree wherever it likes
+[ -n "\${CLAUDE_MAKE_WORKTREE:-}" ] && git -C "$PWD" worktree add --quiet --detach "\$CLAUDE_MAKE_WORKTREE" HEAD 2>/dev/null
 echo '{"type":"assistant","message":{"content":[{"type":"text","text":"Looking at the diff"},{"type":"tool_use","name":"Bash","input":{"command":"git fetch origin"}}]}}'
 if [ "\${CLAUDE_FAIL:-0}" = 1 ]; then echo "boom" >&2; exit 1; fi
 [ -n "\${CLAUDE_SLEEP:-}" ] && sleep "\$CLAUDE_SLEEP"
