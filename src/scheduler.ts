@@ -22,8 +22,15 @@ export function renderPlist(o: {
   interval: number;
   stateDir: string;
   home: string;
+  path?: string;
 }): string {
   const args = o.programArgs.map((a) => `    <string>${a}</string>`).join("\n");
+  // launchd runs with a bare PATH, so version-manager toolchains (mise/asdf/
+  // nvm shims, homebrew) that a review's tools need — e.g. `node` for a
+  // blast-radius pass — go missing. Bake the invoking shell's PATH in front of
+  // a safe fallback so a polled run sees the same tools `reviews on` did.
+  const fallback = `${o.home}/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin`;
+  const path = o.path ? `${o.path}:${fallback}` : fallback;
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -38,7 +45,7 @@ ${args}
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>
-    <string>${o.home}/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <string>${path}</string>
   </dict>
   <key>StandardOutPath</key>
   <string>${o.stateDir}/launchd.log</string>
@@ -72,6 +79,7 @@ export async function onCommand(ctx: Ctx): Promise<number> {
       interval: minutes * 60,
       stateDir: ctx.paths.stateDir,
       home,
+      path: process.env.PATH,
     }),
   );
   if (Bun.spawnSync(["plutil", "-lint", target]).exitCode !== 0) {

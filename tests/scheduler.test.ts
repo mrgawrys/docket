@@ -18,6 +18,26 @@ test("renderPlist substitutes every field", () => {
   expect(plist).toContain("/home/me/.local/bin");
 });
 
+test("renderPlist without a path falls back to the bare toolchain PATH", () => {
+  expect(plist).toContain(
+    "<string>/home/me/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>",
+  );
+});
+
+test("renderPlist prepends a captured PATH before the fallback", () => {
+  const withPath = renderPlist({
+    label: "com.me.auto-review",
+    programArgs: ["/usr/local/bin/reviews", "poll"],
+    interval: 900,
+    stateDir: "/home/me/.local/state/auto-review",
+    home: "/home/me",
+    path: "/home/me/.local/share/mise/shims:/home/me/.local/bin",
+  });
+  expect(withPath).toContain(
+    "<string>/home/me/.local/share/mise/shims:/home/me/.local/bin:/home/me/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>",
+  );
+});
+
 test.if(process.platform === "darwin")(
   "rendered plist passes plutil -lint",
   () => {

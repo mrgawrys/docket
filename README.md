@@ -74,7 +74,11 @@ that doesn't need it. `reviews doctor` enforces exactly this.
    `jq '."ORG/REPO#N" = {status: "done", note: "seeded"}' state.json > s && mv s state.json`
    (state lives in `~/.local/state/auto-review/`).
 5. `reviews on` — renders the launchd plist for this machine into
-   `~/Library/LaunchAgents/` and loads it. `reviews status` to confirm.
+   `~/Library/LaunchAgents/` and loads it, baking the `PATH` from the shell you
+   run it in ahead of a safe fallback. Run it from your normal shell (with your
+   version manager active) so polled runs see the same toolchain — e.g. `node`
+   for a blast-radius pass. Re-run `reviews on` after changing your PATH.
+   `reviews status` to confirm.
 
 ## Day to day
 
