@@ -6,6 +6,7 @@ export interface Config {
   poll_interval_minutes?: number;
   claude_bin?: string;
   claude_config_dir?: string;
+  claude_env?: Record<string, string>;
   gh_account?: string;
   ignored_teams?: string[];
   notifications?: boolean;
@@ -87,6 +88,17 @@ export async function loadConfig(p: Paths = paths()): Promise<Config> {
     );
   }
   if (
+    cfg.claude_env !== undefined &&
+    (typeof cfg.claude_env !== "object" ||
+      cfg.claude_env === null ||
+      Array.isArray(cfg.claude_env) ||
+      Object.values(cfg.claude_env).some((v) => typeof v !== "string"))
+  ) {
+    throw new ConfigError(
+      `invalid config at ${p.configPath} — "claude_env" must be an object of string values`,
+    );
+  }
+  if (
     cfg.extra_allowed_tools !== undefined &&
     (!Array.isArray(cfg.extra_allowed_tools) ||
       cfg.extra_allowed_tools.some((t) => typeof t !== "string"))
@@ -108,8 +120,14 @@ export const ghBin = (env: NodeJS.ProcessEnv = process.env): string =>
 
 // Env every claude invocation needs (review runs, resumes, doctor's check) —
 // a missed spot here would give them silently different claude setups.
-export const claudeEnv = (cfg: Config): Record<string, string> =>
-  cfg.claude_config_dir ? { CLAUDE_CONFIG_DIR: cfg.claude_config_dir } : {};
+// claude_env carries user-specific extras (e.g. muting a notification hook in
+// unattended runs); the dedicated claude_config_dir key wins on conflict.
+export const claudeEnv = (cfg: Config): Record<string, string> => ({
+  ...(cfg.claude_env ?? {}),
+  ...(cfg.claude_config_dir
+    ? { CLAUDE_CONFIG_DIR: cfg.claude_config_dir }
+    : {}),
+});
 
 export const runLogPath = (p: Paths, key: string): string =>
   join(p.stateDir, "runs", key.replace(/[/#]/g, "-") + ".jsonl");

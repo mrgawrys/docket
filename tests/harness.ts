@@ -73,6 +73,7 @@ for a in "$@"; do
   prev="$a"
 done
 printf '%s' "\${CLAUDE_CONFIG_DIR:-}" >"\${CFGDIR_CAPTURE:?}"
+printf '%s' "\${CLAUDE_BASH_WATCHDOG_SECONDS:-}" >"\${WATCHDOG_CAPTURE:?}"
 printf '%s' "\${GH_TOKEN:-}" >"\${GHTOKEN_CAPTURE:?}"
 bun -e 'const fs=require("fs");let s={};try{s=JSON.parse(fs.readFileSync(process.env.AUTO_REVIEW_STATE_DIR+"/state.json","utf8"))}catch{};console.log((s["testorg/demo#7"]||{}).status||"absent")' >"\${STATUS_AT_CALL:?}"
 # optionally simulate the agent creating a review worktree wherever it likes
@@ -111,6 +112,7 @@ export interface Sandbox {
   promptCapture(): string;
   allowedCapture(): string;
   cfgdirCapture(): string;
+  watchdogCapture(): string;
   ghTokenCapture(): string;
   statusAtCall(): string;
   gitInitDemo(): void;
@@ -147,6 +149,7 @@ export function makeSandbox(): Sandbox {
     PROMPT_CAPTURE: capture("prompt-capture"),
     ALLOWED_CAPTURE: capture("allowed-capture"),
     CFGDIR_CAPTURE: capture("cfgdir-capture"),
+    WATCHDOG_CAPTURE: capture("watchdog-capture"),
     GHTOKEN_CAPTURE: capture("ghtoken-capture"),
     STATUS_AT_CALL: capture("status-at-call"),
   };
@@ -218,6 +221,7 @@ export function makeSandbox(): Sandbox {
     promptCapture: () => readFileSync(env.PROMPT_CAPTURE!, "utf8"),
     allowedCapture: () => readFileSync(env.ALLOWED_CAPTURE!, "utf8"),
     cfgdirCapture: () => readFileSync(env.CFGDIR_CAPTURE!, "utf8"),
+    watchdogCapture: () => readFileSync(env.WATCHDOG_CAPTURE!, "utf8"),
     ghTokenCapture: () => readFileSync(env.GHTOKEN_CAPTURE!, "utf8"),
     statusAtCall: () => readFileSync(env.STATUS_AT_CALL!, "utf8").trim(),
     gitInitDemo() {

@@ -145,6 +145,30 @@ test("loadConfig: extra_allowed_tools must be an array of strings", async () => 
   ]);
 });
 
+test("loadConfig: claude_env must be an object of string values", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "rv-cfg-"));
+  const p = paths({
+    AUTO_REVIEW_CONFIG_DIR: dir,
+    AUTO_REVIEW_STATE_DIR: dir,
+  } as NodeJS.ProcessEnv);
+  const base = { orgs: ["o"], repos: { "o/r": "/tmp" } };
+  writeFileSync(
+    join(dir, "config.json"),
+    JSON.stringify({ ...base, claude_env: "FOO=1" }),
+  );
+  await expect(loadConfig(p)).rejects.toThrow(/claude_env/);
+  writeFileSync(
+    join(dir, "config.json"),
+    JSON.stringify({ ...base, claude_env: { FOO: 1 } }),
+  );
+  await expect(loadConfig(p)).rejects.toThrow(ConfigError);
+  writeFileSync(
+    join(dir, "config.json"),
+    JSON.stringify({ ...base, claude_env: { FOO: "1" } }),
+  );
+  expect((await loadConfig(p)).claude_env).toEqual({ FOO: "1" });
+});
+
 test("effectiveReviewPrompt: a set prompt is used verbatim", () => {
   expect(
     effectiveReviewPrompt({

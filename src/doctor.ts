@@ -110,6 +110,11 @@ export async function doctorCommand(): Promise<number> {
     pass(`extra allowed tools: ${cfg.extra_allowed_tools.length} configured`);
   }
 
+  // Same visibility for env extras: they shape every claude invocation.
+  if (cfg.claude_env && Object.keys(cfg.claude_env).length) {
+    pass(`claude env extras: ${Object.keys(cfg.claude_env).join(", ")}`);
+  }
+
   // A blank review_prompt runs the default (which needs the plugin) but is
   // almost certainly a mistake — flag it so the config reads honestly.
   if (cfg.review_prompt !== undefined && !cfg.review_prompt.trim()) {

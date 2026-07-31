@@ -190,6 +190,18 @@ test("scenario 10: claude_config_dir reaches claude as CLAUDE_CONFIG_DIR", async
   expect(sb.cfgdirCapture()).toBe(sb.tmp + "/claude-home");
 });
 
+test("scenario 10b: claude_env entries reach the claude invocation", async () => {
+  const sb = makeSandbox();
+  sb.writeConfig({
+    orgs: ["testorg"],
+    repos: { "testorg/demo": sb.demoRepo },
+    claude_env: { CLAUDE_BASH_WATCHDOG_SECONDS: "0" },
+  });
+  expect(sb.run(["review", "testorg/demo#45"]).code).toBe(0);
+  await sb.waitEntry("testorg/demo#45", (x) => x.status === "ready");
+  expect(sb.watchdogCapture()).toBe("0");
+});
+
 test("scenario 11: claude_bin from config used when CLAUDE_BIN unset", async () => {
   const sb = makeSandbox();
   const shim2 = sb.env.CLAUDE_BIN + "2";

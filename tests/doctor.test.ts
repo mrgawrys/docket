@@ -140,6 +140,20 @@ test("doctor: extra_allowed_tools configured → ✓ reports how many", () => {
   expect(r.out).toMatch(/✓.*extra allowed tools: 2/);
 });
 
+test("doctor: claude_env configured → ✓ names the variables", () => {
+  const sb = makeSandbox();
+  sb.gitInitDemo();
+  sb.writeConfig({
+    orgs: ["testorg"],
+    repos: { "testorg/demo": sb.demoRepo },
+    claude_config_dir: claudeHome(sb, true),
+    claude_env: { CLAUDE_BASH_WATCHDOG_SECONDS: "0" },
+  });
+  const r = sb.run(["doctor"]);
+  expect(r.code).toBe(0);
+  expect(r.out).toMatch(/✓.*claude env extras: CLAUDE_BASH_WATCHDOG_SECONDS/);
+});
+
 test("doctor: malformed extra_allowed_tools fails the config check", () => {
   const sb = makeSandbox();
   sb.gitInitDemo();

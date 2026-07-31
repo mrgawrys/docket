@@ -30,6 +30,10 @@ that doesn't need it. `reviews doctor` enforces exactly this.
    - `claude_bin` — claude binary (default `claude`)
    - `claude_config_dir` — set to use a specific `CLAUDE_CONFIG_DIR`
      (useful with multiple Claude accounts); empty = default
+   - `claude_env` — extra environment variables for every claude invocation
+     (review runs and resumes), e.g. to mute a notification hook of your
+     Claude setup that would otherwise fire from unattended review sessions.
+     `claude_config_dir` wins if both set `CLAUDE_CONFIG_DIR`. Empty = none.
    - `gh_account` — pin all GitHub access to this `gh` account (its token is
      resolved via `gh auth token --user`). Without it, polling silently uses
      whichever account `gh auth switch` last left active — with a personal +
