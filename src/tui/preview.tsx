@@ -37,11 +37,12 @@ export function Preview({
 }: {
   lines: string[];
   notes: string[];
+  // Rows for the assessment itself; the caller has already taken the notes out,
+  // because it needs the same number to clamp scrolling.
   height: number;
   scroll: number;
   dim: boolean;
 }) {
-  const room = Math.max(1, height - notes.length);
   return (
     <Box flexDirection="column" paddingX={1}>
       {notes.map((n) => (
@@ -49,7 +50,7 @@ export function Preview({
           {n}
         </Text>
       ))}
-      {lines.slice(scroll, scroll + room).map((line, i) => (
+      {lines.slice(scroll, scroll + height).map((line, i) => (
         <Text key={`${scroll + i}:${line}`} dimColor={dim} wrap="truncate-end">
           {line}
         </Text>
