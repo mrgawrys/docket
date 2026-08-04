@@ -86,7 +86,10 @@ export function App({
   );
   const [rows, setRows] = useState<Row[]>(load);
   const [cursorKey, setCursorKey] = useState<string | undefined>(initialKey);
-  const [scroll, setScroll] = useState(0);
+  // "bottom" rather than a number: Claude puts the verdict and the draft
+  // comment last, so a fresh assessment opens at the end and stays pinned
+  // there through a resize until the user scrolls away from it.
+  const [scroll, setScroll] = useState<number | "bottom">("bottom");
   const [view, setView] = useState<"queue" | "help">("queue");
   const [status, setStatus] = useState<string | undefined>();
 
@@ -111,7 +114,7 @@ export function App({
   useEffect(() => {
     if (current) onSelect?.(current.key);
   }, [current, onSelect]);
-  useEffect(() => setScroll(0), [cursorKey]);
+  useEffect(() => setScroll("bottom"), [cursorKey]);
 
   const assessment = useMemo(
     () =>
@@ -164,6 +167,11 @@ export function App({
     1,
     height - 1 - queueHeight - 3 - (footer ? 1 : 0),
   );
+  // Notes sit inside the pane and push the assessment down, so they come out
+  // of the scrollable viewport too.
+  const viewport = Math.max(1, previewHeight - notes.length);
+  const maxScroll = Math.max(0, lines.length - viewport);
+  const top = scroll === "bottom" ? maxScroll : Math.min(scroll, maxScroll);
 
   const move = (delta: number) => {
     if (rows.length === 0) return;
@@ -171,10 +179,13 @@ export function App({
     setCursorKey(rows[next]?.key);
   };
 
+  // Functional update: a held key fires several times before a re-render, and
+  // reading `top` from this render's closure would drop all but the last.
   const scrollBy = (delta: number) =>
-    setScroll((s) =>
-      Math.max(0, Math.min(s + delta, lines.length - previewHeight)),
-    );
+    setScroll((s) => {
+      const from = s === "bottom" ? maxScroll : Math.min(s, maxScroll);
+      return Math.max(0, Math.min(from + delta, maxScroll));
+    });
 
   const run = (label: string, fn: () => Promise<number>) => {
     setStatus(`${label}…`);
@@ -247,6 +258,9 @@ export function App({
 
   return (
     <Box flexDirection="column" width={width}>
+      {/* the legend leads: fixed at the top, it cannot be moved around by
+          however much assessment the row below it happens to have */}
+      <Legend unavailable={unavailable} />
       <Bar
         label="reviews"
         right={rows.length ? `${cursor + 1}/${rows.length}` : "empty"}
@@ -261,8 +275,8 @@ export function App({
           <Preview
             lines={lines}
             notes={notes}
-            height={previewHeight}
-            scroll={Math.max(0, Math.min(scroll, lines.length - previewHeight))}
+            height={viewport}
+            scroll={top}
             dim={assessment.kind === "none"}
           />
         </>
@@ -272,7 +286,6 @@ export function App({
           {footer}
         </Text>
       ) : null}
-      <Legend unavailable={unavailable} />
     </Box>
   );
 }
