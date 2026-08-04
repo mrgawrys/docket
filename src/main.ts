@@ -10,7 +10,7 @@ import { doctorCommand } from "./doctor";
 import { ghAccountToken, prView } from "./github";
 import { makeLogger } from "./log";
 import { acquireLock } from "./lock";
-import { dismissKey, interactiveList } from "./list";
+import { dismissKey, killEntry } from "./list";
 import { pollCycle } from "./poll";
 import {
   execReview,
@@ -29,12 +29,14 @@ import {
 } from "./state";
 import { logCommand, statusCommand, watchCommand } from "./status";
 import { reconcile } from "./sync";
+import { runTui } from "./tui/app";
 
 const USAGE = `reviews — pre-run Claude Code reviews for PRs awaiting you
 
 Usage:
-  reviews                    interactive list (resume #, d# dismiss, r# retry,
-                             w# watch live, k# kill runner, p poll, s sync, q quit)
+  reviews                    review queue (enter resume, s shell, d diff,
+                             w watch live, r retry, x dismiss, K kill,
+                             p poll, S sync, ? help, q quit)
   reviews poll [--dry-run]   one poll cycle (what launchd runs); reviews run
                              in parallel as detached background processes
   reviews sync               reconcile state with GitHub
@@ -325,10 +327,14 @@ async function main(): Promise<number> {
   const [cmd, ...rest] = Bun.argv.slice(2);
   if (cmd === undefined)
     return withCtx((ctx) =>
-      interactiveList(ctx, {
+      runTui(ctx, {
         retry: (key) => retryKey(ctx, key),
         poll: () => pollLocked(ctx, false),
         sync: () => syncLocked(ctx),
+        dismiss: (key) => dismissKey(ctx, key),
+        kill: (key) => {
+          killEntry(ctx, key);
+        },
       }),
     );
   if (cmd === "-h" || cmd === "--help") return help([]);

@@ -12,7 +12,7 @@ export interface SuspendRequest {
 export type Spawner = (req: SuspendRequest) => Promise<number>;
 
 export interface Mounted {
-  waitUntilExit(): Promise<void>;
+  waitUntilExit(): Promise<unknown>;
   unmount(): void;
 }
 
@@ -22,12 +22,27 @@ export type Mount = (
 ) => Mounted;
 
 export const spawnInherit: Spawner = async (req) => {
-  const p = Bun.spawn(req.argv, {
-    cwd: req.cwd,
-    env: { ...process.env, ...(req.env ?? {}) } as Record<string, string>,
-    stdio: ["inherit", "inherit", "inherit"],
-  });
-  return await p.exited;
+  // An interactive child (a shell, claude) takes the terminal's foreground
+  // process group, which leaves our own reader reading from the background:
+  // that read fails with EIO and kills stdin for good. Unmounting Ink is not
+  // enough — it drops raw mode but not Bun's reader — so pause it explicitly.
+  process.stdin.pause();
+  // Ctrl+C reaches the whole foreground process group, and the child shares
+  // ours. `w` is meant to end that way, so the parent has to survive it — a JS
+  // handler is reset to the default on exec, so the child still dies.
+  const ignore = () => {};
+  process.on("SIGINT", ignore);
+  try {
+    const p = Bun.spawn(req.argv, {
+      cwd: req.cwd,
+      env: { ...process.env, ...(req.env ?? {}) } as Record<string, string>,
+      stdio: ["inherit", "inherit", "inherit"],
+    });
+    return await p.exited;
+  } finally {
+    process.off("SIGINT", ignore);
+    process.stdin.resume();
+  }
 };
 
 // Ink and a child with inherited stdio cannot both own the terminal, so a verb

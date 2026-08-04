@@ -1,4 +1,4 @@
-import { Box, Text, useApp, useInput, useWindowSize } from "ink";
+import { Box, render, Text, useApp, useInput, useWindowSize } from "ink";
 import { watch } from "node:fs";
 import { dirname } from "node:path";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -8,15 +8,17 @@ import { buildResume } from "../list";
 import {
   buildOpener,
   openerContext,
+  resolveOpeners,
   resolveWorktree,
   type ResolvedOpeners,
 } from "../openers";
 import { selfArgs } from "../proc";
+import type { Ctx } from "../reviewer";
 import { loadState, pendingEntries } from "../state";
 import { Help, Legend } from "./legend";
 import { Preview, wrapText } from "./preview";
 import { Queue, type Row } from "./queue";
-import type { SuspendRequest } from "./suspend";
+import { suspendLoop, type SuspendRequest } from "./suspend";
 
 export interface TuiActions {
   retry(key: string): Promise<number>;
@@ -194,12 +196,12 @@ export function App({
   };
 
   useInput((input, key) => {
+    if (input === "q") return exit(); // quits from any view, help included
     if (view === "help") {
-      if (input === "?" || input === "q" || key.escape) setView("queue");
+      if (input === "?" || key.escape) setView("queue");
       return;
     }
     if (input === "?") return setView("help");
-    if (input === "q") return exit();
     if (input === "j" || key.downArrow) return move(1);
     if (input === "k" || key.upArrow) return move(-1);
     if (key.pageDown || (key.ctrl && input === "d")) return scrollBy(10);
@@ -272,5 +274,28 @@ export function App({
       ) : null}
       <Legend unavailable={unavailable} />
     </Box>
+  );
+}
+
+// Openers are resolved once here, not per frame; the selected key rides across
+// a suspend so the cursor comes back to the PR the user acted on.
+export function runTui(ctx: Ctx, actions: TuiActions): Promise<number> {
+  const resolved = resolveOpeners(ctx.cfg);
+  let selected: string | undefined;
+  return suspendLoop((request, notice) =>
+    render(
+      <App
+        cfg={ctx.cfg}
+        paths={ctx.paths}
+        actions={actions}
+        resolved={resolved}
+        request={request}
+        notice={notice}
+        initialKey={selected}
+        onSelect={(key) => {
+          selected = key;
+        }}
+      />,
+    ),
   );
 }
