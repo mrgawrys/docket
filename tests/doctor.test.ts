@@ -28,7 +28,7 @@ test("doctor: all checks green → exit 0, one ✓ per check", () => {
   });
   const r = sb.run(["doctor"]);
   expect(r.code).toBe(0);
-  expect(r.out.match(/✓/g)?.length).toBe(6);
+  expect(r.out.match(/✓/g)?.length).toBe(8);
   expect(r.out).not.toContain("✗");
   expect(r.out).toContain("code-review plugin");
 });
@@ -43,7 +43,7 @@ test("doctor: gh_account not set → that check is not run", () => {
   });
   const r = sb.run(["doctor"]);
   expect(r.code).toBe(0);
-  expect(r.out.match(/✓/g)?.length).toBe(5);
+  expect(r.out.match(/✓/g)?.length).toBe(7);
 });
 
 test("doctor: missing config → ✗ with example hint, later checks skipped, exit 1", () => {
@@ -124,6 +124,40 @@ test("doctor: code-review plugin missing → ✗ with install one-liner", () => 
   expect(r.out).toContain(
     "claude plugin install code-review@claude-plugins-official",
   );
+});
+
+test("doctor: reports the winning opener per verb", () => {
+  const sb = makeSandbox();
+  sb.gitInitDemo();
+  sb.writeConfig({
+    orgs: ["testorg"],
+    repos: { "testorg/demo": sb.demoRepo },
+    claude_config_dir: claudeHome(sb, true),
+    openers: { diff: [{ cmd: ["git", "diff", "{base}...{head}"] }] },
+  });
+  const r = sb.run(["doctor"]);
+  expect(r.code).toBe(0);
+  expect(r.out).toContain("✓ opener diff: git diff {base}...{head}");
+  expect(r.out).toMatch(/✓ opener shell: \S+/);
+});
+
+test("doctor: an opener chain with nothing on PATH → ✗ names the candidates", () => {
+  const sb = makeSandbox();
+  sb.gitInitDemo();
+  sb.writeConfig({
+    orgs: ["testorg"],
+    repos: { "testorg/demo": sb.demoRepo },
+    claude_config_dir: claudeHome(sb, true),
+    openers: {
+      diff: [{ cmd: ["nope-not-installed", "{base}"] }, { cmd: ["also-not"] }],
+    },
+  });
+  const r = sb.run(["doctor"]);
+  expect(r.code).toBe(1);
+  expect(r.out).toContain(
+    "✗ opener diff: none of nope-not-installed, also-not",
+  );
+  expect(r.out).toContain('"openers" in config.json');
 });
 
 test("doctor: extra_allowed_tools configured → ✓ reports how many", () => {
