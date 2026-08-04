@@ -1,0 +1,116 @@
+import { expect, test } from "bun:test";
+import { render } from "ink-testing-library";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { paths, type Config } from "../src/config";
+import { resolveOpeners } from "../src/openers";
+import type { Entry, State } from "../src/state";
+import { App, type TuiActions } from "../src/tui/app";
+import type { SuspendRequest } from "../src/tui/suspend";
+
+// Only three component tests, deliberately — see "TUI tests stay thin" in
+// CLAUDE.md. Everything else about the UI is verified by running the binary.
+
+const cfg: Config = { orgs: [], repos: {} };
+const resolved = resolveOpeners(
+  cfg,
+  (bin) => bin === "git" || bin === "/bin/sh",
+);
+
+function mount(state: State) {
+  const dir = mkdtempSync(join(tmpdir(), "reviews-tui-"));
+  writeFileSync(join(dir, "state.json"), JSON.stringify(state));
+  const p = paths({
+    AUTO_REVIEW_CONFIG_DIR: dir,
+    AUTO_REVIEW_STATE_DIR: dir,
+  } as NodeJS.ProcessEnv);
+  const calls: string[] = [];
+  const requests: SuspendRequest[] = [];
+  const actions: TuiActions = {
+    retry: async (k) => {
+      calls.push(`retry:${k}`);
+      return 0;
+    },
+    poll: async () => {
+      calls.push("poll");
+      return 0;
+    },
+    sync: async () => {
+      calls.push("sync");
+      return 0;
+    },
+    dismiss: (k) => calls.push(`dismiss:${k}`),
+    kill: (k) => calls.push(`kill:${k}`),
+  };
+  const r = render(
+    <App
+      cfg={cfg}
+      paths={p}
+      actions={actions}
+      resolved={resolved}
+      request={(req) => requests.push(req)}
+    />,
+  );
+  return { ...r, calls, requests };
+}
+
+const entry = (over: Partial<Entry>): Entry => ({
+  status: "ready",
+  session_id: "s",
+  local_path: "/clone",
+  updated_at: "2026-01-01T00:00:00Z",
+  ...over,
+});
+
+test("destructive verbs act on the highlighted row, not the first one", async () => {
+  const ui = mount({
+    "acme/one#1": entry({ title: "One", updated_at: "2026-01-01T00:00:00Z" }),
+    "acme/two#2": entry({
+      title: "Two",
+      status: "reviewing",
+      pid: 1,
+      updated_at: "2026-01-02T00:00:00Z",
+    }),
+  });
+  ui.stdin.write("j"); // move off row 1
+  await Bun.sleep(20);
+  ui.stdin.write("x");
+  await Bun.sleep(20);
+  ui.stdin.write("K");
+  await Bun.sleep(20);
+  expect(ui.calls).toEqual(["dismiss:acme/two#2", "kill:acme/two#2"]);
+  ui.unmount();
+});
+
+test("verbs are unavailable, with the reason shown, when the worktree or session is gone", async () => {
+  const ui = mount({
+    "acme/one#1": entry({
+      status: "failed",
+      session_id: undefined,
+      worktrees: ["/vanished/pr-1"],
+    }),
+  });
+  await Bun.sleep(20);
+  const frame = ui.lastFrame() ?? "";
+  expect(frame).toContain("worktree is gone: /vanished/pr-1");
+  expect(frame).toContain("no session (failed)");
+
+  // and the keys stay dead rather than launching something
+  ui.stdin.write("s");
+  ui.stdin.write("d");
+  await Bun.sleep(20);
+  expect(ui.requests).toEqual([]);
+  ui.unmount();
+});
+
+test("an empty queue keeps the TUI open so poll can populate it", async () => {
+  const ui = mount({});
+  await Bun.sleep(20);
+  expect(ui.lastFrame()).toContain("No pending reviews");
+  ui.stdin.write("p");
+  await Bun.sleep(20);
+  expect(ui.calls).toEqual(["poll"]);
+  expect(ui.lastFrame()).toContain("No pending reviews"); // still mounted
+  ui.unmount();
+});
