@@ -169,6 +169,32 @@ test("loadConfig: claude_env must be an object of string values", async () => {
   expect((await loadConfig(p)).claude_env).toEqual({ FOO: "1" });
 });
 
+test("loadConfig: openers must map a verb to a list of non-empty cmd arrays", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "rv-cfg-"));
+  const p = paths({
+    AUTO_REVIEW_CONFIG_DIR: dir,
+    AUTO_REVIEW_STATE_DIR: dir,
+  } as NodeJS.ProcessEnv);
+  const base = { orgs: ["o"], repos: { "o/r": "/tmp" } };
+  const write = (openers: unknown) =>
+    writeFileSync(
+      join(dir, "config.json"),
+      JSON.stringify({ ...base, openers }),
+    );
+
+  write({ diff: "revdiff {base} {head}" }); // a command line, not a chain
+  await expect(loadConfig(p)).rejects.toThrow(/openers/);
+  write({ diff: [{ cmd: "revdiff" }] });
+  await expect(loadConfig(p)).rejects.toThrow(ConfigError);
+  write({ diff: [{ cmd: [] }] });
+  await expect(loadConfig(p)).rejects.toThrow(ConfigError);
+
+  write({ diff: [{ cmd: ["delta", "{base}"] }] });
+  expect((await loadConfig(p)).openers).toEqual({
+    diff: [{ cmd: ["delta", "{base}"] }],
+  });
+});
+
 test("effectiveReviewPrompt: a set prompt is used verbatim", () => {
   expect(
     effectiveReviewPrompt({
