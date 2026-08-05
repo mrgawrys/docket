@@ -2,18 +2,16 @@
 # The two sha256 placeholders must be replaced from the release's SHA256SUMS.
 class Docket < Formula
   desc "Pre-runs Claude Code's /code-review on PRs awaiting your review"
-  homepage "https://github.com/mrgawrys/auto-review"
+  homepage "https://github.com/mrgawrys/docket"
   version "0.1.0"
 
-  # Release assets live in the source repo, so these URLs follow it if it is
-  # ever renamed to `docket`.
   on_arm do
-    url "https://github.com/mrgawrys/auto-review/releases/download/v#{version}/docket-darwin-arm64.tar.gz"
+    url "https://github.com/mrgawrys/docket/releases/download/v#{version}/docket-darwin-arm64.tar.gz"
     sha256 "PLACEHOLDER_SHA256_ARM64"
   end
 
   on_intel do
-    url "https://github.com/mrgawrys/auto-review/releases/download/v#{version}/docket-darwin-x64.tar.gz"
+    url "https://github.com/mrgawrys/docket/releases/download/v#{version}/docket-darwin-x64.tar.gz"
     sha256 "PLACEHOLDER_SHA256_X64"
   end
 

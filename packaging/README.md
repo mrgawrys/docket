@@ -24,6 +24,3 @@ completions.
    matching lines from the release's `SHA256SUMS`.
 4. Commit and push the tap. `brew install mrgawrys/tap/docket` picks it up
    immediately; `brew test docket` runs the formula's smoke test.
-
-The formula's URLs point at `mrgawrys/auto-review`, where the releases live.
-If that repo is renamed to `docket`, update both URLs and the homepage.
