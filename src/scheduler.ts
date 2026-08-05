@@ -4,8 +4,7 @@ import { join } from "node:path";
 import { selfArgs } from "./proc";
 import type { Ctx } from "./reviewer";
 
-export const launchdLabel = (): string =>
-  `com.${userInfo().username}.docket`;
+export const launchdLabel = (): string => `com.${userInfo().username}.docket`;
 
 export function launchdLoaded(): boolean {
   if (process.platform !== "darwin") return false;

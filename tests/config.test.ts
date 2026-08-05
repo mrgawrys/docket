@@ -1,5 +1,11 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -33,15 +39,61 @@ test("paths: env overrides beat XDG beats HOME defaults", () => {
   } as NodeJS.ProcessEnv;
   expect(paths(own).configPath).toBe("/o/c/config.json");
   expect(paths(own).logPath).toBe("/o/s/docket.log");
+  expect(paths(xdg).legacyConfigDir).toBe("/x/cfg/auto-review");
+  expect(paths(own).legacyStateDir).toBeUndefined();
 });
 
-test("loadConfig: missing file throws ConfigError pointing at config.example.json", async () => {
-  const p = paths({
-    DOCKET_CONFIG_DIR: "/nonexistent-xyz",
-    DOCKET_STATE_DIR: "/tmp",
+// A fresh XDG home under a temp dir, so nothing touches the real one.
+const freshPaths = (prefix: string) => {
+  const root = mkdtempSync(join(tmpdir(), prefix));
+  return paths({
+    HOME: root,
+    XDG_CONFIG_HOME: join(root, "cfg"),
+    XDG_STATE_HOME: join(root, "st"),
   } as NodeJS.ProcessEnv);
-  await expect(loadConfig(p)).rejects.toThrow(ConfigError);
-  await expect(loadConfig(p)).rejects.toThrow(/config\.example\.json/);
+};
+
+test("loadConfig: no config anywhere seeds an editable one and says to fill it in", async () => {
+  const p = freshPaths("dk-seed-");
+  const err = await loadConfig(p).catch((e) => e);
+  expect(err).toBeInstanceOf(ConfigError);
+  expect(err.message).toMatch(/fill in/);
+  const seeded = JSON.parse(readFileSync(p.configPath, "utf8"));
+  expect(seeded.orgs.length).toBeGreaterThan(0);
+  expect(seeded.openers.diff.length).toBeGreaterThan(0);
+  writeFileSync(p.configPath, JSON.stringify({ orgs: ["mine"], repos: {} }));
+  expect((await loadConfig(p)).orgs).toEqual(["mine"]);
+});
+
+test("loadConfig: a pre-rename install's config and state are carried over", async () => {
+  const p = freshPaths("dk-mig-");
+  const oldConfig = p.legacyConfigDir!;
+  const oldState = p.legacyStateDir!;
+  mkdirSync(oldConfig, { recursive: true });
+  mkdirSync(join(oldState, ".lock"), { recursive: true });
+  writeFileSync(
+    join(oldConfig, "config.json"),
+    JSON.stringify({ orgs: ["o"], repos: { "o/r": "/tmp" } }),
+  );
+  writeFileSync(join(oldState, "state.json"), '{"o/r#1":{"status":"done"}}');
+  writeFileSync(join(oldState, ".lock", "pid"), "1");
+
+  expect((await loadConfig(p)).orgs).toEqual(["o"]);
+  expect(readFileSync(p.statePath, "utf8")).toContain("o/r#1");
+  expect(existsSync(p.lockDir)).toBe(false);
+  expect(existsSync(join(oldConfig, "config.json"))).toBe(true);
+});
+
+test("loadConfig: an existing docket config is never overwritten by the old one", async () => {
+  const p = freshPaths("dk-mig2-");
+  mkdirSync(p.legacyConfigDir!, { recursive: true });
+  writeFileSync(
+    join(p.legacyConfigDir!, "config.json"),
+    JSON.stringify({ orgs: ["stale"], repos: {} }),
+  );
+  mkdirSync(p.configDir, { recursive: true });
+  writeFileSync(p.configPath, JSON.stringify({ orgs: ["current"], repos: {} }));
+  expect((await loadConfig(p)).orgs).toEqual(["current"]);
 });
 
 test("loadConfig: parses a valid config; rejects one without orgs/repos", async () => {

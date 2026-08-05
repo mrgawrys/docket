@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { makeSandbox, type Sandbox } from "./harness";
 
@@ -46,15 +46,16 @@ test("doctor: gh_account not set → that check is not run", () => {
   expect(r.out.match(/✓/g)?.length).toBe(7);
 });
 
-test("doctor: missing config → ✗ with example hint, later checks skipped, exit 1", () => {
+test("doctor: missing config → ✗ with a seeded config to edit, later checks skipped, exit 1", () => {
   const sb = makeSandbox();
   rmSync(join(sb.configDir, "config.json"));
   const r = sb.run(["doctor"]);
   expect(r.code).toBe(1);
   expect(r.out).toContain("✗");
-  expect(r.out).toContain("config.example.json");
+  expect(r.out).toContain("fill in");
   expect(r.out).toContain("skipped");
   expect(r.out).not.toContain("✓");
+  expect(existsSync(join(sb.configDir, "config.json"))).toBe(true);
 });
 
 test("doctor: repo path missing or not a git repo → ✗ names the path", () => {

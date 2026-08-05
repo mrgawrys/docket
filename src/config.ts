@@ -1,4 +1,6 @@
-import { join } from "node:path";
+import { cpSync, existsSync, mkdirSync } from "node:fs";
+import { basename, join } from "node:path";
+import EXAMPLE_CONFIG from "../config.example.json" with { type: "text" };
 
 // One candidate command for a TUI verb. argv is exec'd directly, never through
 // a shell — see src/openers.ts for the tokens and the one $SHELL exception.
@@ -53,16 +55,18 @@ export interface Paths {
   statePath: string;
   logPath: string;
   lockDir: string;
+  // Where the same things lived before the rename; undefined when the
+  // directory is pinned by env, which has no old counterpart.
+  legacyConfigDir?: string;
+  legacyStateDir?: string;
 }
 
 export function paths(env: NodeJS.ProcessEnv = process.env): Paths {
   const home = env.HOME ?? "";
-  const configDir =
-    env.DOCKET_CONFIG_DIR ??
-    join(env.XDG_CONFIG_HOME ?? join(home, ".config"), "docket");
-  const stateDir =
-    env.DOCKET_STATE_DIR ??
-    join(env.XDG_STATE_HOME ?? join(home, ".local", "state"), "docket");
+  const configHome = env.XDG_CONFIG_HOME ?? join(home, ".config");
+  const stateHome = env.XDG_STATE_HOME ?? join(home, ".local", "state");
+  const configDir = env.DOCKET_CONFIG_DIR ?? join(configHome, "docket");
+  const stateDir = env.DOCKET_STATE_DIR ?? join(stateHome, "docket");
   return {
     configDir,
     stateDir,
@@ -70,16 +74,54 @@ export function paths(env: NodeJS.ProcessEnv = process.env): Paths {
     statePath: join(stateDir, "state.json"),
     logPath: join(stateDir, "docket.log"),
     lockDir: join(stateDir, ".lock"),
+    legacyConfigDir: env.DOCKET_CONFIG_DIR
+      ? undefined
+      : join(configHome, "auto-review"),
+    legacyStateDir: env.DOCKET_STATE_DIR
+      ? undefined
+      : join(stateHome, "auto-review"),
   };
+}
+
+// docket was called auto-review, and kept both directories under that name.
+// Copy them over on the first run that finds them, leaving the originals in
+// place. State matters as much as config here: without it every PR already
+// reviewed looks new, and the whole backlog gets reviewed (and billed) again.
+export function migrateLegacyDirs(p: Paths): void {
+  const pairs: [string | undefined, string][] = [
+    [p.legacyConfigDir, p.configDir],
+    [p.legacyStateDir, p.stateDir],
+  ];
+  for (const [from, to] of pairs) {
+    if (!from || existsSync(to) || !existsSync(from)) continue;
+    cpSync(from, to, {
+      recursive: true,
+      // a lock is one running process's claim, not something to inherit
+      filter: (src) => basename(src) !== ".lock",
+    });
+  }
 }
 
 export class ConfigError extends Error {}
 
 export async function loadConfig(p: Paths = paths()): Promise<Config> {
+  migrateLegacyDirs(p);
   const file = Bun.file(p.configPath);
   if (!(await file.exists())) {
+    // Nothing to inherit and nothing to read: leave the user an editable
+    // config rather than a pointer to a file they may not have checked out.
+    let seeded = false;
+    try {
+      mkdirSync(p.configDir, { recursive: true });
+      await Bun.write(p.configPath, EXAMPLE_CONFIG);
+      seeded = true;
+    } catch {
+      // unwritable config dir — fall back to telling them where it goes
+    }
     throw new ConfigError(
-      `no config at ${p.configPath} — copy config.example.json there and fill it in`,
+      seeded
+        ? `no config yet — wrote a starter one to ${p.configPath}; fill in "orgs" and "repos", then run: docket doctor`
+        : `no config at ${p.configPath} — copy config.example.json there and fill it in`,
     );
   }
   let cfg: Config;

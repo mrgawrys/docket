@@ -180,13 +180,15 @@ test("no extra_allowed_tools → claude gets exactly the baseline allowlist", as
   expect(sb.allowedCapture()).toBe(ALLOWED_TOOLS);
 });
 
-test("scenario 9: missing config errors, pointing at config.example.json", () => {
+test("scenario 9: missing config seeds a starter one and errors", () => {
   const sb = makeSandbox();
+  const dir = sb.tmp + "/nonexistent";
   const r = sb.run(["review", "testorg/demo#1"], {
-    DOCKET_CONFIG_DIR: sb.tmp + "/nonexistent",
+    DOCKET_CONFIG_DIR: dir,
   });
   expect(r.code).not.toBe(0);
-  expect(r.err).toContain("config.example.json");
+  expect(r.err).toContain("fill in");
+  expect(existsSync(join(dir, "config.json"))).toBe(true);
 });
 
 test("gh_account: pinned account's token reaches gh and claude as GH_TOKEN", async () => {
