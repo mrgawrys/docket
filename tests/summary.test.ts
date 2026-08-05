@@ -28,6 +28,33 @@ test("a json sample inside the review is not mistaken for the summary", () => {
   expect(splitSummary(review)).toEqual({ prose: review });
 });
 
+test("evidence quoted above the summary does not swallow it", () => {
+  // The shape of a real review: a snippet in the prose, the answer at the end.
+  const { summary, prose } = splitSummary(
+    "The type it switches on:\n\n" +
+      fenced('{"type": "single_choice"}') +
+      "\n\nThat premise is what breaks.\n\n" +
+      fenced('{"headline": "choice questions render as Text", "issues": 2}'),
+  );
+  expect(summary).toEqual({
+    headline: "choice questions render as Text",
+    issues: 2,
+  });
+  expect(prose).toBe(
+    "The type it switches on:\n\n" +
+      fenced('{"type": "single_choice"}') +
+      "\n\nThat premise is what breaks.",
+  );
+});
+
+test("a fenced code sample above the summary does not swallow it", () => {
+  // Not just json: the closing fence of any block opens one for the regex.
+  const { summary } = splitSummary(
+    "```ts\nconst x = 1;\n```\n\n" + fenced('{"risk": "high"}'),
+  );
+  expect(summary).toEqual({ risk: "high" });
+});
+
 test("a trailing block carrying none of our fields stays in the prose", () => {
   // A review may legitimately end by suggesting a config; it is not an answer.
   const review = "Add this to tsconfig:\n\n" + fenced('{"strict": true}');

@@ -17,8 +17,10 @@ export interface Split {
 }
 
 // Anchored at the end of the message: reviews quote json in their evidence, and
-// a block picked from the middle would put a code sample in the queue.
-const TRAILING_BLOCK = /\n?```(?:json)?\s*\n([\s\S]*?)\n?```\s*$/;
+// a block picked from the middle would put a code sample in the queue. The
+// leading group is greedy on purpose — a lazy one starts at the *first* fence in
+// the message and swallows everything up to the final one.
+const TRAILING_BLOCK = /^([\s\S]*)\n?```(?:json)?[ \t]*\n([\s\S]*?)\n?```\s*$/;
 
 const RISKS: Risk[] = ["low", "medium", "high"];
 
@@ -66,13 +68,13 @@ export function splitSummary(result: string): Split {
   if (!m) return { prose: result };
   let parsed: unknown;
   try {
-    parsed = JSON.parse(m[1] ?? "");
+    parsed = JSON.parse(m[2] ?? "");
   } catch {
     return { prose: result };
   }
   const summary = validate(parsed);
   if (!summary) return { prose: result };
-  return { summary, prose: result.slice(0, m.index).trimEnd() };
+  return { summary, prose: (m[1] ?? "").trimEnd() };
 }
 
 export interface Chip {
