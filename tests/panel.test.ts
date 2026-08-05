@@ -27,6 +27,22 @@ test("without a headline it falls back to the prose, dimmed and marked short", (
   expect(lines.every((l) => l.dim)).toBe(true);
 });
 
+test("markdown blank lines do not eat rows the fallback needs for content", () => {
+  const lines = panelLines({
+    assessment: prose(
+      "# Code review\n\nTwo findings.\n\nBoth in the migration.",
+    ),
+    notes: [],
+    width: 60,
+    height: 3,
+  });
+  expect(lines.map((l) => l.text)).toEqual([
+    "# Code review",
+    "Two findings.",
+    "Both in the migration.",
+  ]);
+});
+
 test("prose that fits is not marked as truncated", () => {
   const lines = panelLines({
     assessment: prose("all of it"),

@@ -6,7 +6,7 @@ the time you sit down, a finished review session is waiting to be resumed.
 Reviews never write anything to GitHub.
 
 A launchd job polls on an interval; the `reviews` binary is the front end: a
-full-screen queue showing each PR's assessment, with four ways into an entry —
+full-screen queue showing each PR's verdict, with four ways into an entry —
 resume the Claude session, open a shell or a diff in the PR's worktree, or
 follow a running review — plus retry, dismiss, and the poller switch.
 
@@ -52,10 +52,17 @@ that doesn't need it. `reviews doctor` enforces exactly this.
      blank) to run the default, `Review the PR by running /code-review
      {number}.` Every run is first told to do its work in a git worktree and
      never touch the main working copy — that part is fixed and not
-     configurable; `review_prompt` is only the task that follows. The agent
+     configurable; `review_prompt` is only the task in between. The agent
      picks *where* the worktree goes (following your own worktree conventions
      in CLAUDE.md, if any); auto-review discovers it afterwards and removes it
-     on dismiss. Tokens `{number}` and `{repo}` (org/repo) are substituted; a
+     on dismiss. Every run is also asked — again, not configurably — to end
+     its final message with a fenced `json` block,
+     `{"headline": …, "issues": …, "risk": "low"|"medium"|"high"}`, which is
+     what the queue renders per row. A prompt that cannot answer a field
+     omits it: one that never hunts for issues reports no count rather than a
+     misleading zero, and the row simply shows less. A run that ignores the
+     block falls back to the first lines of its prose, so nothing breaks.
+     Tokens `{number}` and `{repo}` (org/repo) are substituted; a
      prompt with no token is used as-is. A prompt that doesn't run
      `/code-review` needs no plugin (doctor checks this).
    - `extra_allowed_tools` — entries appended to the built-in tool allowlist
@@ -95,8 +102,10 @@ that doesn't need it. `reviews doctor` enforces exactly this.
 
 ## Day to day
 
-- `reviews` — the review queue. The list sizes itself to the queue and
-  Claude's assessment of the highlighted PR fills the rest of the screen.
+- `reviews` — the review queue. Each row carries the review's verdict at a
+  glance — how many issues it would flag, and the risk it graded the PR — and
+  a short panel under the list gives the highlighted PR's headline finding.
+  It is a triage screen: `enter` is how a review actually gets read.
 
   ```
   j/k ↑/↓  move          enter  claude       s  shell      d  diff
@@ -110,7 +119,7 @@ that doesn't need it. `reviews doctor` enforces exactly this.
   terminal over and comes back to the list when the program exits; `x` also
   removes the PR's worktree, and `K` kills a running review (marks it
   canceled — no more tokens burned; `r` starts it over). A verb this machine
-  cannot run is greyed out with the reason shown in the assessment pane,
+  cannot run is greyed out with the reason shown in the panel,
   rather than failing after the keypress. Without a terminal — from a script
   or a cron wrapper — it prints the pending queue and exits instead.
 - `reviews watch ORG/REPO#N` — follow a running review from anywhere; plain

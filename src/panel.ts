@@ -78,9 +78,11 @@ export function panelLines({
     return out;
   }
   // Fallback for a review that predates summaries, or ignored the instruction.
+  // Blank lines are what give markdown its shape over a page; across three
+  // rows they only cost content.
   const body =
     assessment.kind === "text"
-      ? wrapText(assessment.text, width)
+      ? wrapText(assessment.text, width).filter((l) => l.trim())
       : [assessment.reason];
   const shown = body.slice(0, room);
   if (body.length > shown.length && shown.length) {
