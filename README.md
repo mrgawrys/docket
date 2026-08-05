@@ -31,6 +31,10 @@ that doesn't need it. `docket doctor` enforces exactly this.
    `docket` binary into `~/.local/bin`, links the fish completions, and clears
    out what the old `auto-review` install left behind (its binary,
    completions, and launchd job — so re-run `docket on` afterwards).
+
+   Or, from Homebrew — `brew install mrgawrys/tap/docket` — which installs the
+   same binary and completions without a local checkout. It works from the
+   first tagged release onward; `./install.sh` remains the from-source path.
 2. Edit `~/.config/docket/config.json` — the first `docket` run writes a
    starter copy there, or, coming from `auto-review`, copies that install's
    config and state over so the queue survives the rename (the originals are
