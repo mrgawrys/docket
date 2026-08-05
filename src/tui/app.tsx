@@ -161,10 +161,12 @@ export function App({
     Math.min(rows.length || 1, Math.min(10, height - 8)),
   );
   // Bounded, and it shrinks with the terminal — the panel never takes the
-  // screen away from the queue the way the old scrolling pane did.
+  // screen away from the queue the way the old scrolling pane did. The `- 3`
+  // is the two bars plus the row the frame must leave spare: fill every row
+  // and the terminal scrolls the whole thing on each render.
   const panelHeight = Math.max(
     1,
-    Math.min(PANEL_HEIGHT, height - 1 - queueHeight - 2 - (footer ? 1 : 0)),
+    Math.min(PANEL_HEIGHT, height - 1 - queueHeight - 3 - (footer ? 1 : 0)),
   );
   const panel = useMemo(
     () =>
@@ -231,7 +233,9 @@ export function App({
       return;
     }
     if (input === "s") return open("shell");
-    if (input === "d") return open("diff");
+    // ink reports ctrl+letter as the bare letter, and Ctrl+D is muscle memory
+    // for EOF — it must not hand the terminal to the diff opener.
+    if (input === "d" && !key.ctrl) return open("diff");
     if (input === "w") {
       request({
         argv: selfArgs("watch", current.key),
