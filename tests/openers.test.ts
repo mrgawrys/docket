@@ -139,7 +139,7 @@ test("worktree resolution distinguishes never-had-one from vanished", () => {
   });
 });
 
-test("the base commit comes from merge-base, falling back to origin/main", () => {
+test("the base commit comes from merge-base, trying each ref that could exist", () => {
   const entry: Entry = {
     status: "ready",
     local_path: "/clones/demo",
@@ -164,11 +164,31 @@ test("the base commit comes from merge-base, falling back to origin/main", () =>
     clone: "/clones/demo",
   });
 
-  const noOriginHead = openerContext("acme/demo#7", entry, {
+  // a clone whose origin/HEAD symref was never set, on a master-default repo:
+  // assuming origin/main here builds a diff against a ref that does not exist
+  const masterDefault = openerContext("acme/demo#7", entry, {
+    exists: () => true,
+    git: (args) => (args[2] === "origin/master" ? "cafe" : null),
+  });
+  expect(masterDefault.base).toBe("cafe");
+
+  const noBase = openerContext("acme/demo#7", entry, {
     exists: () => true,
     git: () => null,
   });
-  expect(noOriginHead.base).toBe("origin/main");
+  expect(noBase.base).toBeNull();
+});
+
+test("a diff with no resolvable base reports why instead of running", () => {
+  const r = buildOpener(
+    "diff",
+    { diff: ["git", "diff", "{base}...{head}"] },
+    ctx({ base: null }),
+  );
+  expect(r).toHaveProperty("unavailable");
+  expect((r as { unavailable: string }).unavailable).toContain(
+    "no base branch",
+  );
 });
 
 test("no worktree means no git lookup at all", () => {
@@ -185,6 +205,6 @@ test("no worktree means no git lookup at all", () => {
     },
   );
   expect(ran).toBe(false);
-  expect(c.base).toBe("origin/main");
+  expect(c.base).toBeNull();
   expect(c.worktree).toEqual({ missing: "no worktree recorded (skipped)" });
 });

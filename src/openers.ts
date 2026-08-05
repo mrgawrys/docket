@@ -56,7 +56,8 @@ export type Worktree = { path: string } | { missing: string };
 export interface OpenerContext {
   worktree: Worktree;
   clone: string;
-  base: string;
+  // null when no base branch could be resolved — see mergeBase.
+  base: string | null;
   head: string;
   number: string;
   repo: string;
@@ -75,10 +76,16 @@ export function buildOpener(
   const cmd = resolved[verb];
   if (!cmd) return { unavailable: `no ${verb} opener found on PATH` };
   if ("missing" in ctx.worktree) return { unavailable: ctx.worktree.missing };
+  if (ctx.base === null && cmd.some((a) => a.includes("{base}"))) {
+    return {
+      unavailable:
+        "no base branch: none of origin/HEAD, origin/main, origin/master resolve",
+    };
+  }
   const tokens: Record<string, string> = {
     "{worktree}": ctx.worktree.path,
     "{clone}": ctx.clone,
-    "{base}": ctx.base,
+    "{base}": ctx.base ?? "",
     "{head}": ctx.head,
     "{number}": ctx.number,
     "{repo}": ctx.repo,
@@ -104,6 +111,18 @@ export const runGit: GitRunner = (args, cwd) => {
   return p.exitCode === 0 ? p.stdout.toString().trim() : null;
 };
 
+// origin/HEAD is a symref plenty of clones never got — and when it is missing,
+// "main" is a guess that fails outright on a master-default repo. Try the ones
+// that could exist and let the verb report a missing base rather than run a
+// diff against a ref that isn't there.
+function mergeBase(git: GitRunner, cwd: string): string | null {
+  for (const ref of ["origin/HEAD", "origin/main", "origin/master"]) {
+    const base = git(["merge-base", "HEAD", ref], cwd);
+    if (base) return base;
+  }
+  return null;
+}
+
 // Never falls back to the clone when the worktree is gone: dropping the user
 // somewhere they did not ask to be is worse than a disabled verb.
 export function resolveWorktree(
@@ -124,10 +143,7 @@ export function openerContext(
   const { repo, number } = splitKey(key);
   const worktree = resolveWorktree(entry, deps.exists);
   const git = deps.git ?? runGit;
-  const base =
-    ("path" in worktree &&
-      git(["merge-base", "HEAD", "origin/HEAD"], worktree.path)) ||
-    "origin/main";
+  const base = "path" in worktree ? mergeBase(git, worktree.path) : null;
   return {
     worktree,
     clone: entry.local_path ?? "",
