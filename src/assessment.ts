@@ -66,16 +66,25 @@ export function readAssessment(path: string): Assessment {
   } catch {
     return { kind: "none", reason: "run log could not be read" };
   }
-  const value: Assessment =
-    text === undefined
-      ? {
-          kind: "none",
-          reason:
-            "no result in the run log — the review is still running or it failed",
-        }
-      : // The triage block is the queue's job; here it would just be raw JSON
-        // at the end of the prose the panel falls back to.
-        { kind: "text", text: splitSummary(text).prose.trim() };
+  const value = ((): Assessment => {
+    if (text === undefined)
+      return {
+        kind: "none",
+        reason:
+          "no result in the run log — the review is still running or it failed",
+      };
+    // The triage block is the queue's job; here it would just be raw JSON at
+    // the end of the prose the panel falls back to.
+    const prose = splitSummary(text).prose.trim();
+    if (!prose)
+      // A run whose whole final message was the block leaves the fallback
+      // nothing to show, and a blank pane reads as a failed read.
+      return {
+        kind: "none",
+        reason: "the review left only its triage summary",
+      };
+    return { kind: "text", text: prose };
+  })();
   cache.set(path, { mtimeMs: st.mtimeMs, size: st.size, value });
   return value;
 }
