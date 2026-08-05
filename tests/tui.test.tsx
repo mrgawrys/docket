@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { paths, type Config } from "../src/config";
 import { resolveOpeners } from "../src/openers";
-import type { Entry, State } from "../src/state";
+import { setStatus, type Entry, type State } from "../src/state";
 import { App, type TuiActions } from "../src/tui/app";
 import type { SuspendRequest } from "../src/tui/suspend";
 
@@ -18,7 +18,10 @@ const resolved = resolveOpeners(
   (bin) => bin === "git" || bin === "/bin/sh",
 );
 
-function mount(state: State) {
+// `real` makes dismiss do what the command does — mark the entry done, which
+// drops it from the queue. A stub that only records the call cannot catch a
+// cursor that moves when the row under it disappears.
+function mount(state: State, real = false) {
   const dir = mkdtempSync(join(tmpdir(), "reviews-tui-"));
   writeFileSync(join(dir, "state.json"), JSON.stringify(state));
   const p = paths({
@@ -40,8 +43,15 @@ function mount(state: State) {
       calls.push("sync");
       return 0;
     },
-    dismiss: (k) => calls.push(`dismiss:${k}`),
-    kill: (k) => calls.push(`kill:${k}`),
+    dismiss: (k) => {
+      calls.push(`dismiss:${k}`);
+      if (real) setStatus(p.statePath, k, "done");
+      return `dismissed ${k}`;
+    },
+    kill: (k) => {
+      calls.push(`kill:${k}`);
+      return `${k}: killed`;
+    },
   };
   const r = render(
     <App
@@ -80,6 +90,32 @@ test("destructive verbs act on the highlighted row, not the first one", async ()
   ui.stdin.write("K");
   await Bun.sleep(20);
   expect(ui.calls).toEqual(["dismiss:acme/two#2", "kill:acme/two#2"]);
+  ui.unmount();
+});
+
+test("the cursor holds its place when the row under it is dismissed", async () => {
+  const ui = mount(
+    {
+      "acme/one#1": entry({ title: "One", updated_at: "2026-01-01T00:00:00Z" }),
+      "acme/two#2": entry({ title: "Two", updated_at: "2026-01-02T00:00:00Z" }),
+      "acme/three#3": entry({
+        title: "Three",
+        updated_at: "2026-01-03T00:00:00Z",
+      }),
+    },
+    true,
+  );
+  ui.stdin.write("j");
+  await Bun.sleep(20);
+  ui.stdin.write("j"); // last row
+  await Bun.sleep(20);
+  ui.stdin.write("x");
+  await Bun.sleep(20);
+  ui.stdin.write("x");
+  await Bun.sleep(20);
+  // the second x lands on what took the vacated slot, never back at row 1 —
+  // dismiss force-removes the PR's worktree, so a wrong target loses work
+  expect(ui.calls).toEqual(["dismiss:acme/three#3", "dismiss:acme/two#2"]);
   ui.unmount();
 });
 

@@ -1,10 +1,10 @@
 import { Box, render, Text, useApp, useInput, useWindowSize } from "ink";
 import { watch } from "node:fs";
 import { dirname } from "node:path";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { readAssessment } from "../assessment";
 import { runLogPath, type Config, type Paths } from "../config";
-import { buildResume } from "../list";
+import { buildResume, printPending } from "../list";
 import {
   buildOpener,
   openerContext,
@@ -24,8 +24,10 @@ export interface TuiActions {
   retry(key: string): Promise<number>;
   poll(): Promise<number>;
   sync(): Promise<number>;
-  dismiss(key: string): void;
-  kill(key: string): void;
+  // Both return what to tell the user: their own output goes to the console,
+  // which Ink displaces above the frame where nobody is looking.
+  dismiss(key: string): string;
+  kill(key: string): string;
 }
 
 export interface AppProps {
@@ -106,13 +108,19 @@ export function App({
     }
   }, [paths.statePath, load]);
 
-  const cursor = Math.max(
-    0,
-    rows.findIndex((r) => r.key === cursorKey),
-  );
+  // A row can vanish under the cursor: x and K drop it, and so does a poll
+  // that marks it done while the watcher reloads. Hold the position when the
+  // key is gone — snapping to row 0 would aim the next x at another PR.
+  const lastIndex = useRef(0);
+  const found = rows.findIndex((r) => r.key === cursorKey);
+  const cursor =
+    found >= 0 ? found : Math.min(lastIndex.current, rows.length - 1);
+  lastIndex.current = Math.max(0, cursor);
   const current = rows[cursor];
   useEffect(() => {
-    if (current) onSelect?.(current.key);
+    if (!current) return;
+    setCursorKey(current.key); // re-anchor after the row it named disappeared
+    onSelect?.(current.key);
   }, [current, onSelect]);
   useEffect(() => setScroll("bottom"), [cursorKey]);
 
@@ -203,7 +211,11 @@ export function App({
       openerContext(current.key, current.entry),
     );
     if ("unavailable" in r) return setStatus(`${verb}: ${r.unavailable}`);
-    request({ ...r, banner: `${verb}: ${current.key} in ${r.cwd}` });
+    request({
+      ...r,
+      banner: `${verb}: ${current.key} in ${r.cwd}`,
+      interactive: verb === "shell",
+    });
   };
 
   useInput((input, key) => {
@@ -246,12 +258,11 @@ export function App({
       return run(`retrying ${target}`, () => actions.retry(target));
     }
     if (input === "x") {
-      actions.dismiss(current.key);
-      setStatus(`dismissed ${current.key}`);
+      setStatus(actions.dismiss(current.key));
       return setRows(load());
     }
     if (input === "K") {
-      actions.kill(current.key);
+      setStatus(actions.kill(current.key));
       return setRows(load());
     }
   });
@@ -293,6 +304,10 @@ export function App({
 // Openers are resolved once here, not per frame; the selected key rides across
 // a suspend so the cursor comes back to the PR the user acted on.
 export function runTui(ctx: Ctx, actions: TuiActions): Promise<number> {
+  // useInput needs raw mode, and Ink throws without a tty. The readline menu
+  // this replaced read a closed stdin as "quit", so a script or a cron wrapper
+  // that runs bare `reviews` still gets the queue instead of a stack trace.
+  if (!process.stdin.isTTY) return Promise.resolve(printPending(ctx));
   const resolved = resolveOpeners(ctx.cfg);
   let selected: string | undefined;
   return suspendLoop((request, notice) =>

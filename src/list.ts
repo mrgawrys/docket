@@ -1,6 +1,12 @@
 import { claudeBin, claudeEnv, type Config } from "./config";
 import { cleanupEntry, type Ctx } from "./reviewer";
-import { isLiveReview, loadState, setStatus, type Entry } from "./state";
+import {
+  isLiveReview,
+  loadState,
+  pendingEntries,
+  setStatus,
+  type Entry,
+} from "./state";
 
 export function buildResume(
   entry: Entry,
@@ -23,24 +29,44 @@ export function buildResume(
   };
 }
 
-export function dismissKey(ctx: Ctx, key: string): void {
+// Both of these are driven from the TUI, where console output is displaced
+// above the frame — so they report by returning, and the caller decides
+// whether that lands in a status line or on stdout.
+export function dismissKey(ctx: Ctx, key: string): string {
   setStatus(ctx.paths.statePath, key, "done");
-  cleanupEntry(ctx, key, "DISMISS");
-  console.log(`dismissed ${key}`);
+  const stuck = cleanupEntry(ctx, key, "DISMISS");
+  return stuck.length
+    ? `dismissed ${key} — could not remove ${stuck.join(", ")}`
+    : `dismissed ${key}`;
 }
 
-export function killEntry(ctx: Ctx, key: string): number {
+export function killEntry(
+  ctx: Ctx,
+  key: string,
+): { code: number; message: string } {
   const e = loadState(ctx.paths.statePath)[key];
   if (!e || !isLiveReview(e)) {
-    console.error(`${key}: no live review to kill`);
-    return 1;
+    return { code: 1, message: `${key}: no live review to kill` };
   }
   try {
     process.kill(e.pid!, "SIGTERM"); // the runner's handler marks the entry canceled
   } catch {
-    console.error(`${key}: runner already exited`); // reconcileOrphans will settle the entry
-    return 1;
+    // reconcileOrphans will settle the entry
+    return { code: 1, message: `${key}: runner already exited` };
   }
-  console.log(`${key}: killed — it will show as canceled; r re-runs it`);
+  return {
+    code: 0,
+    message: `${key}: killed — it will show as canceled; r re-runs it`,
+  };
+}
+
+// Bare `reviews` without a terminal: the TUI cannot mount, so print what it
+// would have shown.
+export function printPending(ctx: Ctx): number {
+  const rows = pendingEntries(loadState(ctx.paths.statePath));
+  if (!rows.length) console.log("no pending reviews");
+  for (const [key, e] of rows) {
+    console.log([key, e.status, e.title ?? ""].join("\t").trimEnd());
+  }
   return 0;
 }

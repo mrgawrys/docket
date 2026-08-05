@@ -111,7 +111,8 @@ that doesn't need it. `reviews doctor` enforces exactly this.
   removes the PR's worktree, and `K` kills a running review (marks it
   canceled — no more tokens burned; `r` starts it over). A verb this machine
   cannot run is greyed out with the reason shown in the assessment pane,
-  rather than failing after the keypress.
+  rather than failing after the keypress. Without a terminal — from a script
+  or a cron wrapper — it prints the pending queue and exits instead.
 - `reviews watch ORG/REPO#N` — follow a running review from anywhere; plain
   `reviews watch` follows the poller log as before.
 - `reviews sync` — refresh entries from GitHub before listing: merged/closed

@@ -28,6 +28,20 @@ test("buildResume guards and command construction", () => {
   });
 });
 
+test("bare reviews without a terminal prints the queue instead of crashing", () => {
+  // a script, a cron wrapper, `reviews < /dev/null`: Ink cannot take raw mode
+  // there, and the menu this replaced treated a closed stdin as quit
+  const sb = makeSandbox();
+  sb.writeState({
+    "testorg/demo#7": { status: "ready", title: "Demo PR", updated_at: "t" },
+    "testorg/demo#8": { status: "done", title: "Gone", updated_at: "t" },
+  });
+  const r = sb.run([]);
+  expect(r.code).toBe(0);
+  expect(r.out).toContain("testorg/demo#7");
+  expect(r.out).not.toContain("testorg/demo#8"); // done is not pending
+});
+
 test("dismiss command marks done and removes the worktree", () => {
   const sb = makeSandbox();
   sb.gitInitDemo();
@@ -116,7 +130,7 @@ test("killEntry SIGTERMs a live runner, which marks the entry canceled", async (
   );
 
   const ctx = { paths: { statePath: sb.statePath } } as any;
-  expect(killEntry(ctx, "testorg/demo#62")).toBe(0);
+  expect(killEntry(ctx, "testorg/demo#62").code).toBe(0);
   await sb.waitEntry("testorg/demo#62", (e) => e.status === "canceled");
   await proc.exited;
 });
@@ -127,8 +141,13 @@ test("killEntry refuses when nothing is running for the key", () => {
     "testorg/demo#7": { status: "ready", session_id: "s", updated_at: "t" },
   });
   const ctx = { paths: { statePath: sb.statePath } } as any;
-  expect(killEntry(ctx, "testorg/demo#7")).toBe(1);
-  expect(killEntry(ctx, "testorg/demo#99")).toBe(1);
+  // the reason has to come back to the caller: in the TUI, console output
+  // lands above the frame where the user never sees it
+  expect(killEntry(ctx, "testorg/demo#7")).toEqual({
+    code: 1,
+    message: "testorg/demo#7: no live review to kill",
+  });
+  expect(killEntry(ctx, "testorg/demo#99").code).toBe(1);
 });
 
 test("buildResume points a reviewing entry at watch/kill", () => {

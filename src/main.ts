@@ -30,6 +30,7 @@ import {
 import { logCommand, statusCommand, watchCommand } from "./status";
 import { reconcile } from "./sync";
 import { runTui } from "./tui/app";
+import { childOwnsTerminal } from "./tui/suspend";
 
 const USAGE = `reviews — pre-run Claude Code reviews for PRs awaiting you
 
@@ -112,6 +113,9 @@ async function runLocked(ctx: Ctx, fn: () => Promise<number>): Promise<number> {
   const release = acquireLock(ctx.paths.lockDir, ctx.log);
   if (!release) return 0; // another live run holds the lock (bash exits 0 here)
   const onSignal = () => {
+    // A poll started with `p` outlives the keystroke, so a suspended child may
+    // hold the terminal by now — that Ctrl+C is the child's, not our cancel.
+    if (childOwnsTerminal()) return;
     ctx.log("canceled (interrupted)");
     release();
     process.exit(130);
@@ -285,7 +289,7 @@ const dismiss: Command = (args) =>
       console.error(`unknown key: ${key}`);
       return 1;
     }
-    dismissKey(ctx, key);
+    console.log(dismissKey(ctx, key));
     return 0;
   });
 
@@ -332,9 +336,7 @@ async function main(): Promise<number> {
         poll: () => pollLocked(ctx, false),
         sync: () => syncLocked(ctx),
         dismiss: (key) => dismissKey(ctx, key),
-        kill: (key) => {
-          killEntry(ctx, key);
-        },
+        kill: (key) => killEntry(ctx, key).message,
       }),
     );
   if (cmd === "-h" || cmd === "--help") return help([]);
