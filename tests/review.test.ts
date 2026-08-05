@@ -64,6 +64,42 @@ test("reviewPrompt: a reviewer note is appended after everything", () => {
   expect(p.trimEnd().endsWith("focus on the migration")).toBe(true);
 });
 
+test("reviewPrompt: the summary block is demanded even of a custom prompt", () => {
+  const p = reviewPrompt("7", "org/repo", bareCfg("Just eyeball it."));
+  expect(p).toContain("triage summary");
+  expect(p).toContain('"headline"');
+  expect(p).toContain('"risk"');
+});
+
+test("a finished review records its triage summary on the entry", async () => {
+  const sb = makeSandbox();
+  sb.gitInitDemo();
+  const r = sb.run(["review", "testorg/demo#7"], {
+    CLAUDE_RESULT:
+      "# Code review\n\nOne real defect.\n\n```json\n" +
+      '{"headline": "choice questions render as Text", "issues": 1, "risk": "low"}\n' +
+      "```",
+  });
+  expect(r.code).toBe(0);
+  const e = await sb.waitEntry("testorg/demo#7", (x) => x.status === "ready");
+  expect(e.summary).toEqual({
+    headline: "choice questions render as Text",
+    issues: 1,
+    risk: "low",
+  });
+});
+
+test("a review that ignores the summary instruction still lands as ready", async () => {
+  const sb = makeSandbox();
+  sb.gitInitDemo();
+  expect(
+    sb.run(["review", "testorg/demo#7"], { CLAUDE_RESULT: "no block here" })
+      .code,
+  ).toBe(0);
+  const e = await sb.waitEntry("testorg/demo#7", (x) => x.status === "ready");
+  expect(e.summary).toBeUndefined();
+});
+
 test("runner records the worktree the agent created, wherever it put it", async () => {
   const sb = makeSandbox();
   sb.gitInitDemo();

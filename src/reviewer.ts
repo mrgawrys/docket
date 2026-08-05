@@ -34,11 +34,25 @@ import {
   updateEntry,
   type Entry,
 } from "./state";
+import { splitSummary, type Summary } from "./summary";
 import {
   parseWorktrees,
   pickReviewWorktrees,
   type WorktreeInfo,
 } from "./worktree";
+
+// What the queue shows for every entry. Fixed rather than configurable so the
+// queue keeps a triage signal whatever `review_prompt` asks for; a prompt that
+// cannot answer a field omits it (see splitSummary).
+export const SUMMARY_INSTRUCTION =
+  `Finally, end your last message with a fenced json block — a triage summary ` +
+  `for the review queue — and write nothing after it:\n\n` +
+  "```json\n" +
+  `{"headline": "one line, at most 80 characters, the first thing the ` +
+  `reviewer should know", "issues": <how many you would flag — omit the key ` +
+  `entirely if finding issues was not your task>, "risk": "low" | "medium" | ` +
+  `"high" — omit the key if you did not assess risk}\n` +
+  "```";
 
 // Fixed worktree hygiene wraps a configurable task body. The preamble (work in
 // an isolated worktree, never touch the main copy) and the suffix (keep it
@@ -60,7 +74,8 @@ export function reviewPrompt(
     `checkouts and code inspection inside that worktree — never modify the ` +
     `main working copy.\n\n` +
     `${body}\n\n` +
-    `Keep the worktree in place afterwards so follow-up questions can use it.`;
+    `Keep the worktree in place afterwards so follow-up questions can use it.` +
+    `\n\n${SUMMARY_INSTRUCTION}`;
   if (note) p += `\n\nAdditional context from the reviewer: ${note}`;
   return p;
 }
@@ -329,10 +344,14 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
   );
 
   let sessionId = "";
+  let summary: Summary | undefined;
   if (exitCode === 0) {
     // a well-formed run ends with a stream-json result event carrying the session
     const ev = parseRunEvent(tailLines(runLog, 1)[0] ?? "");
-    if (ev?.type === "result") sessionId = ev.session_id ?? "";
+    if (ev?.type === "result") {
+      sessionId = ev.session_id ?? "";
+      summary = splitSummary(ev.result ?? "").summary;
+    }
   }
 
   const url = entry.url ?? "";
@@ -363,7 +382,12 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
     await notify(ctx.cfg, `Review FAILED: ${key}`, title);
     ctx.counters.failed++;
   }
-  if (worktrees.length) patchEntry(statePath, key, { worktrees });
+  // Both are discovered facts about the finished run, and the status writes
+  // above rewrite the entry wholesale — so they are patched on afterwards.
+  const patch: Partial<Entry> = {};
+  if (worktrees.length) patch.worktrees = worktrees;
+  if (summary) patch.summary = summary;
+  if (Object.keys(patch).length) patchEntry(statePath, key, patch);
   ctx.current.key = "";
   return 0;
 }
