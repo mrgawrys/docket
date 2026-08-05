@@ -1,5 +1,6 @@
 import { Box, Text } from "ink";
 import type { Entry, Status } from "../state";
+import { issueChip, riskChip } from "../summary";
 
 export interface Row {
   key: string;
@@ -62,6 +63,18 @@ export function Queue({
             <Box width={18} flexShrink={0}>
               <Text color={STATUS_COLOR[entry.status]} wrap="truncate-end">
                 {entry.status}
+              </Text>
+            </Box>
+            {/* fixed widths, so an entry with no summary leaves a gap rather
+                than shifting every other row's columns out of line */}
+            <Box width={10} flexShrink={0}>
+              <Text color={issueChip(entry.summary)?.color} wrap="truncate-end">
+                {issueChip(entry.summary)?.text ?? ""}
+              </Text>
+            </Box>
+            <Box width={5} flexShrink={0}>
+              <Text color={riskChip(entry.summary)?.color} wrap="truncate-end">
+                {riskChip(entry.summary)?.text ?? ""}
               </Text>
             </Box>
             {flags ? (

@@ -10,6 +10,7 @@ import {
 import { dirname } from "node:path";
 import type { Logger } from "./log";
 import { pidAlive } from "./proc";
+import type { Summary } from "./summary";
 
 export type Verdict = "approved" | "changes-requested" | "commented";
 export type Status =
@@ -36,6 +37,9 @@ export interface Entry {
   // Absolute paths of git worktrees this review created, discovered after the
   // run wherever the agent put them; cleanupEntry removes exactly these.
   worktrees?: string[];
+  // Parsed once when the review finishes, so the queue renders from state
+  // alone instead of reading a run log per row.
+  summary?: Summary;
   updated_at: string;
 }
 

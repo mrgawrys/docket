@@ -18,7 +18,6 @@ export const KEYMAP: Binding[] = [
   { keys: "K", label: "kill" },
   { keys: "p", label: "poll" },
   { keys: "S", label: "sync" },
-  { keys: "ctrl-d/u", label: "scroll assessment" },
   { keys: "?", label: "help" },
   { keys: "q", label: "quit" },
 ];

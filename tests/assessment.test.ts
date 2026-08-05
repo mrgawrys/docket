@@ -32,6 +32,25 @@ test("reads the assessment from the final result event", () => {
   });
 });
 
+test("the triage block is cut off the prose the panel falls back to", () => {
+  const p = logPath([
+    result(
+      '# Code review\n\nOne issue.\n\n```json\n{"headline": "x", "issues": 1}\n```',
+    ),
+  ]);
+  expect(readAssessment(p)).toEqual({
+    kind: "text",
+    text: "# Code review\n\nOne issue.",
+  });
+});
+
+test("a result that was only the triage block says so rather than nothing", () => {
+  const p = logPath([result('```json\n{"issues": 0, "risk": "low"}\n```')]);
+  const a = readAssessment(p);
+  expect(a.kind).toBe("none");
+  expect((a as { reason: string }).reason).toContain("triage summary");
+});
+
 test("a missing run log and a log with no result each explain themselves", () => {
   const missing = readAssessment(join(tmpdir(), "definitely-not-here.jsonl"));
   expect(missing.kind).toBe("none");

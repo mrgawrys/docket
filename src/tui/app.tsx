@@ -15,8 +15,9 @@ import {
 import { selfArgs } from "../proc";
 import type { Ctx } from "../reviewer";
 import { loadState, pendingEntries } from "../state";
+import { PANEL_HEIGHT, panelLines } from "../panel";
 import { Help, Legend } from "./legend";
-import { Preview, wrapText } from "./preview";
+import { Panel } from "./panel";
 import { Queue, type Row } from "./queue";
 import { suspendLoop, type SuspendRequest } from "./suspend";
 
@@ -88,10 +89,6 @@ export function App({
   );
   const [rows, setRows] = useState<Row[]>(load);
   const [cursorKey, setCursorKey] = useState<string | undefined>(initialKey);
-  // "bottom" rather than a number: Claude puts the verdict and the draft
-  // comment last, so a fresh assessment opens at the end and stays pinned
-  // there through a resize until the user scrolls away from it.
-  const [scroll, setScroll] = useState<number | "bottom">("bottom");
   const [view, setView] = useState<"queue" | "help">("queue");
   const [status, setStatus] = useState<string | undefined>();
 
@@ -122,23 +119,15 @@ export function App({
     setCursorKey(current.key); // re-anchor after the row it named disappeared
     onSelect?.(current.key);
   }, [current, onSelect]);
-  useEffect(() => setScroll("bottom"), [cursorKey]);
-
+  const summary = current?.entry.summary;
+  // Only read when the panel would actually fall back to it: with a headline
+  // recorded on the entry, the run log has nothing left to tell this view.
   const assessment = useMemo(
     () =>
-      current
+      current && !summary?.headline
         ? readAssessment(runLogPath(paths, current.key))
         : ({ kind: "none", reason: "" } as const),
-    [current, paths],
-  );
-  // Wrapping 8 KB of prose is the one non-trivial cost per row, so it is
-  // memoized alongside the read rather than redone on every keystroke.
-  const lines = useMemo(
-    () =>
-      assessment.kind === "text"
-        ? wrapText(assessment.text, width - 2)
-        : [assessment.reason],
-    [assessment, width],
+    [current, summary, paths],
   );
 
   // Computed per row, never per keypress: a verb the machine cannot run is
@@ -171,29 +160,31 @@ export function App({
     1,
     Math.min(rows.length || 1, Math.min(10, height - 8)),
   );
-  const previewHeight = Math.max(
+  // Bounded, and it shrinks with the terminal — the panel never takes the
+  // screen away from the queue the way the old scrolling pane did. The `- 3`
+  // is the two bars plus the row the frame must leave spare: fill every row
+  // and the terminal scrolls the whole thing on each render.
+  const panelHeight = Math.max(
     1,
-    height - 1 - queueHeight - 3 - (footer ? 1 : 0),
+    Math.min(PANEL_HEIGHT, height - 1 - queueHeight - 3 - (footer ? 1 : 0)),
   );
-  // Notes sit inside the pane and push the assessment down, so they come out
-  // of the scrollable viewport too.
-  const viewport = Math.max(1, previewHeight - notes.length);
-  const maxScroll = Math.max(0, lines.length - viewport);
-  const top = scroll === "bottom" ? maxScroll : Math.min(scroll, maxScroll);
+  const panel = useMemo(
+    () =>
+      panelLines({
+        summary,
+        assessment,
+        notes,
+        width: width - 2,
+        height: panelHeight,
+      }),
+    [summary, assessment, notes, width, panelHeight],
+  );
 
   const move = (delta: number) => {
     if (rows.length === 0) return;
     const next = Math.min(rows.length - 1, Math.max(0, cursor + delta));
     setCursorKey(rows[next]?.key);
   };
-
-  // Functional update: a held key fires several times before a re-render, and
-  // reading `top` from this render's closure would drop all but the last.
-  const scrollBy = (delta: number) =>
-    setScroll((s) => {
-      const from = s === "bottom" ? maxScroll : Math.min(s, maxScroll);
-      return Math.max(0, Math.min(from + delta, maxScroll));
-    });
 
   const run = (label: string, fn: () => Promise<number>) => {
     setStatus(`${label}…`);
@@ -227,8 +218,6 @@ export function App({
     if (input === "?") return setView("help");
     if (input === "j" || key.downArrow) return move(1);
     if (input === "k" || key.upArrow) return move(-1);
-    if (key.pageDown || (key.ctrl && input === "d")) return scrollBy(10);
-    if (key.pageUp || (key.ctrl && input === "u")) return scrollBy(-10);
     if (input === "p") return run("polling", actions.poll);
     if (input === "S") return run("syncing", actions.sync);
     if (!current) return;
@@ -244,7 +233,9 @@ export function App({
       return;
     }
     if (input === "s") return open("shell");
-    if (input === "d") return open("diff");
+    // ink reports ctrl+letter as the bare letter, and Ctrl+D is muscle memory
+    // for EOF — it must not hand the terminal to the diff opener.
+    if (input === "d" && !key.ctrl) return open("diff");
     if (input === "w") {
       request({
         argv: selfArgs("watch", current.key),
@@ -282,14 +273,10 @@ export function App({
       ) : (
         <>
           <Queue rows={rows} cursor={cursor} height={queueHeight} />
-          <Bar label="assessment" width={width} />
-          <Preview
-            lines={lines}
-            notes={notes}
-            height={viewport}
-            scroll={top}
-            dim={assessment.kind === "none"}
-          />
+          {/* the bar names the row the panel belongs to, so the two regions
+              read as queue-then-detail rather than one column of text */}
+          <Bar label={current?.key ?? "no selection"} width={width} />
+          <Panel lines={panel} />
         </>
       )}
       {footer ? (
