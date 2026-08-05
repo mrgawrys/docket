@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "reviews",
+      "name": "docket",
       "dependencies": {
         "ink": "7.1.1",
         "react": "19.2.8",
