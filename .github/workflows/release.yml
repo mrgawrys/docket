@@ -1,0 +1,36 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun test
+
+      # bun cross-compiles, so one runner produces both macOS binaries.
+      - name: Build and package
+        run: |
+          for arch in arm64 x64; do
+            mkdir -p stage/fish
+            cp fish/docket-completions.fish stage/fish/
+            bun build --compile src/main.ts --target=bun-darwin-$arch --outfile stage/docket
+            tar -czf docket-darwin-$arch.tar.gz -C stage docket fish
+            rm -rf stage
+          done
+          shasum -a 256 docket-darwin-*.tar.gz > SHA256SUMS
+
+      - name: Publish release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --generate-notes \
+            docket-darwin-arm64.tar.gz docket-darwin-x64.tar.gz SHA256SUMS
