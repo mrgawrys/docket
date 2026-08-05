@@ -58,17 +58,17 @@ export interface Paths {
 export function paths(env: NodeJS.ProcessEnv = process.env): Paths {
   const home = env.HOME ?? "";
   const configDir =
-    env.AUTO_REVIEW_CONFIG_DIR ??
-    join(env.XDG_CONFIG_HOME ?? join(home, ".config"), "auto-review");
+    env.DOCKET_CONFIG_DIR ??
+    join(env.XDG_CONFIG_HOME ?? join(home, ".config"), "docket");
   const stateDir =
-    env.AUTO_REVIEW_STATE_DIR ??
-    join(env.XDG_STATE_HOME ?? join(home, ".local", "state"), "auto-review");
+    env.DOCKET_STATE_DIR ??
+    join(env.XDG_STATE_HOME ?? join(home, ".local", "state"), "docket");
   return {
     configDir,
     stateDir,
     configPath: join(configDir, "config.json"),
     statePath: join(stateDir, "state.json"),
-    logPath: join(stateDir, "auto-review.log"),
+    logPath: join(stateDir, "docket.log"),
     lockDir: join(stateDir, ".lock"),
   };
 }
@@ -169,6 +169,6 @@ export const notifyEnabled = (
   cfg: Config,
   env: NodeJS.ProcessEnv = process.env,
 ): boolean =>
-  env.AUTO_REVIEW_NOTIFY !== undefined
-    ? env.AUTO_REVIEW_NOTIFY === "1"
+  env.DOCKET_NOTIFY !== undefined
+    ? env.DOCKET_NOTIFY === "1"
     : cfg.notifications !== false;

@@ -17,28 +17,28 @@ import {
 
 test("paths: env overrides beat XDG beats HOME defaults", () => {
   const home = { HOME: "/h" } as NodeJS.ProcessEnv;
-  expect(paths(home).configPath).toBe("/h/.config/auto-review/config.json");
-  expect(paths(home).statePath).toBe("/h/.local/state/auto-review/state.json");
+  expect(paths(home).configPath).toBe("/h/.config/docket/config.json");
+  expect(paths(home).statePath).toBe("/h/.local/state/docket/state.json");
   const xdg = {
     HOME: "/h",
     XDG_CONFIG_HOME: "/x/cfg",
     XDG_STATE_HOME: "/x/st",
   } as NodeJS.ProcessEnv;
-  expect(paths(xdg).configDir).toBe("/x/cfg/auto-review");
-  expect(paths(xdg).lockDir).toBe("/x/st/auto-review/.lock");
+  expect(paths(xdg).configDir).toBe("/x/cfg/docket");
+  expect(paths(xdg).lockDir).toBe("/x/st/docket/.lock");
   const own = {
     HOME: "/h",
-    AUTO_REVIEW_CONFIG_DIR: "/o/c",
-    AUTO_REVIEW_STATE_DIR: "/o/s",
+    DOCKET_CONFIG_DIR: "/o/c",
+    DOCKET_STATE_DIR: "/o/s",
   } as NodeJS.ProcessEnv;
   expect(paths(own).configPath).toBe("/o/c/config.json");
-  expect(paths(own).logPath).toBe("/o/s/auto-review.log");
+  expect(paths(own).logPath).toBe("/o/s/docket.log");
 });
 
 test("loadConfig: missing file throws ConfigError pointing at config.example.json", async () => {
   const p = paths({
-    AUTO_REVIEW_CONFIG_DIR: "/nonexistent-xyz",
-    AUTO_REVIEW_STATE_DIR: "/tmp",
+    DOCKET_CONFIG_DIR: "/nonexistent-xyz",
+    DOCKET_STATE_DIR: "/tmp",
   } as NodeJS.ProcessEnv);
   await expect(loadConfig(p)).rejects.toThrow(ConfigError);
   await expect(loadConfig(p)).rejects.toThrow(/config\.example\.json/);
@@ -51,8 +51,8 @@ test("loadConfig: parses a valid config; rejects one without orgs/repos", async 
     JSON.stringify({ orgs: ["o"], repos: { "o/r": "/tmp" } }),
   );
   const p = paths({
-    AUTO_REVIEW_CONFIG_DIR: dir,
-    AUTO_REVIEW_STATE_DIR: dir,
+    DOCKET_CONFIG_DIR: dir,
+    DOCKET_STATE_DIR: dir,
   } as NodeJS.ProcessEnv);
   const cfg = await loadConfig(p);
   expect(cfg.orgs).toEqual(["o"]);
@@ -82,7 +82,7 @@ test("binary + notification resolution", () => {
   );
   expect(
     notifyEnabled({ orgs: [], repos: {} }, {
-      AUTO_REVIEW_NOTIFY: "0",
+      DOCKET_NOTIFY: "0",
     } as NodeJS.ProcessEnv),
   ).toBe(false);
 });
@@ -122,8 +122,8 @@ test("effectiveAllowedTools: extras are appended after the baseline", () => {
 test("loadConfig: extra_allowed_tools must be an array of strings", async () => {
   const dir = mkdtempSync(join(tmpdir(), "rv-cfg-"));
   const p = paths({
-    AUTO_REVIEW_CONFIG_DIR: dir,
-    AUTO_REVIEW_STATE_DIR: dir,
+    DOCKET_CONFIG_DIR: dir,
+    DOCKET_STATE_DIR: dir,
   } as NodeJS.ProcessEnv);
   const base = { orgs: ["o"], repos: { "o/r": "/tmp" } };
   writeFileSync(
@@ -148,8 +148,8 @@ test("loadConfig: extra_allowed_tools must be an array of strings", async () => 
 test("loadConfig: claude_env must be an object of string values", async () => {
   const dir = mkdtempSync(join(tmpdir(), "rv-cfg-"));
   const p = paths({
-    AUTO_REVIEW_CONFIG_DIR: dir,
-    AUTO_REVIEW_STATE_DIR: dir,
+    DOCKET_CONFIG_DIR: dir,
+    DOCKET_STATE_DIR: dir,
   } as NodeJS.ProcessEnv);
   const base = { orgs: ["o"], repos: { "o/r": "/tmp" } };
   writeFileSync(
@@ -172,8 +172,8 @@ test("loadConfig: claude_env must be an object of string values", async () => {
 test("loadConfig: openers must map a verb to a list of non-empty cmd arrays", async () => {
   const dir = mkdtempSync(join(tmpdir(), "rv-cfg-"));
   const p = paths({
-    AUTO_REVIEW_CONFIG_DIR: dir,
-    AUTO_REVIEW_STATE_DIR: dir,
+    DOCKET_CONFIG_DIR: dir,
+    DOCKET_STATE_DIR: dir,
   } as NodeJS.ProcessEnv);
   const base = { orgs: ["o"], repos: { "o/r": "/tmp" } };
   const write = (openers: unknown) =>

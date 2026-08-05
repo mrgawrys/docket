@@ -10,7 +10,7 @@ export function pidAlive(pid: number): boolean {
 }
 
 // argv to re-invoke this CLI with the given subcommand args.
-// dev: `bun src/main.ts` → execPath is the bun binary; compiled: it's `reviews`
+// dev: `bun src/main.ts` → execPath is the bun binary; compiled: it's `docket`
 export function selfArgs(...tail: string[]): string[] {
   if (basename(process.execPath) === "bun")
     return [process.execPath, Bun.main, ...tail];

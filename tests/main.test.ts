@@ -15,8 +15,8 @@ function cli(...args: string[]) {
 test("help prints usage and exits 0", () => {
   const r = cli("help");
   expect(r.code).toBe(0);
-  expect(r.out).toContain("reviews poll");
-  expect(r.out).toContain("reviews on | off");
+  expect(r.out).toContain("docket poll");
+  expect(r.out).toContain("docket on | off");
 });
 
 test("unknown subcommand exits 1", () => {

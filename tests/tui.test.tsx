@@ -22,11 +22,11 @@ const resolved = resolveOpeners(
 // drops it from the queue. A stub that only records the call cannot catch a
 // cursor that moves when the row under it disappears.
 function mount(state: State, real = false) {
-  const dir = mkdtempSync(join(tmpdir(), "reviews-tui-"));
+  const dir = mkdtempSync(join(tmpdir(), "docket-tui-"));
   writeFileSync(join(dir, "state.json"), JSON.stringify(state));
   const p = paths({
-    AUTO_REVIEW_CONFIG_DIR: dir,
-    AUTO_REVIEW_STATE_DIR: dir,
+    DOCKET_CONFIG_DIR: dir,
+    DOCKET_STATE_DIR: dir,
   } as NodeJS.ProcessEnv);
   const calls: string[] = [];
   const requests: SuspendRequest[] = [];

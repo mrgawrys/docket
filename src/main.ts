@@ -32,24 +32,24 @@ import { reconcile } from "./sync";
 import { runTui } from "./tui/app";
 import { childOwnsTerminal } from "./tui/suspend";
 
-const USAGE = `reviews — pre-run Claude Code reviews for PRs awaiting you
+const USAGE = `docket — pre-run Claude Code reviews for PRs awaiting you
 
 Usage:
-  reviews                    review queue (enter resume, s shell, d diff,
-                             w watch live, r retry, x dismiss, K kill,
-                             p poll, S sync, ? help, q quit)
-  reviews poll [--dry-run]   one poll cycle (what launchd runs); reviews run
-                             in parallel as detached background processes
-  reviews sync               reconcile state with GitHub
-  reviews review <pr> [note] force-review a PR (org/repo#N or a GitHub PR URL)
-  reviews retry <key>        re-run a failed review
-  reviews dismiss <key>      mark done + remove the PR worktree
-  reviews doctor             check setup: config, clones, gh, claude, code-review plugin
-  reviews status             poller state, live poll, state counts
-  reviews log [n]            last n log lines (default 20)
-  reviews watch [pr]         follow the log live; with a PR (org/repo#N or
-                             URL), follow that running review instead
-  reviews on | off           enable/disable the scheduled poller
+  docket                    review queue (enter resume, s shell, d diff,
+                            w watch live, r retry, x dismiss, K kill,
+                            p poll, S sync, ? help, q quit)
+  docket poll [--dry-run]   one poll cycle (what launchd runs); reviews run
+                            in parallel as detached background processes
+  docket sync               reconcile state with GitHub
+  docket review <pr> [note] force-review a PR (org/repo#N or a GitHub PR URL)
+  docket retry <key>        re-run a failed review
+  docket dismiss <key>      mark done + remove the PR worktree
+  docket doctor             check setup: config, clones, gh, claude, code-review plugin
+  docket status             poller state, live poll, state counts
+  docket log [n]            last n log lines (default 20)
+  docket watch [pr]         follow the log live; with a PR (org/repo#N or
+                            URL), follow that running review instead
+  docket on | off           enable/disable the scheduled poller
 `;
 
 type Command = (args: string[]) => Promise<number>;
@@ -164,7 +164,7 @@ function keyArg(raw: string | undefined, usage: string): string | null {
 const startedMsg = (key: string, result: StartResult): number => {
   if (result === "started") {
     console.log(
-      `${key}: review started in the background — you'll get a notification; follow with: reviews watch`,
+      `${key}: review started in the background — you'll get a notification; follow with: docket watch`,
     );
   } else if (result === "already-running") {
     console.log(`${key}: a review is already running`);
@@ -217,7 +217,7 @@ const review: Command = (args) =>
     runUnlocked(ctx, async () => {
       const key = keyArg(
         args[0],
-        "usage: reviews review ORG/REPO#NUM|URL [note]",
+        "usage: docket review ORG/REPO#NUM|URL [note]",
       );
       if (!key) return 1;
       const { repo, number } = splitKey(key);
@@ -245,7 +245,7 @@ const review: Command = (args) =>
 
 const retry: Command = (args) =>
   withCtx(async (ctx) => {
-    const key = keyArg(args[0], "usage: reviews retry ORG/REPO#NUM [note]");
+    const key = keyArg(args[0], "usage: docket retry ORG/REPO#NUM [note]");
     if (!key) return 1;
     return retryKey(ctx, key, args[1]);
   });
@@ -255,7 +255,7 @@ const exec: Command = (args) =>
   withCtx((ctx) => {
     const key = args[0];
     if (!key) {
-      console.error("usage: reviews exec ORG/REPO#NUM");
+      console.error("usage: docket exec ORG/REPO#NUM");
       return Promise.resolve(1);
     }
     const onSignal = () => {
@@ -268,7 +268,7 @@ const exec: Command = (args) =>
           "run interrupted",
         );
         ctx.log(
-          `CANCELED ${ctx.current.key} (interrupted) — retry with: reviews retry ${ctx.current.key}`,
+          `CANCELED ${ctx.current.key} (interrupted) — retry with: docket retry ${ctx.current.key}`,
         );
       }
       process.exit(130);
@@ -283,7 +283,7 @@ const poll: Command = (args) =>
 
 const dismiss: Command = (args) =>
   withCtx(async (ctx) => {
-    const key = keyArg(args[0], "usage: reviews dismiss ORG/REPO#NUM");
+    const key = keyArg(args[0], "usage: docket dismiss ORG/REPO#NUM");
     if (!key) return 1;
     if (!loadState(ctx.paths.statePath)[key]) {
       console.error(`unknown key: ${key}`);
@@ -304,7 +304,7 @@ const log: Command = (args) => {
 const watch: Command = (args) =>
   withCtx(async (ctx) => {
     if (args[0] === undefined) return watchCommand(ctx);
-    const key = keyArg(args[0], "usage: reviews watch [ORG/REPO#NUM|URL]");
+    const key = keyArg(args[0], "usage: docket watch [ORG/REPO#NUM|URL]");
     if (!key) return 1;
     return watchCommand(ctx, key);
   });
@@ -342,7 +342,7 @@ async function main(): Promise<number> {
   if (cmd === "-h" || cmd === "--help") return help([]);
   const fn = commands[cmd];
   if (!fn) {
-    console.error(`unknown subcommand: ${cmd} (try: reviews help)`);
+    console.error(`unknown subcommand: ${cmd} (try: docket help)`);
     return 1;
   }
   return fn(rest);

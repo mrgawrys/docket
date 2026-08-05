@@ -188,7 +188,7 @@ export function cleanupEntry(
   return stuck;
 }
 
-// Mark the PR as reviewing and hand it to a detached `reviews exec` runner.
+// Mark the PR as reviewing and hand it to a detached `docket exec` runner.
 // Detached = own process group: ctrl+c on the caller and launchd's cleanup of
 // an exiting poll can't kill an in-flight review, and N runners go in parallel.
 export type StartResult =
@@ -205,7 +205,7 @@ async function skipNoClone(
 ): Promise<void> {
   ctx.log(`SKIP ${key}: no local clone mapped`);
   patchEntry(ctx.paths.statePath, key, { status: "skipped", ...extra });
-  await notify(ctx.cfg, "auto-review: no local clone", key);
+  await notify(ctx.cfg, "docket: no local clone", key);
   ctx.counters.skipped++;
 }
 
@@ -265,12 +265,12 @@ export async function startReview(
   return "started";
 }
 
-// The body of one review — runs inside the detached `reviews exec` process.
+// The body of one review — runs inside the detached `docket exec` process.
 export async function execReview(ctx: Ctx, key: string): Promise<number> {
   const { statePath } = ctx.paths;
   const entry = loadState(statePath)[key];
   if (!entry) {
-    console.error(`unknown key: ${key} — start it with: reviews review ${key}`);
+    console.error(`unknown key: ${key} — start it with: docket review ${key}`);
     return 1;
   }
   if (isLiveReview(entry, process.pid)) {
@@ -323,7 +323,7 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
   // would otherwise block the JS thread until claude exits on its own.
   ctx.current.child = proc;
   const stderrDone = new Response(proc.stderr).text();
-  // tee progress into the run log as it happens — `reviews` watches this file
+  // tee progress into the run log as it happens — `docket` watches this file
   const fd = openSync(runLog, "w");
   try {
     for await (const chunk of proc.stdout) writeSync(fd, chunk);
@@ -364,7 +364,7 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
       local_path: localPath,
       updated_at: timestamp(),
     }));
-    ctx.log(`READY ${key} session=${sessionId} — run \`reviews\` to open it`);
+    ctx.log(`READY ${key} session=${sessionId} — run \`docket\` to open it`);
     await notify(ctx.cfg, `Review ready: ${key}`, title);
     ctx.counters.reviewed++;
   } else {
@@ -373,11 +373,11 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
       title,
       url,
       local_path: localPath,
-      error: "claude run failed, see auto-review.log",
+      error: "claude run failed, see docket.log",
       updated_at: timestamp(),
     }));
     ctx.log(
-      `FAILED ${key} — retry with: reviews retry ${key}, or check your setup: reviews doctor`,
+      `FAILED ${key} — retry with: docket retry ${key}, or check your setup: docket doctor`,
     );
     await notify(ctx.cfg, `Review FAILED: ${key}`, title);
     ctx.counters.failed++;

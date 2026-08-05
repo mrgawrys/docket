@@ -149,7 +149,7 @@ test("review + retry command family", async () => {
   expect(r.code).toBe(0);
   e = await sb.waitEntry("testorg/demo#50", (x) => x.status === "failed");
   expect(e.error).toBeTruthy();
-  expect(readFileSync(sb.logPath, "utf8")).toContain("reviews doctor");
+  expect(readFileSync(sb.logPath, "utf8")).toContain("docket doctor");
 
   // scenario 5: retry flips failed -> ready; unknown key exits non-zero
   r = sb.run(["retry", "testorg/demo#50"]);
@@ -183,7 +183,7 @@ test("no extra_allowed_tools → claude gets exactly the baseline allowlist", as
 test("scenario 9: missing config errors, pointing at config.example.json", () => {
   const sb = makeSandbox();
   const r = sb.run(["review", "testorg/demo#1"], {
-    AUTO_REVIEW_CONFIG_DIR: sb.tmp + "/nonexistent",
+    DOCKET_CONFIG_DIR: sb.tmp + "/nonexistent",
   });
   expect(r.code).not.toBe(0);
   expect(r.err).toContain("config.example.json");

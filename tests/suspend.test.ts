@@ -70,7 +70,7 @@ test("the ways a child is meant to end are not reported as failures", async () =
   // `w` documents Ctrl+C as the way out, and a shell exits with the status of
   // whatever the user last ran in it — neither is ours to call a failure.
   for (const [req, code] of [
-    [{ argv: ["/bin/reviews"], cwd: "/tmp" }, 130],
+    [{ argv: ["/bin/docket"], cwd: "/tmp" }, 130],
     [{ argv: ["/bin/zsh"], cwd: "/tmp", interactive: true }, 1],
   ] as [SuspendRequest, number][]) {
     const { mount, mounts, notices } = scripted([(r) => r(req), () => {}]);

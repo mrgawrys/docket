@@ -1,5 +1,5 @@
 {
-  "name": "reviews",
+  "name": "docket",
   "version": "0.1.0",
   "type": "module",
   "scripts": {
@@ -7,7 +7,7 @@
     "test": "bun test",
     "format": "biome format --write .",
     "format:check": "biome format .",
-    "build": "bun build --compile src/main.ts --outfile dist/reviews"
+    "build": "bun build --compile src/main.ts --outfile dist/docket"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.5",

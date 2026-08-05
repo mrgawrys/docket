@@ -264,7 +264,7 @@ export function App({
           however much assessment the row below it happens to have */}
       <Legend unavailable={unavailable} />
       <Bar
-        label="reviews"
+        label="docket"
         right={rows.length ? `${cursor + 1}/${rows.length}` : "empty"}
         width={width}
       />
@@ -293,7 +293,7 @@ export function App({
 export function runTui(ctx: Ctx, actions: TuiActions): Promise<number> {
   // useInput needs raw mode, and Ink throws without a tty. The readline menu
   // this replaced read a closed stdin as "quit", so a script or a cron wrapper
-  // that runs bare `reviews` still gets the queue instead of a stack trace.
+  // that runs bare `docket` still gets the queue instead of a stack trace.
   if (!process.stdin.isTTY) return Promise.resolve(printPending(ctx));
   const resolved = resolveOpeners(ctx.cfg);
   let selected: string | undefined;

@@ -28,8 +28,8 @@ test("buildResume guards and command construction", () => {
   });
 });
 
-test("bare reviews without a terminal prints the queue instead of crashing", () => {
-  // a script, a cron wrapper, `reviews < /dev/null`: Ink cannot take raw mode
+test("bare docket without a terminal prints the queue instead of crashing", () => {
+  // a script, a cron wrapper, `docket < /dev/null`: Ink cannot take raw mode
   // there, and the menu this replaced treated a closed stdin as quit
   const sb = makeSandbox();
   sb.writeState({

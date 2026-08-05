@@ -5,7 +5,7 @@ import { selfArgs } from "./proc";
 import type { Ctx } from "./reviewer";
 
 export const launchdLabel = (): string =>
-  `com.${userInfo().username}.auto-review`;
+  `com.${userInfo().username}.docket`;
 
 export function launchdLoaded(): boolean {
   if (process.platform !== "darwin") return false;
@@ -28,7 +28,7 @@ export function renderPlist(o: {
   // launchd runs with a bare PATH, so version-manager toolchains (mise/asdf/
   // nvm shims, homebrew) that a review's tools need — e.g. `node` for a
   // blast-radius pass — go missing. Bake the invoking shell's PATH in front of
-  // a safe fallback so a polled run sees the same tools `reviews on` did.
+  // a safe fallback so a polled run sees the same tools `docket on` did.
   const fallback = `${o.home}/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin`;
   const path = o.path ? `${o.path}:${fallback}` : fallback;
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -61,7 +61,7 @@ const plistPath = (home: string) =>
 
 export async function onCommand(ctx: Ctx): Promise<number> {
   if (process.platform !== "darwin") {
-    console.error("reviews on: only launchd (macOS) is supported for now");
+    console.error("docket on: only launchd (macOS) is supported for now");
     return 1;
   }
   const home = process.env.HOME!;
@@ -106,7 +106,7 @@ export async function onCommand(ctx: Ctx): Promise<number> {
 
 export async function offCommand(): Promise<number> {
   if (process.platform !== "darwin") {
-    console.error("reviews off: only launchd (macOS) is supported for now");
+    console.error("docket off: only launchd (macOS) is supported for now");
     return 1;
   }
   const home = process.env.HOME!;
@@ -117,7 +117,7 @@ export async function offCommand(): Promise<number> {
   });
   console.log(
     out.exitCode === 0
-      ? "poller disabled — 'reviews on' re-enables, manual runs still work"
+      ? "poller disabled — 'docket on' re-enables, manual runs still work"
       : "poller was not loaded",
   );
   rmSync(plistPath(home), { force: true });
