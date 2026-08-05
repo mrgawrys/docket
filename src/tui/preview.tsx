@@ -2,28 +2,37 @@ import { Box, Text } from "ink";
 
 // Wrap here rather than letting the terminal do it: scrolling counts lines, and
 // a line the pane never counted would scroll past content.
-export function wrapText(text: string, width: number): string[] {
+export function wrapText(text: string, rawWidth: number): string[] {
+  // A pane can be narrower than a single column. At width 0 the slicing below
+  // never shortens the word, and the loop spins on the render thread forever.
+  const width = Math.max(1, rawWidth);
   const out: string[] = [];
   for (const para of text.split("\n")) {
+    // Assessments are markdown: leading spaces are what tell a nested bullet
+    // from its parent and a quoted snippet from the prose around it. Wrap
+    // inside the indent and re-apply it, rather than letting split(" ") eat it.
+    const indent = /^ */.exec(para)?.[0] ?? "";
+    const avail = Math.max(1, width - indent.length);
+    const push = (s: string) => out.push(indent + s);
     let line = "";
-    for (const word of para.split(" ")) {
+    for (const word of para.slice(indent.length).split(" ")) {
       let w = word;
-      while (w.length > width) {
+      while (w.length > avail) {
         if (line) {
-          out.push(line);
+          push(line);
           line = "";
         }
-        out.push(w.slice(0, width));
-        w = w.slice(width);
+        push(w.slice(0, avail));
+        w = w.slice(avail);
       }
       if (!line) line = w;
-      else if (line.length + 1 + w.length <= width) line += ` ${w}`;
+      else if (line.length + 1 + w.length <= avail) line += ` ${w}`;
       else {
-        out.push(line);
+        push(line);
         line = w;
       }
     }
-    out.push(line);
+    push(line);
   }
   return out;
 }
