@@ -132,8 +132,8 @@ function removeWorktree(
   wt: string,
   key: string,
   logPrefix: string,
-): void {
-  if (!existsSync(wt)) return; // already gone; prune will drop the admin record
+): boolean {
+  if (!existsSync(wt)) return true; // already gone; prune will drop the admin record
   const p = Bun.spawnSync(
     ["git", "-C", clone, "worktree", "remove", "--force", wt],
     { stderr: "pipe" },
@@ -144,23 +144,33 @@ function removeWorktree(
       ? `${logPrefix} ${key}: removed worktree ${wt}`
       : `${logPrefix} ${key}: could not remove worktree ${wt}`,
   );
+  return p.exitCode === 0;
 }
 
 // Retire an entry's on-disk artifacts: its run log and the worktree(s) the
 // review created — by their recorded absolute paths, wherever the agent put
 // them, falling back to the pr-<number> convention for legacy entries.
-export function cleanupEntry(ctx: Ctx, key: string, logPrefix: string): void {
+// Returns the worktrees it could not remove: the log records them, but only a
+// caller can put them somewhere the user is actually looking.
+export function cleanupEntry(
+  ctx: Ctx,
+  key: string,
+  logPrefix: string,
+): string[] {
   rmSync(runLogPath(ctx.paths, key), { force: true });
   const { number } = splitKey(key);
   const entry = loadState(ctx.paths.statePath)[key];
   const clone = entry?.local_path;
-  if (!clone || !existsSync(clone)) return;
+  if (!clone || !existsSync(clone)) return [];
 
   const recorded = entry?.worktrees ?? [];
   const targets = recorded.length ? recorded : legacyWorktrees(clone, number);
-  for (const wt of targets) removeWorktree(ctx, clone, wt, key, logPrefix);
+  const stuck = targets.filter(
+    (wt) => !removeWorktree(ctx, clone, wt, key, logPrefix),
+  );
 
   Bun.spawnSync(["git", "-C", clone, "worktree", "prune"], { stderr: "pipe" });
+  return stuck;
 }
 
 // Mark the PR as reviewing and hand it to a detached `reviews exec` runner.

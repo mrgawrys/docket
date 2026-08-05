@@ -12,5 +12,13 @@
   "ignored_teams": [],
   "notifications": true,
   "review_prompt": "Review the PR by running /code-review {number}.",
-  "extra_allowed_tools": []
+  "extra_allowed_tools": [],
+  "openers": {
+    "shell": [{ "cmd": ["$SHELL"] }],
+    "diff": [
+      { "cmd": ["revdiff", "{base}", "{head}"] },
+      { "cmd": ["tuicr", "-r", "{base}..{head}"] },
+      { "cmd": ["git", "diff", "{base}...{head}"] }
+    ]
+  }
 }

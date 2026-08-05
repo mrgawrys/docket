@@ -5,9 +5,10 @@ Watches GitHub for PRs awaiting your review and pre-runs Claude Code's
 the time you sit down, a finished review session is waiting to be resumed.
 Reviews never write anything to GitHub.
 
-A launchd job polls on an interval; the `reviews` binary is the front
-end: list finished reviews, resume one, retry failures, dismiss what's done,
-and switch the poller on/off.
+A launchd job polls on an interval; the `reviews` binary is the front end: a
+full-screen queue showing each PR's assessment, with four ways into an entry —
+resume the Claude session, open a shell or a diff in the PR's worktree, or
+follow a running review — plus retry, dismiss, and the poller switch.
 
 ## Requirements
 
@@ -65,8 +66,20 @@ that doesn't need it. `reviews doctor` enforces exactly this.
      baseline is read-only and never posts to GitHub; entries you add here run
      without prompts, so adding posting tools (e.g. `Bash(gh pr comment:*)`)
      gives that guarantee up knowingly. Empty = baseline only.
+   - `openers` — what the queue's `s` and `d` keys run, as a chain of
+     candidate commands per verb; the first whose binary is on `PATH` wins, so
+     the shipped `diff` chain tries `revdiff`, then `tuicr`, then plain
+     `git diff`. Both verbs run in the PR's worktree. Tokens `{worktree}`
+     `{clone}` `{base}` `{head}` `{number}` `{repo}` `{url}` are substituted
+     per argument — the command is executed directly, never through a shell,
+     so a path with spaces stays one argument. The one exception is a literal
+     `$SHELL` as the first word, taken from the environment (`/bin/sh` if
+     unset). A verb you set **replaces** its default chain rather than adding
+     to it, so keep a fallback that always resolves. Omit = the defaults in
+     `config.example.json`; `reviews doctor` prints the winner per verb.
 3. `reviews doctor` — checks the whole review chain (config, clones, gh
-   auth, claude, code-review plugin) and prints a fix for anything broken.
+   auth, claude, code-review plugin, openers) and prints a fix for anything
+   broken.
    Every line should be ✓ before going further.
 4. `reviews poll --dry-run` — read-only; lists what would be
    reviewed. **Everything listed gets reviewed (and billed) once the poller
@@ -82,10 +95,24 @@ that doesn't need it. `reviews doctor` enforces exactly this.
 
 ## Day to day
 
-- `reviews` — interactive list; pick a number to resume the session in the
-  right clone, `d#` dismiss (also removes the PR's worktree), `r#` retry,
-  `w#` watch a running review live, `k#` kill a running review (marks it
-  canceled — no more tokens burned; `r#` starts it over).
+- `reviews` — the review queue. The list sizes itself to the queue and
+  Claude's assessment of the highlighted PR fills the rest of the screen.
+
+  ```
+  j/k ↑/↓  move          enter  claude       s  shell      d  diff
+  w  watch live          r  retry            x  dismiss    K  kill
+  p  poll                S  sync             ?  help       q  quit
+  ```
+
+  `enter` resumes the Claude session in the clone (that is where the session
+  is stored). `s` and `d` open the PR's worktree — a shell in it, or its diff
+  in whichever diff tool you have (see `openers`). Each of these hands the
+  terminal over and comes back to the list when the program exits; `x` also
+  removes the PR's worktree, and `K` kills a running review (marks it
+  canceled — no more tokens burned; `r` starts it over). A verb this machine
+  cannot run is greyed out with the reason shown in the assessment pane,
+  rather than failing after the keypress. Without a terminal — from a script
+  or a cron wrapper — it prints the pending queue and exits instead.
 - `reviews watch ORG/REPO#N` — follow a running review from anywhere; plain
   `reviews watch` follows the poller log as before.
 - `reviews sync` — refresh entries from GitHub before listing: merged/closed
@@ -135,3 +162,6 @@ network, no tokens.
 - `bun run build` — compile the `reviews` binary into `dist/`
 - `bun run format` — format with Biome (`format:check` is enforced in CI, and a
   Claude Code hook in `.claude/settings.json` auto-formats agent edits)
+- `react-devtools-core` is a devDependency solely because Ink's dev-only branch
+  is still walked by the bundler; removing it breaks `bun run build`, not the
+  tests.

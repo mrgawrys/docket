@@ -10,6 +10,7 @@ import {
   paths as resolvePaths,
 } from "./config";
 import { ghAccountToken } from "./github";
+import { effectiveOpeners, resolveOpeners } from "./openers";
 
 interface RunResult {
   ok: boolean;
@@ -102,6 +103,22 @@ export async function doctorCommand(): Promise<number> {
       `claude: ${claude} not runnable`,
       "install Claude Code, or set claude_bin in config.json",
     );
+  }
+
+  // The TUI resolves each verb's chain once at startup and greys out what it
+  // cannot run; report the same answer here, so a greyed-out `d` has an
+  // explanation that does not require opening the TUI.
+  const winners = resolveOpeners(cfg);
+  for (const [verb, chain] of Object.entries(effectiveOpeners(cfg))) {
+    const winner = winners[verb];
+    if (winner) {
+      pass(`opener ${verb}: ${winner.join(" ")}`);
+    } else {
+      fail(
+        `opener ${verb}: none of ${chain.map((o) => o.cmd[0]).join(", ")} is on PATH`,
+        `install one of them, or set a chain that resolves under "openers" in config.json`,
+      );
+    }
   }
 
   // Extras run without prompts in the headless review — surface them so the

@@ -1,8 +1,16 @@
 import { join } from "node:path";
 
+// One candidate command for a TUI verb. argv is exec'd directly, never through
+// a shell — see src/openers.ts for the tokens and the one $SHELL exception.
+export interface Opener {
+  cmd: string[];
+}
+export type Openers = Record<string, Opener[]>;
+
 export interface Config {
   orgs: string[];
   repos: Record<string, string>;
+  openers?: Openers;
   poll_interval_minutes?: number;
   claude_bin?: string;
   claude_config_dir?: string;
@@ -99,6 +107,29 @@ export async function loadConfig(p: Paths = paths()): Promise<Config> {
     throw new ConfigError(
       `invalid config at ${p.configPath} — "claude_env" must be an object of string values`,
     );
+  }
+  if (cfg.openers !== undefined) {
+    const bad =
+      typeof cfg.openers !== "object" ||
+      cfg.openers === null ||
+      Array.isArray(cfg.openers) ||
+      Object.values(cfg.openers).some(
+        (chain) =>
+          !Array.isArray(chain) ||
+          chain.some(
+            (o) =>
+              typeof o !== "object" ||
+              o === null ||
+              !Array.isArray(o.cmd) ||
+              o.cmd.length === 0 ||
+              o.cmd.some((a) => typeof a !== "string"),
+          ),
+      );
+    if (bad) {
+      throw new ConfigError(
+        `invalid config at ${p.configPath} — "openers" must map a verb to a list of { "cmd": ["prog", "args"] }`,
+      );
+    }
   }
   if (
     cfg.extra_allowed_tools !== undefined &&

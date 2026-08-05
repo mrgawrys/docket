@@ -1,0 +1,82 @@
+import { Box, Text } from "ink";
+import type { Entry, Status } from "../state";
+
+export interface Row {
+  key: string;
+  entry: Entry;
+}
+
+const STATUS_COLOR: Partial<Record<Status, string>> = {
+  ready: "green",
+  reviewing: "cyan",
+  failed: "red",
+  canceled: "red",
+  skipped: "gray",
+  approved: "green",
+  "changes-requested": "red",
+  commented: "yellow",
+};
+
+// Keep the cursor inside the visible window without jumping it to the middle
+// on every move.
+function windowStart(cursor: number, count: number, height: number): number {
+  if (count <= height) return 0;
+  return Math.max(0, Math.min(cursor - Math.floor(height / 2), count - height));
+}
+
+export function Queue({
+  rows,
+  cursor,
+  height,
+}: {
+  rows: Row[];
+  cursor: number;
+  height: number;
+}) {
+  if (rows.length === 0) {
+    return (
+      <Box paddingX={1}>
+        <Text dimColor>
+          No pending reviews — p polls GitHub, S syncs, q quits.
+        </Text>
+      </Box>
+    );
+  }
+  const start = windowStart(cursor, rows.length, height);
+  const keyWidth = Math.min(34, Math.max(...rows.map((r) => r.key.length)) + 1);
+  return (
+    <Box flexDirection="column">
+      {rows.slice(start, start + height).map(({ key, entry }, i) => {
+        const index = start + i;
+        const selected = index === cursor;
+        const flags = (entry.flags ?? []).map((f) => `+${f}`).join(" ");
+        return (
+          // only the title may shrink; without this a long row pulls the
+          // columns of that one row out of alignment with its neighbours
+          <Box key={key} flexShrink={0}>
+            <Box flexShrink={0}>
+              <Text color="cyan">{selected ? "▸ " : "  "}</Text>
+              <Text dimColor>{String(index + 1).padStart(2)} </Text>
+              <Text bold={selected}>{key.padEnd(keyWidth)}</Text>
+            </Box>
+            <Box width={18} flexShrink={0}>
+              <Text color={STATUS_COLOR[entry.status]} wrap="truncate-end">
+                {entry.status}
+              </Text>
+            </Box>
+            {flags ? (
+              <Box flexShrink={0}>
+                <Text color="yellow">{flags} </Text>
+              </Box>
+            ) : null}
+            <Box flexGrow={1} flexShrink={1} minWidth={0}>
+              <Text dimColor={!selected} wrap="truncate-end">
+                {entry.title ?? ""}
+              </Text>
+            </Box>
+          </Box>
+        );
+      })}
+    </Box>
+  );
+}

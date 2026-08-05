@@ -27,6 +27,7 @@ export interface RunEvent {
   type?: string;
   subtype?: string;
   session_id?: string;
+  result?: string;
   message?: { content?: ContentBlock[] };
 }
 
