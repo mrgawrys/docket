@@ -8,9 +8,11 @@ import {
   ghBin,
   loadConfig,
   paths as resolvePaths,
+  placeholderEntries,
 } from "./config";
 import { ghAccountToken } from "./github";
 import { effectiveOpeners, resolveOpeners } from "./openers";
+import { launchdLoaded, legacyLaunchdLabel } from "./scheduler";
 
 interface RunResult {
   ok: boolean;
@@ -53,6 +55,33 @@ export async function doctorCommand(): Promise<number> {
     fail(`config: ${p.configPath}`, msg);
     console.log("  (remaining checks skipped — fix the config first)");
     return 1;
+  }
+
+  // Loading only proves the shape is right. The starter config passes that on
+  // its way out of the box, and a poller aimed at "your-github-org" then finds
+  // nothing forever — with every check below it reporting ✓.
+  const placeholders = placeholderEntries(cfg);
+  if (placeholders.length) {
+    fail(
+      `config still has starter placeholders: ${placeholders.join(", ")}`,
+      `replace them in ${p.configPath} with your own orgs and clone paths`,
+    );
+  } else if (cfg.orgs.length === 0 && Object.keys(cfg.repos).length === 0) {
+    fail(
+      "config has no orgs and no repos",
+      `add at least one org to poll and its clone path in ${p.configPath}`,
+    );
+  }
+
+  // The rename left a poller behind on every machine that upgraded without
+  // install.sh. It polls the pre-rename state, so nothing else here would
+  // notice it — and every PR gets reviewed, and billed, twice.
+  if (launchdLoaded(legacyLaunchdLabel())) {
+    fail(
+      `old poller still loaded: ${legacyLaunchdLabel()}`,
+      "run: docket on (it removes the old job), or: launchctl bootout gui/$(id -u)/" +
+        legacyLaunchdLabel(),
+    );
   }
 
   const repos = Object.entries(cfg.repos);
@@ -143,8 +172,11 @@ export async function doctorCommand(): Promise<number> {
 
   // The plugin is only a dependency when the effective prompt runs /code-review.
   if (effectiveReviewPrompt(cfg).includes("/code-review")) {
+    // `||`, not `??`: the seeded config carries claude_config_dir: "", and an
+    // empty one here would look up the registry at a relative path and report
+    // an installed plugin missing. claudeEnv() reads it the same way.
     const claudeHome =
-      cfg.claude_config_dir ?? join(process.env.HOME ?? "", ".claude");
+      cfg.claude_config_dir || join(process.env.HOME ?? "", ".claude");
     const registryPath = join(claudeHome, "plugins", "installed_plugins.json");
     let hasPlugin = false;
     try {

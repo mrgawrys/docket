@@ -1,5 +1,11 @@
 import { expect, test } from "bun:test";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { makeSandbox, type Sandbox } from "./harness";
 
@@ -13,6 +19,23 @@ function claudeHome(sb: Sandbox, withPlugin: boolean): string {
   writeFileSync(
     join(home, "plugins", "installed_plugins.json"),
     JSON.stringify({ version: 2, plugins }),
+  );
+  return home;
+}
+
+// A HOME whose ~/.claude carries the registry — the fallback doctor falls back
+// to when claude_config_dir is absent or empty.
+function homeWithClaude(sb: Sandbox, withPlugin: boolean): string {
+  const home = join(sb.tmp, "fakehome");
+  mkdirSync(join(home, ".claude", "plugins"), { recursive: true });
+  writeFileSync(
+    join(home, ".claude", "plugins", "installed_plugins.json"),
+    JSON.stringify({
+      version: 2,
+      plugins: withPlugin
+        ? { "code-review@claude-plugins-official": [{ scope: "user" }] }
+        : {},
+    }),
   );
   return home;
 }
@@ -56,6 +79,48 @@ test("doctor: missing config → ✗ with a seeded config to edit, later checks 
   expect(r.out).toContain("skipped");
   expect(r.out).not.toContain("✓");
   expect(existsSync(join(sb.configDir, "config.json"))).toBe(true);
+});
+
+test("doctor: the seeded starter config is reported broken, not green", () => {
+  const sb = makeSandbox();
+  sb.gitInitDemo();
+  rmSync(join(sb.configDir, "config.json"));
+  expect(sb.run(["doctor"]).code).toBe(1); // seeds it, then stops
+  // second run: the shape is valid, so only a placeholder check keeps doctor
+  // honest — otherwise it green-lights a poller aimed at "your-github-org"
+  const r = sb.run(["doctor"]);
+  expect(r.code).toBe(1);
+  expect(r.out).toContain("starter placeholders");
+});
+
+test("doctor: an empty claude_config_dir still finds the plugin registry", () => {
+  const sb = makeSandbox();
+  sb.gitInitDemo();
+  // the seeded config ships claude_config_dir: "" — reading it as a path
+  // reports an installed plugin missing on every fresh install
+  sb.writeConfig({
+    orgs: ["testorg"],
+    repos: { "testorg/demo": sb.demoRepo },
+    claude_config_dir: "",
+  });
+  const r = sb.run(["doctor"], { HOME: homeWithClaude(sb, true) });
+  expect(r.out).toContain("✓ code-review plugin installed");
+});
+
+test("doctor: the pre-rename poller still being loaded is a ✗", () => {
+  const sb = makeSandbox();
+  sb.gitInitDemo();
+  sb.writeConfig({
+    orgs: ["testorg"],
+    repos: { "testorg/demo": sb.demoRepo },
+    claude_config_dir: claudeHome(sb, true),
+  });
+  const loaded = join(sb.tmp, "bin", "launchctl-loaded");
+  writeFileSync(loaded, "#!/usr/bin/env bash\nexit 0\n");
+  chmodSync(loaded, 0o755);
+  const r = sb.run(["doctor"], { LAUNCHCTL_BIN: loaded });
+  expect(r.code).toBe(1);
+  expect(r.out).toContain("old poller still loaded");
 });
 
 test("doctor: repo path missing or not a git repo → ✗ names the path", () => {

@@ -135,6 +135,13 @@ export function makeSandbox(): Sandbox {
   chmodSync(ghShim, 0o755);
   chmodSync(claudeShim, 0o755);
 
+  // Nothing is ever loaded, so no test can be swayed by what the developer's
+  // own launchd happens to be running. LAUNCHCTL_BIN points somewhere else in
+  // the tests that need a job to exist.
+  const launchctlShim = join(bin, "launchctl");
+  writeFileSync(launchctlShim, "#!/usr/bin/env bash\nexit 1\n");
+  chmodSync(launchctlShim, 0o755);
+
   const capture = (name: string) => {
     const p = join(tmp, name);
     writeFileSync(p, "");
@@ -146,6 +153,7 @@ export function makeSandbox(): Sandbox {
     DOCKET_NOTIFY: "0",
     CLAUDE_BIN: claudeShim,
     GH_BIN: ghShim,
+    LAUNCHCTL_BIN: launchctlShim,
     CLAUDE_CALLS: capture("claude-calls"),
     PROMPT_CAPTURE: capture("prompt-capture"),
     ALLOWED_CAPTURE: capture("allowed-capture"),
