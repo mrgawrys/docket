@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Idempotent setup: checks deps, runs tests, builds the binary into
-# ~/.local/bin, links fish completions. The binary seeds its own config.
+# ~/.local/bin, links the shell completions. The binary seeds its own config.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
@@ -9,12 +9,25 @@ for dep in bun gh git; do
 done
 command -v claude >/dev/null || echo "warning: claude CLI not found on PATH (needed at runtime)" >&2
 
-mkdir -p "$HOME/.local/bin" "$HOME/.config/fish/completions"
+DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+FISH_DIR="$HOME/.config/fish/completions"
+BASH_DIR="$DATA_HOME/bash-completion/completions"
+ZSH_DIR="$DATA_HOME/zsh/site-functions"
+mkdir -p "$HOME/.local/bin" "$FISH_DIR" "$BASH_DIR" "$ZSH_DIR"
 
 (cd "$HERE" && bun install && bun test && bun run build)
 install -m 755 "$HERE/dist/docket" "$HOME/.local/bin/docket"
 
-ln -sf "$HERE/fish/docket-completions.fish" "$HOME/.config/fish/completions/docket.fish"
+ln -sf "$HERE/completions/docket.fish" "$FISH_DIR/docket.fish"
+ln -sf "$HERE/completions/docket.bash" "$BASH_DIR/docket"
+ln -sf "$HERE/completions/_docket" "$ZSH_DIR/_docket"
+
+# fish and bash-completion autoload their dirs; zsh has no user-level
+# convention, so say so once when ours isn't already on the fpath.
+if command -v zsh >/dev/null &&
+  ! zsh -ic 'print -l -- $fpath' 2>/dev/null | grep -qxF "$ZSH_DIR"; then
+  echo "zsh: add to ~/.zshrc before compinit — fpath=($ZSH_DIR \$fpath)"
+fi
 
 # Leftovers from when this was called auto-review: its binary is gone, its
 # completions would complete a command that no longer exists, and its launchd

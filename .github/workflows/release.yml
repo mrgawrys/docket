@@ -20,10 +20,10 @@ jobs:
       - name: Build and package
         run: |
           for arch in arm64 x64; do
-            mkdir -p stage/fish
-            cp fish/docket-completions.fish stage/fish/
+            mkdir -p stage
+            cp -R completions stage/completions
             bun build --compile src/main.ts --target=bun-darwin-$arch --outfile stage/docket
-            tar -czf docket-darwin-$arch.tar.gz -C stage docket fish
+            tar -czf docket-darwin-$arch.tar.gz -C stage docket completions
             rm -rf stage
           done
           shasum -a 256 docket-darwin-*.tar.gz > SHA256SUMS

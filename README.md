@@ -28,9 +28,10 @@ that doesn't need it. `docket doctor` enforces exactly this.
 ## Setup
 
 1. `./install.sh` — checks dependencies, runs the test suite, builds the
-   `docket` binary into `~/.local/bin`, links the fish completions, and clears
-   out what the old `auto-review` install left behind (its binary,
-   completions, and launchd job — so re-run `docket on` afterwards).
+   `docket` binary into `~/.local/bin`, links the shell completions (bash,
+   zsh, fish), and clears out what the old `auto-review` install left behind
+   (its binary, completions, and launchd job — so re-run `docket on`
+   afterwards).
 
    Or, from Homebrew — `brew install mrgawrys/tap/docket` — which installs the
    same binary and completions without a local checkout. It works from the

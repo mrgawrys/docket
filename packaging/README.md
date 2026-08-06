@@ -13,8 +13,8 @@ git tag v0.1.0 && git push origin v0.1.0
 
 It runs the test suite, cross-compiles both macOS binaries, and publishes a
 GitHub release with `docket-darwin-arm64.tar.gz`, `docket-darwin-x64.tar.gz`,
-and `SHA256SUMS`. Each tarball carries the `docket` binary and the fish
-completions.
+and `SHA256SUMS`. Each tarball carries the `docket` binary and the shell
+completions (bash, zsh, fish).
 
 ## Updating the tap
 

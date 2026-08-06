@@ -22,7 +22,9 @@ class Docket < Formula
 
   def install
     bin.install "docket"
-    fish_completion.install "fish/docket-completions.fish" => "docket.fish"
+    fish_completion.install "completions/docket.fish" => "docket.fish"
+    zsh_completion.install "completions/_docket" => "_docket"
+    bash_completion.install "completions/docket.bash" => "docket"
   end
 
   def caveats
