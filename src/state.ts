@@ -211,7 +211,7 @@ export function reconcileOrphans(statePath: string, log: Logger): void {
       continue;
     setStatus(statePath, key, "failed", "previous run died mid-review");
     log(
-      `ORPHAN ${key}: previous run died mid-review, marked failed — retry with: reviews retry ${key}`,
+      `ORPHAN ${key}: previous run died mid-review, marked failed — retry with: docket retry ${key}`,
     );
   }
 }

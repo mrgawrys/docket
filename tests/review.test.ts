@@ -108,7 +108,12 @@ test("runner records the worktree the agent created, wherever it put it", async 
     CLAUDE_MAKE_WORKTREE: agentWt,
   });
   expect(r.code).toBe(0);
-  const e = await sb.waitEntry("testorg/demo#7", (x) => x.status === "ready");
+  // the runner writes the status first and patches the discovered worktrees on
+  // afterwards, so waiting on "ready" alone races the second write
+  const e = await sb.waitEntry(
+    "testorg/demo#7",
+    (x) => x.status === "ready" && x.worktrees,
+  );
   // git reports the canonical (symlink-resolved) path — compare on realpath
   expect(e.worktrees).toEqual([realpathSync(agentWt)]);
   // and it is removable on dismiss even though we never dictated the path
@@ -149,7 +154,7 @@ test("review + retry command family", async () => {
   expect(r.code).toBe(0);
   e = await sb.waitEntry("testorg/demo#50", (x) => x.status === "failed");
   expect(e.error).toBeTruthy();
-  expect(readFileSync(sb.logPath, "utf8")).toContain("reviews doctor");
+  expect(readFileSync(sb.logPath, "utf8")).toContain("docket doctor");
 
   // scenario 5: retry flips failed -> ready; unknown key exits non-zero
   r = sb.run(["retry", "testorg/demo#50"]);
@@ -180,13 +185,15 @@ test("no extra_allowed_tools → claude gets exactly the baseline allowlist", as
   expect(sb.allowedCapture()).toBe(ALLOWED_TOOLS);
 });
 
-test("scenario 9: missing config errors, pointing at config.example.json", () => {
+test("scenario 9: missing config seeds a starter one and errors", () => {
   const sb = makeSandbox();
+  const dir = sb.tmp + "/nonexistent";
   const r = sb.run(["review", "testorg/demo#1"], {
-    AUTO_REVIEW_CONFIG_DIR: sb.tmp + "/nonexistent",
+    DOCKET_CONFIG_DIR: dir,
   });
   expect(r.code).not.toBe(0);
-  expect(r.err).toContain("config.example.json");
+  expect(r.err).toContain("fill in");
+  expect(existsSync(join(dir, "config.json"))).toBe(true);
 });
 
 test("gh_account: pinned account's token reaches gh and claude as GH_TOKEN", async () => {

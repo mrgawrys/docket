@@ -75,7 +75,7 @@ done
 printf '%s' "\${CLAUDE_CONFIG_DIR:-}" >"\${CFGDIR_CAPTURE:?}"
 printf '%s' "\${CLAUDE_BASH_WATCHDOG_SECONDS:-}" >"\${WATCHDOG_CAPTURE:?}"
 printf '%s' "\${GH_TOKEN:-}" >"\${GHTOKEN_CAPTURE:?}"
-bun -e 'const fs=require("fs");let s={};try{s=JSON.parse(fs.readFileSync(process.env.AUTO_REVIEW_STATE_DIR+"/state.json","utf8"))}catch{};console.log((s["testorg/demo#7"]||{}).status||"absent")' >"\${STATUS_AT_CALL:?}"
+bun -e 'const fs=require("fs");let s={};try{s=JSON.parse(fs.readFileSync(process.env.DOCKET_STATE_DIR+"/state.json","utf8"))}catch{};console.log((s["testorg/demo#7"]||{}).status||"absent")' >"\${STATUS_AT_CALL:?}"
 # optionally simulate the agent creating a review worktree wherever it likes
 [ -n "\${CLAUDE_MAKE_WORKTREE:-}" ] && git -C "$PWD" worktree add --quiet --detach "\$CLAUDE_MAKE_WORKTREE" HEAD 2>/dev/null
 echo '{"type":"assistant","message":{"content":[{"type":"text","text":"Looking at the diff"},{"type":"tool_use","name":"Bash","input":{"command":"git fetch origin"}}]}}'
@@ -120,7 +120,7 @@ export interface Sandbox {
 }
 
 export function makeSandbox(): Sandbox {
-  const tmp = mkdtempSync(join(tmpdir(), "reviews-it-"));
+  const tmp = mkdtempSync(join(tmpdir(), "docket-it-"));
   const configDir = join(tmp, "cfg");
   const stateDir = join(tmp, "ar");
   const bin = join(tmp, "bin");
@@ -135,17 +135,25 @@ export function makeSandbox(): Sandbox {
   chmodSync(ghShim, 0o755);
   chmodSync(claudeShim, 0o755);
 
+  // Nothing is ever loaded, so no test can be swayed by what the developer's
+  // own launchd happens to be running. LAUNCHCTL_BIN points somewhere else in
+  // the tests that need a job to exist.
+  const launchctlShim = join(bin, "launchctl");
+  writeFileSync(launchctlShim, "#!/usr/bin/env bash\nexit 1\n");
+  chmodSync(launchctlShim, 0o755);
+
   const capture = (name: string) => {
     const p = join(tmp, name);
     writeFileSync(p, "");
     return p;
   };
   const env: Record<string, string> = {
-    AUTO_REVIEW_CONFIG_DIR: configDir,
-    AUTO_REVIEW_STATE_DIR: stateDir,
-    AUTO_REVIEW_NOTIFY: "0",
+    DOCKET_CONFIG_DIR: configDir,
+    DOCKET_STATE_DIR: stateDir,
+    DOCKET_NOTIFY: "0",
     CLAUDE_BIN: claudeShim,
     GH_BIN: ghShim,
+    LAUNCHCTL_BIN: launchctlShim,
     CLAUDE_CALLS: capture("claude-calls"),
     PROMPT_CAPTURE: capture("prompt-capture"),
     ALLOWED_CAPTURE: capture("allowed-capture"),
@@ -166,7 +174,7 @@ export function makeSandbox(): Sandbox {
     configDir,
     stateDir,
     statePath,
-    logPath: join(stateDir, "auto-review.log"),
+    logPath: join(stateDir, "docket.log"),
     demoRepo,
     run(args, extraEnv = {}) {
       const e: Record<string, string | undefined> = {

@@ -1,14 +1,20 @@
-# auto-review
+# docket
 
 Watches GitHub for PRs awaiting your review and pre-runs Claude Code's
 `/code-review` on each one, headlessly, in the PR repo's local clone — so by
 the time you sit down, a finished review session is waiting to be resumed.
 Reviews never write anything to GitHub.
 
-A launchd job polls on an interval; the `reviews` binary is the front end: a
+A launchd job polls on an interval; the `docket` binary is the front end: a
 full-screen queue showing each PR's verdict, with four ways into an entry —
 resume the Claude session, open a shell or a diff in the PR's worktree, or
 follow a running review — plus retry, dismiss, and the poller switch.
+
+## Why "docket"?
+
+A docket is the list of cases waiting on a judge. This is that list for code:
+every entry is a case awaiting your judgment, and the triage summary each
+review ends with is the brief you read before deciding.
 
 ## Requirements
 
@@ -17,14 +23,29 @@ CLI, and a local clone of every repo you review. The default review runs
 Claude Code's code-review plugin
 (`claude plugin install code-review@claude-plugins-official`); it is required
 only while `review_prompt` runs `/code-review` (see below) — a custom prompt
-that doesn't need it. `reviews doctor` enforces exactly this.
+that doesn't need it. `docket doctor` enforces exactly this.
 
 ## Setup
 
 1. `./install.sh` — checks dependencies, runs the test suite, builds the
-   `reviews` binary into `~/.local/bin`, seeds the config, links the fish
-   completions.
-2. Edit `~/.config/auto-review/config.json`:
+   `docket` binary into `~/.local/bin`, links the shell completions (bash,
+   zsh, fish), and clears out what the old `auto-review` install left behind
+   (its binary, completions, and launchd job — if that job was polling, the
+   installer re-enables it under the new name).
+
+   Or, from Homebrew — `brew install mrgawrys/tap/docket` — which installs the
+   same binary and completions without a local checkout. It works from the
+   first tagged release onward; `./install.sh` remains the from-source path.
+   Coming from `auto-review` this way, run `docket on` afterwards: it removes
+   the old poller, which would otherwise keep running and review everything a
+   second time. `docket doctor` reports it if it is still there.
+2. `docket doctor` — the first run writes a starter config to
+   `~/.config/docket/config.json` and stops. Coming from `auto-review`, it
+   copies that install's config and state over instead, so the queue survives
+   the rename (the originals are left alone). If you pinned the old
+   `AUTO_REVIEW_CONFIG_DIR` / `AUTO_REVIEW_STATE_DIR`, those are still honoured
+   and used where they are — nothing is copied.
+3. Edit `~/.config/docket/config.json`.
    - `orgs` — GitHub orgs to poll for PRs where your review is requested
    - `repos` — `org/repo` → absolute path of your local clone
    - `poll_interval_minutes` — launchd interval (default 15)
@@ -54,7 +75,7 @@ that doesn't need it. `reviews doctor` enforces exactly this.
      never touch the main working copy — that part is fixed and not
      configurable; `review_prompt` is only the task in between. The agent
      picks *where* the worktree goes (following your own worktree conventions
-     in CLAUDE.md, if any); auto-review discovers it afterwards and removes it
+     in CLAUDE.md, if any); docket discovers it afterwards and removes it
      on dismiss. Every run is also asked — again, not configurably — to end
      its final message with a fenced `json` block,
      `{"headline": …, "issues": …, "risk": "low"|"medium"|"high"}`, which is
@@ -82,27 +103,28 @@ that doesn't need it. `reviews doctor` enforces exactly this.
      so a path with spaces stays one argument. The one exception is a literal
      `$SHELL` as the first word, taken from the environment (`/bin/sh` if
      unset). A verb you set **replaces** its default chain rather than adding
-     to it, so keep a fallback that always resolves. Omit = the defaults in
-     `config.example.json`; `reviews doctor` prints the winner per verb.
-3. `reviews doctor` — checks the whole review chain (config, clones, gh
+     to it, so keep a fallback that always resolves. Omit = the shipped chains
+     above; `docket doctor` prints the winner per verb.
+4. `docket doctor` again — checks the whole review chain (config, clones, gh
    auth, claude, code-review plugin, openers) and prints a fix for anything
-   broken.
+   broken. It also fails while the config still holds the starter placeholders,
+   and if the pre-rename poller is still loaded.
    Every line should be ✓ before going further.
-4. `reviews poll --dry-run` — read-only; lists what would be
+5. `docket poll --dry-run` — read-only; lists what would be
    reviewed. **Everything listed gets reviewed (and billed) once the poller
    is on.** Seed a pre-existing backlog as done first:
    `jq '."ORG/REPO#N" = {status: "done", note: "seeded"}' state.json > s && mv s state.json`
-   (state lives in `~/.local/state/auto-review/`).
-5. `reviews on` — renders the launchd plist for this machine into
+   (state lives in `~/.local/state/docket/`).
+6. `docket on` — renders the launchd plist for this machine into
    `~/Library/LaunchAgents/` and loads it, baking the `PATH` from the shell you
    run it in ahead of a safe fallback. Run it from your normal shell (with your
    version manager active) so polled runs see the same toolchain — e.g. `node`
-   for a blast-radius pass. Re-run `reviews on` after changing your PATH.
-   `reviews status` to confirm.
+   for a blast-radius pass. Re-run `docket on` after changing your PATH.
+   `docket status` to confirm.
 
 ## Day to day
 
-- `reviews` — the review queue. Each row carries the review's verdict at a
+- `docket` — the review queue. Each row carries the review's verdict at a
   glance — how many issues it would flag, and the risk it graded the PR — and
   a short panel under the list gives the highlighted PR's headline finding.
   It is a triage screen: `enter` is how a review actually gets read.
@@ -122,16 +144,16 @@ that doesn't need it. `reviews doctor` enforces exactly this.
   cannot run is greyed out with the reason shown in the panel,
   rather than failing after the keypress. Without a terminal — from a script
   or a cron wrapper — it prints the pending queue and exits instead.
-- `reviews watch ORG/REPO#N` — follow a running review from anywhere; plain
-  `reviews watch` follows the poller log as before.
-- `reviews sync` — refresh entries from GitHub before listing: merged/closed
+- `docket watch ORG/REPO#N` — follow a running review from anywhere; plain
+  `docket watch` follows the poller log as before.
+- `docket sync` — refresh entries from GitHub before listing: merged/closed
   PRs are dismissed (worktree removed), PRs you already reviewed show your
   verdict. The poller does the same refresh on every poll.
-- `reviews doctor | status | log [N] | watch | on | off | help`
-- `reviews review ORG/REPO#N ["note"]` — force-review any PR (e.g.
+- `docket doctor | status | log [N] | watch | on | off | help`
+- `docket review ORG/REPO#N ["note"]` — force-review any PR (e.g.
   author pushed changes without re-requesting review); accepts PR URLs too.
   The note is passed to the reviewer as extra context.
-- `reviews dismiss ORG/REPO#N` — mark an entry done and remove its worktree
+- `docket dismiss ORG/REPO#N` — mark an entry done and remove its worktree
   without reviewing it.
 
 ## How it works
@@ -139,28 +161,28 @@ that doesn't need it. `reviews doctor` enforces exactly this.
 Each poll runs `gh search prs --review-requested=@me` per org, skips drafts,
 already-known PRs, and PRs whose only route to you is a team in
 `ignored_teams`, then hands each new PR to its own detached background
-runner (`reviews exec`) that runs `claude -p` headlessly with a locked-down
+runner (`docket exec`) that runs `claude -p` headlessly with a locked-down
 tool allowlist. Runners are parallel and survive the poll process: ctrl+c on
-a poll, `reviews review`, or `reviews retry` never cancels an in-flight
+a poll, `docket review`, or `docket retry` never cancels an in-flight
 review — you get a notification when each one is ready. State updates are
 serialized through a lock, and a runner that dies mid-review is detected by
 its dead pid and marked failed. The review happens in an isolated git worktree
 so the clone's main working copy is never touched. The review agent chooses the
 worktree's location (honoring any worktree conventions in your CLAUDE.md);
-auto-review records where it landed and removes it when the entry is dismissed.
+docket records where it landed and removes it when the entry is dismissed.
 The worktree stays for follow-up questions until then.
 
 Entry lifecycle: `reviewing` → `ready` | `failed` | `canceled` (Ctrl+C), plus
 `skipped` (no local clone mapped) and `done` (dismissed). Orphaned
 `reviewing` entries from a dead run flip to `failed` on the next poll. Every
-poll (and `reviews sync`) also reconciles active entries against GitHub:
+poll (and `docket sync`) also reconciles active entries against GitHub:
 merged/closed PRs become `done` and lose their worktree; once you review a
 PR its entry shows your verdict — `approved`, `changes-requested`, or
 `commented` — with `+re-requested` / `+new-commits` flags when the author
 re-requests your review or pushes after it. Flagged entries are acted on
-manually (`r#` or `reviews review` with a note).
+manually (`r#` or `docket review` with a note).
 
-Statuses, logs, and the lock live in `~/.local/state/auto-review/`; delete a
+Statuses, logs, and the lock live in `~/.local/state/docket/`; delete a
 state entry to force a re-review. `bun test` is fully mocked — no
 network, no tokens.
 
@@ -168,7 +190,7 @@ network, no tokens.
 
 - `bun test` — run the test suite (fully mocked, no network, no tokens)
 - `bun run dev` — run the CLI from source, e.g. `bun run dev status`
-- `bun run build` — compile the `reviews` binary into `dist/`
+- `bun run build` — compile the `docket` binary into `dist/`
 - `bun run format` — format with Biome (`format:check` is enforced in CI, and a
   Claude Code hook in `.claude/settings.json` auto-formats agent edits)
 - `react-devtools-core` is a devDependency solely because Ink's dev-only branch

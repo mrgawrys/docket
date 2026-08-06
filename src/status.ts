@@ -20,8 +20,8 @@ export function stateCounts(s: State): string {
 export async function statusCommand(ctx: Ctx): Promise<number> {
   console.log(
     launchdLoaded()
-      ? "poller:  ON (launchd) — 'reviews off' to disable"
-      : "poller:  OFF — 'reviews on' to enable, or run 'reviews poll' manually",
+      ? "poller:  ON (launchd) — 'docket off' to disable"
+      : "poller:  OFF — 'docket on' to enable, or run 'docket poll' manually",
   );
   const pollPid = lockHolderPid(ctx.paths.lockDir);
   if (pollPid !== null)

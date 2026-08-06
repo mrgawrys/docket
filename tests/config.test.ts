@@ -1,5 +1,14 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -13,35 +22,173 @@ import {
   loadConfig,
   notifyEnabled,
   paths,
+  placeholderEntries,
 } from "../src/config";
 
 test("paths: env overrides beat XDG beats HOME defaults", () => {
   const home = { HOME: "/h" } as NodeJS.ProcessEnv;
-  expect(paths(home).configPath).toBe("/h/.config/auto-review/config.json");
-  expect(paths(home).statePath).toBe("/h/.local/state/auto-review/state.json");
+  expect(paths(home).configPath).toBe("/h/.config/docket/config.json");
+  expect(paths(home).statePath).toBe("/h/.local/state/docket/state.json");
   const xdg = {
     HOME: "/h",
     XDG_CONFIG_HOME: "/x/cfg",
     XDG_STATE_HOME: "/x/st",
   } as NodeJS.ProcessEnv;
-  expect(paths(xdg).configDir).toBe("/x/cfg/auto-review");
-  expect(paths(xdg).lockDir).toBe("/x/st/auto-review/.lock");
+  expect(paths(xdg).configDir).toBe("/x/cfg/docket");
+  expect(paths(xdg).lockDir).toBe("/x/st/docket/.lock");
   const own = {
     HOME: "/h",
-    AUTO_REVIEW_CONFIG_DIR: "/o/c",
-    AUTO_REVIEW_STATE_DIR: "/o/s",
+    DOCKET_CONFIG_DIR: "/o/c",
+    DOCKET_STATE_DIR: "/o/s",
   } as NodeJS.ProcessEnv;
   expect(paths(own).configPath).toBe("/o/c/config.json");
-  expect(paths(own).logPath).toBe("/o/s/auto-review.log");
+  expect(paths(own).logPath).toBe("/o/s/docket.log");
+  expect(paths(xdg).legacyConfigDir).toBe("/x/cfg/auto-review");
+  expect(paths(own).legacyStateDir).toBeUndefined();
 });
 
-test("loadConfig: missing file throws ConfigError pointing at config.example.json", async () => {
-  const p = paths({
-    AUTO_REVIEW_CONFIG_DIR: "/nonexistent-xyz",
-    AUTO_REVIEW_STATE_DIR: "/tmp",
+test("paths: an empty env var means unset, and the old names still work", () => {
+  // a wrapper or plist expanding something unset hands us "", which must not
+  // become the filesystem root (and must not disable the legacy lookup)
+  const blank = {
+    HOME: "/h",
+    DOCKET_CONFIG_DIR: "",
+    DOCKET_STATE_DIR: "",
+  } as NodeJS.ProcessEnv;
+  expect(paths(blank).configPath).toBe("/h/.config/docket/config.json");
+  expect(paths(blank).legacyStateDir).toBe("/h/.local/state/auto-review");
+
+  // a directory pinned under the pre-rename name is adopted where it stands —
+  // ignoring it would start from an empty queue and re-review the backlog
+  const old = {
+    HOME: "/h",
+    AUTO_REVIEW_CONFIG_DIR: "/pinned/c",
+    AUTO_REVIEW_STATE_DIR: "/pinned/s",
+  } as NodeJS.ProcessEnv;
+  expect(paths(old).configPath).toBe("/pinned/c/config.json");
+  expect(paths(old).statePath).toBe("/pinned/s/state.json");
+  expect(paths(old).legacyConfigDir).toBeUndefined();
+});
+
+// A fresh XDG home under a temp dir, so nothing touches the real one.
+const freshPaths = (prefix: string) => {
+  const root = mkdtempSync(join(tmpdir(), prefix));
+  return paths({
+    HOME: root,
+    XDG_CONFIG_HOME: join(root, "cfg"),
+    XDG_STATE_HOME: join(root, "st"),
   } as NodeJS.ProcessEnv);
+};
+
+test("loadConfig: no config anywhere seeds an editable one and says to fill it in", async () => {
+  const p = freshPaths("dk-seed-");
+  const err = await loadConfig(p).catch((e) => e);
+  expect(err).toBeInstanceOf(ConfigError);
+  expect(err.message).toMatch(/fill in/);
+  const seeded = JSON.parse(readFileSync(p.configPath, "utf8"));
+  expect(seeded.orgs.length).toBeGreaterThan(0);
+  expect(seeded.openers.diff.length).toBeGreaterThan(0);
+  writeFileSync(p.configPath, JSON.stringify({ orgs: ["mine"], repos: {} }));
+  expect((await loadConfig(p)).orgs).toEqual(["mine"]);
+});
+
+test("loadConfig: a pre-rename install's config and state are carried over", async () => {
+  const p = freshPaths("dk-mig-");
+  const oldConfig = p.legacyConfigDir!;
+  const oldState = p.legacyStateDir!;
+  mkdirSync(oldConfig, { recursive: true });
+  mkdirSync(join(oldState, ".lock"), { recursive: true });
+  writeFileSync(
+    join(oldConfig, "config.json"),
+    JSON.stringify({ orgs: ["o"], repos: { "o/r": "/tmp" } }),
+  );
+  writeFileSync(join(oldState, "state.json"), '{"o/r#1":{"status":"done"}}');
+  writeFileSync(join(oldState, ".lock", "pid"), "1");
+
+  expect((await loadConfig(p)).orgs).toEqual(["o"]);
+  expect(readFileSync(p.statePath, "utf8")).toContain("o/r#1");
+  expect(existsSync(p.lockDir)).toBe(false);
+  expect(existsSync(join(oldConfig, "config.json"))).toBe(true);
+});
+
+test("loadConfig: a failed migration leaves nothing behind, and the retry works", async () => {
+  const p = freshPaths("dk-migfail-");
+  const oldState = p.legacyStateDir!;
+  mkdirSync(oldState, { recursive: true });
+  writeFileSync(join(oldState, "state.json"), '{"o/r#1":{"status":"done"}}');
+  // a dangling symlink: copying it resolves the target and fails partway
+  symlinkSync(join(oldState, "gone"), join(oldState, "dangling"));
+
   await expect(loadConfig(p)).rejects.toThrow(ConfigError);
-  await expect(loadConfig(p)).rejects.toThrow(/config\.example\.json/);
+  // the guard reads the destination as "already migrated", so a half-copy left
+  // behind would skip the retry forever and start the queue empty
+  expect(existsSync(p.stateDir)).toBe(false);
+  expect(existsSync(`${p.stateDir}.migrating`)).toBe(false);
+  expect(existsSync(join(oldState, "state.json"))).toBe(true);
+
+  rmSync(join(oldState, "dangling"));
+  mkdirSync(p.configDir, { recursive: true });
+  writeFileSync(p.configPath, JSON.stringify({ orgs: ["o"], repos: {} }));
+  await loadConfig(p);
+  expect(readFileSync(p.statePath, "utf8")).toContain("o/r#1");
+});
+
+test("loadConfig: migration copies a symlinked legacy dir, never links back to it", async () => {
+  const p = freshPaths("dk-migln-");
+  // a dotfiles setup: ~/.config/auto-review points elsewhere. Linking instead
+  // of copying would make docket write into the originals we promise to leave
+  // alone — and skip the lock filter entirely.
+  const real = mkdtempSync(join(tmpdir(), "dk-dotfiles-"));
+  writeFileSync(
+    join(real, "config.json"),
+    JSON.stringify({ orgs: ["o"], repos: {} }),
+  );
+  mkdirSync(join(real, ".lock"), { recursive: true });
+  mkdirSync(join(p.legacyConfigDir!, ".."), { recursive: true });
+  symlinkSync(real, p.legacyConfigDir!);
+
+  expect((await loadConfig(p)).orgs).toEqual(["o"]);
+  expect(lstatSync(p.configDir).isSymbolicLink()).toBe(false);
+  expect(existsSync(join(p.configDir, ".lock"))).toBe(false);
+});
+
+test("loadConfig: migration inherits no lock, and the log arrives under the new name", async () => {
+  const p = freshPaths("dk-miglock-");
+  const oldState = p.legacyStateDir!;
+  mkdirSync(oldState, { recursive: true });
+  writeFileSync(join(oldState, "state.json"), "{}");
+  // the per-write state lock has no stale-holder detection, so an inherited
+  // one stalls the first state-mutating command for the full deadline
+  mkdirSync(join(oldState, "state.json.lock"), { recursive: true });
+  writeFileSync(join(oldState, "auto-review.log"), "old line\n");
+  mkdirSync(p.configDir, { recursive: true });
+  writeFileSync(p.configPath, JSON.stringify({ orgs: ["o"], repos: {} }));
+
+  await loadConfig(p);
+  expect(existsSync(join(p.stateDir, "state.json.lock"))).toBe(false);
+  expect(readFileSync(p.logPath, "utf8")).toBe("old line\n");
+});
+
+test("placeholderEntries: the untouched starter config is not a working config", async () => {
+  const p = freshPaths("dk-ph-");
+  await loadConfig(p).catch(() => {}); // seeds the starter
+  const seeded = JSON.parse(readFileSync(p.configPath, "utf8"));
+  expect(placeholderEntries(seeded).length).toBeGreaterThan(0);
+  expect(
+    placeholderEntries({ orgs: ["mine"], repos: { "mine/r": "/src/r" } }),
+  ).toEqual([]);
+});
+
+test("loadConfig: an existing docket config is never overwritten by the old one", async () => {
+  const p = freshPaths("dk-mig2-");
+  mkdirSync(p.legacyConfigDir!, { recursive: true });
+  writeFileSync(
+    join(p.legacyConfigDir!, "config.json"),
+    JSON.stringify({ orgs: ["stale"], repos: {} }),
+  );
+  mkdirSync(p.configDir, { recursive: true });
+  writeFileSync(p.configPath, JSON.stringify({ orgs: ["current"], repos: {} }));
+  expect((await loadConfig(p)).orgs).toEqual(["current"]);
 });
 
 test("loadConfig: parses a valid config; rejects one without orgs/repos", async () => {
@@ -51,8 +198,8 @@ test("loadConfig: parses a valid config; rejects one without orgs/repos", async 
     JSON.stringify({ orgs: ["o"], repos: { "o/r": "/tmp" } }),
   );
   const p = paths({
-    AUTO_REVIEW_CONFIG_DIR: dir,
-    AUTO_REVIEW_STATE_DIR: dir,
+    DOCKET_CONFIG_DIR: dir,
+    DOCKET_STATE_DIR: dir,
   } as NodeJS.ProcessEnv);
   const cfg = await loadConfig(p);
   expect(cfg.orgs).toEqual(["o"]);
@@ -82,7 +229,7 @@ test("binary + notification resolution", () => {
   );
   expect(
     notifyEnabled({ orgs: [], repos: {} }, {
-      AUTO_REVIEW_NOTIFY: "0",
+      DOCKET_NOTIFY: "0",
     } as NodeJS.ProcessEnv),
   ).toBe(false);
 });
@@ -122,8 +269,8 @@ test("effectiveAllowedTools: extras are appended after the baseline", () => {
 test("loadConfig: extra_allowed_tools must be an array of strings", async () => {
   const dir = mkdtempSync(join(tmpdir(), "rv-cfg-"));
   const p = paths({
-    AUTO_REVIEW_CONFIG_DIR: dir,
-    AUTO_REVIEW_STATE_DIR: dir,
+    DOCKET_CONFIG_DIR: dir,
+    DOCKET_STATE_DIR: dir,
   } as NodeJS.ProcessEnv);
   const base = { orgs: ["o"], repos: { "o/r": "/tmp" } };
   writeFileSync(
@@ -148,8 +295,8 @@ test("loadConfig: extra_allowed_tools must be an array of strings", async () => 
 test("loadConfig: claude_env must be an object of string values", async () => {
   const dir = mkdtempSync(join(tmpdir(), "rv-cfg-"));
   const p = paths({
-    AUTO_REVIEW_CONFIG_DIR: dir,
-    AUTO_REVIEW_STATE_DIR: dir,
+    DOCKET_CONFIG_DIR: dir,
+    DOCKET_STATE_DIR: dir,
   } as NodeJS.ProcessEnv);
   const base = { orgs: ["o"], repos: { "o/r": "/tmp" } };
   writeFileSync(
@@ -172,8 +319,8 @@ test("loadConfig: claude_env must be an object of string values", async () => {
 test("loadConfig: openers must map a verb to a list of non-empty cmd arrays", async () => {
   const dir = mkdtempSync(join(tmpdir(), "rv-cfg-"));
   const p = paths({
-    AUTO_REVIEW_CONFIG_DIR: dir,
-    AUTO_REVIEW_STATE_DIR: dir,
+    DOCKET_CONFIG_DIR: dir,
+    DOCKET_STATE_DIR: dir,
   } as NodeJS.ProcessEnv);
   const base = { orgs: ["o"], repos: { "o/r": "/tmp" } };
   const write = (openers: unknown) =>

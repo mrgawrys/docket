@@ -60,7 +60,7 @@ export function killEntry(
   };
 }
 
-// Bare `reviews` without a terminal: the TUI cannot mount, so print what it
+// Bare `docket` without a terminal: the TUI cannot mount, so print what it
 // would have shown.
 export function printPending(ctx: Ctx): number {
   const rows = pendingEntries(loadState(ctx.paths.statePath));

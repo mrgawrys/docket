@@ -88,7 +88,7 @@ export async function suspendLoop(
 ): Promise<number> {
   let notice: string | undefined;
   // The status of the last child that failed for a reason of ours, so a
-  // resumed session that died still shows up in `reviews && next-step`.
+  // resumed session that died still shows up in `docket && next-step`.
   let code = 0;
   for (;;) {
     let pending: SuspendRequest | undefined;
