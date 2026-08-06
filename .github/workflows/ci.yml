@@ -7,7 +7,10 @@ on:
 
 jobs:
   ci:
-    runs-on: ubuntu-latest
+    # docket is macOS-only — launchd, osascript, the darwin-only release
+    # binaries. On Linux every `process.platform !== "darwin"` branch short-
+    # circuits, so the tests that cover them pass without running anything.
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
