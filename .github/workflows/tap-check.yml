@@ -1,0 +1,77 @@
+# A dry run of release.yml's "Update the tap" step, on demand. TAP_TOKEN is a
+# PAT that expires, and its failure only ever surfaces mid-release — after the
+# release is already published. Run this to check it before tagging, or to tell
+# an expired token apart from a broken formula when a release does fail.
+name: Tap check
+
+on: workflow_dispatch
+
+jobs:
+  tap-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: What the token may do
+        env:
+          TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
+        run: |
+          code=$(curl -s -o resp.json -w '%{http_code}' \
+            -H "Authorization: Bearer $TAP_TOKEN" \
+            https://api.github.com/repos/mrgawrys/homebrew-tap)
+          if [ "$code" != 200 ]; then
+            echo "token cannot even read the tap (HTTP $code) — wrong repo selected," >&2
+            echo "expired, or pasted with a stray newline" >&2
+            exit 1
+          fi
+          jq -c .permissions resp.json
+          if [ "$(jq -r .permissions.push resp.json)" != true ]; then
+            echo "token is read-only — set Contents: Read and write" >&2
+            exit 1
+          fi
+          # Only classic PATs carry x-oauth-scopes, and a `repo`-scoped one can
+          # write every repo the account owns — not just the tap. Not fatal, but
+          # it is not the token this workflow asks for.
+          scopes=$(curl -sI -H "Authorization: Bearer $TAP_TOKEN" \
+            https://api.github.com/repos/mrgawrys/homebrew-tap |
+            tr -d '\r' | sed -n 's/^[Xx]-[Oo][Aa]uth-[Ss]copes: //p')
+          if [ -n "$scopes" ]; then
+            echo "::warning::TAP_TOKEN is a classic PAT (scopes: $scopes) — it can" \
+              "write every repo this account owns. Prefer a fine-grained token" \
+              "limited to homebrew-tap with Contents: Read and write."
+          else
+            echo "fine-grained token, scoped to the tap"
+          fi
+
+      - name: Rehearse the formula update
+        env:
+          TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag=$(gh release view --json tagName -q .tagName)
+          version="${tag#v}"
+          gh release download "$tag" --pattern SHA256SUMS
+          arm64=$(awk '$2 == "docket-darwin-arm64.tar.gz" {print $1}' SHA256SUMS)
+          x64=$(awk '$2 == "docket-darwin-x64.tar.gz" {print $1}' SHA256SUMS)
+          git clone --depth 1 \
+            "https://x-access-token:$TAP_TOKEN@github.com/mrgawrys/homebrew-tap" tap
+          sed -e "s|^  version .*|  version \"$version\"|" \
+              -e "s|PLACEHOLDER_SHA256_ARM64|$arm64|" \
+              -e "s|PLACEHOLDER_SHA256_X64|$x64|" \
+              packaging/docket.rb > tap/Formula/docket.rb
+          if grep -q PLACEHOLDER tap/Formula/docket.rb ||
+            ! grep -qF "version \"$version\"" tap/Formula/docket.rb; then
+            echo "formula did not fully substitute" >&2
+            exit 1
+          fi
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          echo "--- what a release of $tag would change in the tap ---"
+          git --no-pager diff
+          # --dry-run still opens git-receive-pack, which a read-only token is
+          # refused — so this is the write check, and it writes nothing. It
+          # needs a commit to offer: once a release has landed the regenerated
+          # formula is identical, so make one either way.
+          git commit -qam rehearsal --allow-empty
+          git push --dry-run

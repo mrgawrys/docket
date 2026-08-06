@@ -1,5 +1,6 @@
-# Template for mrgawrys/homebrew-tap — see packaging/README.md.
-# The two sha256 placeholders must be replaced from the release's SHA256SUMS.
+# Source of truth for mrgawrys/homebrew-tap. The tap's copy is generated from
+# this file on every tag push by .github/workflows/release.yml, which fills in
+# the version and both sha256s — so edits made in the tap are lost next release.
 class Docket < Formula
   desc "Pre-runs Claude Code's /code-review on PRs awaiting your review"
   homepage "https://github.com/mrgawrys/docket"
