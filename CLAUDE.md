@@ -4,6 +4,16 @@ Pre-runs Claude Code's `/code-review` on PRs awaiting the user's review.
 See README.md for architecture; `bun test` is fully mocked (no network, no
 tokens) — keep it that way.
 
+## Releases are tags
+
+A release is a pushed tag — `git tag vX.Y.Z && git push origin vX.Y.Z` —
+which runs `.github/workflows/release.yml` (tests, both macOS binaries, a
+GitHub release). The tap (`mrgawrys/homebrew-tap`) never updates itself:
+copy `packaging/docket.rb` there, set `version`, fill both sha256s from the
+release's `SHA256SUMS` (full recipe in `packaging/README.md`).
+`package.json`'s version is read by nothing; the tag is the only version
+that matters.
+
 ## Dependency changes must update doctor + README
 
 `docket doctor` (src/doctor.ts) is the contract for what a working setup
