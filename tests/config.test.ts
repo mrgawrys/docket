@@ -1,9 +1,12 @@
 import { expect, test } from "bun:test";
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -19,6 +22,7 @@ import {
   loadConfig,
   notifyEnabled,
   paths,
+  placeholderEntries,
 } from "../src/config";
 
 test("paths: env overrides beat XDG beats HOME defaults", () => {
@@ -41,6 +45,29 @@ test("paths: env overrides beat XDG beats HOME defaults", () => {
   expect(paths(own).logPath).toBe("/o/s/docket.log");
   expect(paths(xdg).legacyConfigDir).toBe("/x/cfg/auto-review");
   expect(paths(own).legacyStateDir).toBeUndefined();
+});
+
+test("paths: an empty env var means unset, and the old names still work", () => {
+  // a wrapper or plist expanding something unset hands us "", which must not
+  // become the filesystem root (and must not disable the legacy lookup)
+  const blank = {
+    HOME: "/h",
+    DOCKET_CONFIG_DIR: "",
+    DOCKET_STATE_DIR: "",
+  } as NodeJS.ProcessEnv;
+  expect(paths(blank).configPath).toBe("/h/.config/docket/config.json");
+  expect(paths(blank).legacyStateDir).toBe("/h/.local/state/auto-review");
+
+  // a directory pinned under the pre-rename name is adopted where it stands —
+  // ignoring it would start from an empty queue and re-review the backlog
+  const old = {
+    HOME: "/h",
+    AUTO_REVIEW_CONFIG_DIR: "/pinned/c",
+    AUTO_REVIEW_STATE_DIR: "/pinned/s",
+  } as NodeJS.ProcessEnv;
+  expect(paths(old).configPath).toBe("/pinned/c/config.json");
+  expect(paths(old).statePath).toBe("/pinned/s/state.json");
+  expect(paths(old).legacyConfigDir).toBeUndefined();
 });
 
 // A fresh XDG home under a temp dir, so nothing touches the real one.
@@ -82,6 +109,74 @@ test("loadConfig: a pre-rename install's config and state are carried over", asy
   expect(readFileSync(p.statePath, "utf8")).toContain("o/r#1");
   expect(existsSync(p.lockDir)).toBe(false);
   expect(existsSync(join(oldConfig, "config.json"))).toBe(true);
+});
+
+test("loadConfig: a failed migration leaves nothing behind, and the retry works", async () => {
+  const p = freshPaths("dk-migfail-");
+  const oldState = p.legacyStateDir!;
+  mkdirSync(oldState, { recursive: true });
+  writeFileSync(join(oldState, "state.json"), '{"o/r#1":{"status":"done"}}');
+  // a dangling symlink: copying it resolves the target and fails partway
+  symlinkSync(join(oldState, "gone"), join(oldState, "dangling"));
+
+  await expect(loadConfig(p)).rejects.toThrow(ConfigError);
+  // the guard reads the destination as "already migrated", so a half-copy left
+  // behind would skip the retry forever and start the queue empty
+  expect(existsSync(p.stateDir)).toBe(false);
+  expect(existsSync(`${p.stateDir}.migrating`)).toBe(false);
+  expect(existsSync(join(oldState, "state.json"))).toBe(true);
+
+  rmSync(join(oldState, "dangling"));
+  mkdirSync(p.configDir, { recursive: true });
+  writeFileSync(p.configPath, JSON.stringify({ orgs: ["o"], repos: {} }));
+  await loadConfig(p);
+  expect(readFileSync(p.statePath, "utf8")).toContain("o/r#1");
+});
+
+test("loadConfig: migration copies a symlinked legacy dir, never links back to it", async () => {
+  const p = freshPaths("dk-migln-");
+  // a dotfiles setup: ~/.config/auto-review points elsewhere. Linking instead
+  // of copying would make docket write into the originals we promise to leave
+  // alone — and skip the lock filter entirely.
+  const real = mkdtempSync(join(tmpdir(), "dk-dotfiles-"));
+  writeFileSync(
+    join(real, "config.json"),
+    JSON.stringify({ orgs: ["o"], repos: {} }),
+  );
+  mkdirSync(join(real, ".lock"), { recursive: true });
+  mkdirSync(join(p.legacyConfigDir!, ".."), { recursive: true });
+  symlinkSync(real, p.legacyConfigDir!);
+
+  expect((await loadConfig(p)).orgs).toEqual(["o"]);
+  expect(lstatSync(p.configDir).isSymbolicLink()).toBe(false);
+  expect(existsSync(join(p.configDir, ".lock"))).toBe(false);
+});
+
+test("loadConfig: migration inherits no lock, and the log arrives under the new name", async () => {
+  const p = freshPaths("dk-miglock-");
+  const oldState = p.legacyStateDir!;
+  mkdirSync(oldState, { recursive: true });
+  writeFileSync(join(oldState, "state.json"), "{}");
+  // the per-write state lock has no stale-holder detection, so an inherited
+  // one stalls the first state-mutating command for the full deadline
+  mkdirSync(join(oldState, "state.json.lock"), { recursive: true });
+  writeFileSync(join(oldState, "auto-review.log"), "old line\n");
+  mkdirSync(p.configDir, { recursive: true });
+  writeFileSync(p.configPath, JSON.stringify({ orgs: ["o"], repos: {} }));
+
+  await loadConfig(p);
+  expect(existsSync(join(p.stateDir, "state.json.lock"))).toBe(false);
+  expect(readFileSync(p.logPath, "utf8")).toBe("old line\n");
+});
+
+test("placeholderEntries: the untouched starter config is not a working config", async () => {
+  const p = freshPaths("dk-ph-");
+  await loadConfig(p).catch(() => {}); // seeds the starter
+  const seeded = JSON.parse(readFileSync(p.configPath, "utf8"));
+  expect(placeholderEntries(seeded).length).toBeGreaterThan(0);
+  expect(
+    placeholderEntries({ orgs: ["mine"], repos: { "mine/r": "/src/r" } }),
+  ).toEqual([]);
 });
 
 test("loadConfig: an existing docket config is never overwritten by the old one", async () => {
