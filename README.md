@@ -30,16 +30,22 @@ that doesn't need it. `docket doctor` enforces exactly this.
 1. `./install.sh` — checks dependencies, runs the test suite, builds the
    `docket` binary into `~/.local/bin`, links the shell completions (bash,
    zsh, fish), and clears out what the old `auto-review` install left behind
-   (its binary, completions, and launchd job — so re-run `docket on`
-   afterwards).
+   (its binary, completions, and launchd job — if that job was polling, the
+   installer re-enables it under the new name).
 
    Or, from Homebrew — `brew install mrgawrys/tap/docket` — which installs the
    same binary and completions without a local checkout. It works from the
    first tagged release onward; `./install.sh` remains the from-source path.
-2. Edit `~/.config/docket/config.json` — the first `docket` run writes a
-   starter copy there, or, coming from `auto-review`, copies that install's
-   config and state over so the queue survives the rename (the originals are
-   left alone).
+   Coming from `auto-review` this way, run `docket on` afterwards: it removes
+   the old poller, which would otherwise keep running and review everything a
+   second time. `docket doctor` reports it if it is still there.
+2. `docket doctor` — the first run writes a starter config to
+   `~/.config/docket/config.json` and stops. Coming from `auto-review`, it
+   copies that install's config and state over instead, so the queue survives
+   the rename (the originals are left alone). If you pinned the old
+   `AUTO_REVIEW_CONFIG_DIR` / `AUTO_REVIEW_STATE_DIR`, those are still honoured
+   and used where they are — nothing is copied.
+3. Edit `~/.config/docket/config.json`.
    - `orgs` — GitHub orgs to poll for PRs where your review is requested
    - `repos` — `org/repo` → absolute path of your local clone
    - `poll_interval_minutes` — launchd interval (default 15)
@@ -97,18 +103,19 @@ that doesn't need it. `docket doctor` enforces exactly this.
      so a path with spaces stays one argument. The one exception is a literal
      `$SHELL` as the first word, taken from the environment (`/bin/sh` if
      unset). A verb you set **replaces** its default chain rather than adding
-     to it, so keep a fallback that always resolves. Omit = the defaults in
-     `config.example.json`; `docket doctor` prints the winner per verb.
-3. `docket doctor` — checks the whole review chain (config, clones, gh
+     to it, so keep a fallback that always resolves. Omit = the shipped chains
+     above; `docket doctor` prints the winner per verb.
+4. `docket doctor` again — checks the whole review chain (config, clones, gh
    auth, claude, code-review plugin, openers) and prints a fix for anything
-   broken.
+   broken. It also fails while the config still holds the starter placeholders,
+   and if the pre-rename poller is still loaded.
    Every line should be ✓ before going further.
-4. `docket poll --dry-run` — read-only; lists what would be
+5. `docket poll --dry-run` — read-only; lists what would be
    reviewed. **Everything listed gets reviewed (and billed) once the poller
    is on.** Seed a pre-existing backlog as done first:
    `jq '."ORG/REPO#N" = {status: "done", note: "seeded"}' state.json > s && mv s state.json`
    (state lives in `~/.local/state/docket/`).
-5. `docket on` — renders the launchd plist for this machine into
+6. `docket on` — renders the launchd plist for this machine into
    `~/Library/LaunchAgents/` and loads it, baking the `PATH` from the shell you
    run it in ahead of a safe fallback. Run it from your normal shell (with your
    version manager active) so polled runs see the same toolchain — e.g. `node`

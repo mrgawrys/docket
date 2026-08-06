@@ -10,7 +10,7 @@ done
 command -v claude >/dev/null || echo "warning: claude CLI not found on PATH (needed at runtime)" >&2
 
 DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
-FISH_DIR="$HOME/.config/fish/completions"
+FISH_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/fish/completions"
 BASH_DIR="$DATA_HOME/bash-completion/completions"
 ZSH_DIR="$DATA_HOME/zsh/site-functions"
 mkdir -p "$HOME/.local/bin" "$FISH_DIR" "$BASH_DIR" "$ZSH_DIR"
@@ -34,11 +34,22 @@ fi
 # job would keep polling with a missing binary. (The old fish *function*
 # shadowed the binary back then — remove that too.)
 rm -f "$HOME/.local/bin/reviews" \
-  "$HOME/.config/fish/completions/reviews.fish" \
-  "$HOME/.config/fish/functions/reviews.fish"
+  "$FISH_DIR/reviews.fish" \
+  "${XDG_CONFIG_HOME:-$HOME/.config}/fish/functions/reviews.fish"
 OLD_JOB="com.$(id -un).auto-review"
+HAD_POLLER=0
+# `if`, not `&&`: a failing left-hand side of an AND list trips `set -e`
+if launchctl print "gui/$(id -u)/$OLD_JOB" >/dev/null 2>&1; then HAD_POLLER=1; fi
 launchctl bootout "gui/$(id -u)/$OLD_JOB" 2>/dev/null || true
 rm -f "$HOME/Library/LaunchAgents/$OLD_JOB.plist"
+
+# Tearing the old job down would otherwise leave a working install silently not
+# polling, which reads exactly like an empty queue.
+if [ "$HAD_POLLER" = 1 ]; then
+  echo "the old poller was loaded — re-enabling it under the new name"
+  "$HOME/.local/bin/docket" on ||
+    echo "could not re-enable it — run 'docket doctor', then 'docket on'" >&2
+fi
 
 echo "install complete — make sure ~/.local/bin is on PATH,"
 echo "run 'docket doctor' (it writes a starter config to edit), then 'docket on'"
