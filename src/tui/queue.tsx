@@ -67,7 +67,9 @@ export function Queue({
             </Box>
             {/* fixed widths, so an entry with no summary leaves a gap rather
                 than shifting every other row's columns out of line */}
-            <Box width={10} flexShrink={0}>
+            {/* "⚠ 12 issues" is 11 wide; anything narrower collides with the
+                risk chip */}
+            <Box width={12} flexShrink={0}>
               <Text color={issueChip(entry.summary)?.color} wrap="truncate-end">
                 {issueChip(entry.summary)?.text ?? ""}
               </Text>
