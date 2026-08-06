@@ -1,0 +1,57 @@
+#compdef docket
+# Tab completions for the docket binary.
+# Symlinked as _docket into a directory on $fpath (zsh autoloads it there).
+
+# The PR arguments are org/repo#num keys or GitHub URLs — nothing to enumerate,
+# so hint at the shape rather than offering files.
+_docket_pr() {
+  _message -e pr 'ORG/REPO#NUM or a GitHub PR URL'
+}
+
+_docket() {
+  local state
+  local -a commands
+  commands=(
+    'poll:one poll cycle (--dry-run to preview)'
+    'sync:refresh entries from GitHub'
+    'review:force-review a PR (key or URL)'
+    'retry:re-run a failed review'
+    'dismiss:mark done + remove worktree'
+    'doctor:check setup: config, clones, gh, claude, plugin'
+    'status:poller state, live poll, state counts'
+    'log:last N log lines (default 20)'
+    'watch:follow the log live'
+    'on:enable the launchd poller'
+    'off:disable the launchd poller'
+    'help:show usage'
+  )
+
+  _arguments -C \
+    '(-h --help)'{-h,--help}'[show usage]' \
+    '1: :->command' \
+    '*:: :->args'
+
+  case $state in
+    command)
+      _describe -t commands 'docket command' commands
+      ;;
+    args)
+      case $words[1] in
+        poll)
+          _arguments '--dry-run[preview without starting reviews]'
+          ;;
+        review|retry)
+          _arguments '1:pr:_docket_pr' '2:note: '
+          ;;
+        dismiss|watch)
+          _arguments '1:pr:_docket_pr'
+          ;;
+        log)
+          _message -e lines 'number of log lines'
+          ;;
+      esac
+      ;;
+  esac
+}
+
+_docket "$@"
