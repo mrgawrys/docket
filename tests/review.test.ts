@@ -108,7 +108,12 @@ test("runner records the worktree the agent created, wherever it put it", async 
     CLAUDE_MAKE_WORKTREE: agentWt,
   });
   expect(r.code).toBe(0);
-  const e = await sb.waitEntry("testorg/demo#7", (x) => x.status === "ready");
+  // the runner writes the status first and patches the discovered worktrees on
+  // afterwards, so waiting on "ready" alone races the second write
+  const e = await sb.waitEntry(
+    "testorg/demo#7",
+    (x) => x.status === "ready" && x.worktrees,
+  );
   // git reports the canonical (symlink-resolved) path — compare on realpath
   expect(e.worktrees).toEqual([realpathSync(agentWt)]);
   // and it is removable on dismiss even though we never dictated the path
