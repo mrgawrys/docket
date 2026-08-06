@@ -11,16 +11,39 @@ Tag and push — `.github/workflows/release.yml` does the rest:
 git tag v0.1.0 && git push origin v0.1.0
 ```
 
-It runs the test suite, cross-compiles both macOS binaries, and publishes a
-GitHub release with `docket-darwin-arm64.tar.gz`, `docket-darwin-x64.tar.gz`,
-and `SHA256SUMS`. Each tarball carries the `docket` binary and the shell
-completions (bash, zsh, fish).
+It runs the test suite, cross-compiles both macOS binaries, publishes a GitHub
+release with `docket-darwin-arm64.tar.gz`, `docket-darwin-x64.tar.gz`, and
+`SHA256SUMS`, then pushes the updated formula to the tap. Each tarball carries
+the `docket` binary and the shell completions (bash, zsh, fish).
 
-## Updating the tap
+Users pick it up with `brew update && brew upgrade docket`.
 
-1. Copy `packaging/docket.rb` into `homebrew-tap/Formula/docket.rb`.
-2. Set `version` to the tag you just pushed (without the `v`).
-3. Replace `PLACEHOLDER_SHA256_ARM64` and `PLACEHOLDER_SHA256_X64` with the
-   matching lines from the release's `SHA256SUMS`.
-4. Commit and push the tap. `brew install mrgawrys/tap/docket` picks it up
-   immediately; `brew test docket` runs the formula's smoke test.
+## The tap formula is generated
+
+`packaging/docket.rb` is the source of truth; the tap's `Formula/docket.rb` is
+generated from it on every tag push, with `version` and both `sha256`s filled
+in from `SHA256SUMS`. **Edit the formula here, never in the tap** — a change
+made there is overwritten by the next release.
+
+Anything else about the formula — a new completion, a new `depends_on`, a
+changed `test do` — is a normal edit to `packaging/docket.rb`, and reaches
+users on the next tag.
+
+## The tap token
+
+Pushing to `mrgawrys/homebrew-tap` is a cross-repo write, which the workflow's
+own `GITHUB_TOKEN` cannot do. The `TAP_TOKEN` secret on `mrgawrys/docket` is a
+fine-grained PAT scoped to `homebrew-tap` alone, with `Contents: Read and
+write`. It expires; when it does the release still publishes and only the tap
+step fails, so the recovery is to mint a new token and re-run that job.
+
+## If the tap step fails
+
+The release is already published by then, so nothing is lost — fix the token
+(or whatever broke) and re-run the job. A re-run regenerates an identical
+formula and pushes nothing if it already landed. To repair the tap by hand,
+apply the three substitutions above to `packaging/docket.rb` and commit the
+result as `Formula/docket.rb`.
+
+`brew install mrgawrys/tap/docket` picks up a pushed formula immediately;
+`brew test docket` runs its smoke test.

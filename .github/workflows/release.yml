@@ -34,3 +34,37 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" --generate-notes \
             docket-darwin-arm64.tar.gz docket-darwin-x64.tar.gz SHA256SUMS
+
+      # The tap is a separate repo, so GITHUB_TOKEN cannot reach it: TAP_TOKEN
+      # is a fine-grained PAT with Contents:write on homebrew-tap only. Runs
+      # after the release so the urls the formula points at already resolve.
+      - name: Update the tap
+        env:
+          TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          arm64=$(awk '$2 == "docket-darwin-arm64.tar.gz" {print $1}' SHA256SUMS)
+          x64=$(awk '$2 == "docket-darwin-x64.tar.gz" {print $1}' SHA256SUMS)
+          git clone --depth 1 \
+            "https://x-access-token:$TAP_TOKEN@github.com/mrgawrys/homebrew-tap" tap
+          sed -e "s|^  version .*|  version \"$version\"|" \
+              -e "s|PLACEHOLDER_SHA256_ARM64|$arm64|" \
+              -e "s|PLACEHOLDER_SHA256_X64|$x64|" \
+              packaging/docket.rb > tap/Formula/docket.rb
+          # a substitution that silently missed would publish a formula that
+          # 404s or fails checksum — the exact breakage this step exists to
+          # prevent. (`if`, not `&&`: a failing AND list trips `set -e`.)
+          if grep -q PLACEHOLDER tap/Formula/docket.rb ||
+            ! grep -qF "version \"$version\"" tap/Formula/docket.rb; then
+            echo "formula did not fully substitute — not pushing" >&2
+            exit 1
+          fi
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # a re-run of the same tag regenerates an identical formula, and
+          # `git commit` with nothing staged exits non-zero
+          if ! git diff --quiet; then
+            git commit -am "docket $version"
+            git push
+          fi
