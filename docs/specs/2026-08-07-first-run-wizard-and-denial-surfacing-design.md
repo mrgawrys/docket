@@ -6,10 +6,10 @@
 > Unattended end-to-end is `/autopilot`. Ask the user which; don't pick for
 > them.
 
-> **Validation gate:** the wizard half of this spec is approved only after
-> throwaway prototypes (see [Prototype plan](#prototype-plan)) settle the
-> claude-wizard vs native-wizard fork. Do not build the wizard for real before
-> the user has test-driven both prototypes and picked a variant.
+> **Validation gate — satisfied 2026-08-08:** both throwaway prototypes (in
+> `prototypes/first-run-wizard/`) were test-driven and both passed. The fork
+> resolved to **both variants ship** — see
+> [Validation outcome](#validation-outcome).
 
 Two features, one theme: the config's lifecycle. The wizard creates the config;
 denial surfacing tells the user how to evolve it. Today both ends are dead
@@ -39,7 +39,7 @@ seed `config.example.json`, log the error. Cron never blocks on a prompt.
 4. **Finish** — write `config.json`, then run the doctor checks inline so the
    user ends on a ✓/✗ list.
 
-### The open fork — settled by prototype, not on paper
+### The fork — settled by prototype: both ship
 
 - **Variant A — claude wizard.** docket launches `claude` with a wizard
   prompt (or skill) that does all four steps conversationally: runs `gh`
@@ -64,6 +64,31 @@ Judgment criteria: time to a working config, how each handles the
 two-account/org-visibility wrinkle, how wrong output gets corrected, and how
 the first run *feels*. The user test-drives both and picks; the pick amends
 this spec.
+
+### Validation outcome
+
+Both prototypes passed the test-drive (2026-08-08); the user wants **both**.
+The first-run flow offers a choice up front: the quick native wizard, or the
+claude-guided setup. The claude wizard is also the fallback when the native
+flow comes up short (empty org list, a scan that finds nothing). The
+prototypes live in `prototypes/first-run-wizard/` as reference for the real
+build.
+
+Learnings from the prototypes, now part of the design:
+
+- **Clone scan: record and keep descending.** A directory containing `.git`
+  is recorded *and* its subdirectories still scanned — a workspace repo with
+  the real project clones gitignored inside it is a normal layout, and
+  treating repos as leaves hid every clone under `~/Work`.
+- **Worktree vs clone.** A `.git` *file* marks a linked worktree, a `.git`
+  *directory* a real clone. docket's own reviews leave worktrees around, so
+  when both point at the same repo the real clone wins, then the shallower
+  path.
+- **Path input needs help.** Suggested roots are pickable by number, and
+  typed paths get filesystem tab-completion (readline `completer`).
+- **Account tokens per command.** `GH_TOKEN=$(gh auth token -u <account>)`
+  scopes each gh call to the chosen account without `gh auth switch`, which
+  would mutate the user's global gh state.
 
 ## 2. Permission-denial surfacing
 
