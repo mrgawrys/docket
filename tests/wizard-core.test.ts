@@ -1,9 +1,14 @@
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "bun:test";
 import {
-  type Checkout,
   completePath,
   dedupeRepos,
   findGitRepos,
@@ -65,12 +70,26 @@ test("findGitRepos: stops descending past the depth cap", () => {
   expect(findGitRepos(root, 3)).toEqual([]);
 });
 
+test("findGitRepos: a repo at exactly the depth cap is found", () => {
+  const root = tmp("dk-scan-");
+  mkGitDir(join(root, "a", "b", "c"));
+  expect(findGitRepos(root, 3).map((c) => c.path)).toEqual([
+    join(root, "a", "b", "c"),
+  ]);
+});
+
 test("findGitRepos: an unreadable subdirectory is skipped, not fatal", () => {
   const root = tmp("dk-scan-");
   mkGitDir(join(root, "ok"));
-  // a file where a directory entry would be walked — readdirSync on it throws
-  writeFileSync(join(root, "not-a-dir"), "");
-  expect(findGitRepos(root, 3).map((c) => c.path)).toEqual([join(root, "ok")]);
+  mkdirSync(join(root, "locked"), { mode: 0o000 }); // readdirSync throws EACCES
+  try {
+    expect(findGitRepos(root, 3).map((c) => c.path)).toEqual([
+      join(root, "ok"),
+    ]);
+  } finally {
+    // running as root ignores the mode bit, so this wouldn't even throw there
+    chmodSync(join(root, "locked"), 0o755); // let the tmpdir be cleaned up
+  }
 });
 
 // -------------------------------------------------------------- parseOrigin --
@@ -117,6 +136,21 @@ test("dedupeRepos: a real clone beats a linked worktree of the same repo", () =>
       org: "mrgawrys",
       repo: "docket",
     },
+    {
+      path: "/x/Development/docket",
+      linked: false,
+      org: "mrgawrys",
+      repo: "docket",
+    },
+  ];
+  expect(dedupeRepos(checkouts)).toEqual([
+    { slug: "mrgawrys/docket", path: "/x/Development/docket" },
+  ]);
+});
+
+test("dedupeRepos: the clone wins even when the worktree's path is shorter", () => {
+  const checkouts = [
+    { path: "/x/wt", linked: true, org: "mrgawrys", repo: "docket" },
     {
       path: "/x/Development/docket",
       linked: false,
