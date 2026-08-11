@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { Config } from "../src/config";
 import type { DenialGroup } from "../src/denials";
-import { denialChip, denialLines } from "../src/denialview";
+import { clampGroup, denialChip, denialLines } from "../src/denialview";
 
 const cfg: Config = { orgs: [], repos: {} };
 
@@ -126,6 +126,15 @@ test("the view scrolls to the selected group instead of overflowing the frame", 
   const lines = denialLines({ groups, cfg, selected: 4, width: 80, height: 4 });
   expect(lines.length).toBe(4);
   expect(texts(lines)).toContain("▸ E — 1 denied");
+});
+
+test("a cursor left behind by a shrinking group list lands on a group that exists", () => {
+  // a retry finishing rewrites the entry under an open view; whatever indexes
+  // the list next must not read past its end
+  expect(clampGroup(1, 4)).toBe(1);
+  expect(clampGroup(4, 2)).toBe(1);
+  expect(clampGroup(-1, 2)).toBe(0);
+  expect(clampGroup(4, 0)).toBe(0); // never -1, whatever the caller does with it
 });
 
 test("an entry whose denials vanished says so rather than rendering blank", () => {

@@ -24,6 +24,13 @@ export interface DenialViewInput {
   height?: number;
 }
 
+// Which group is selected, given how many there are. The list can shrink under
+// an open view — a retry finishing rewrites the entry — so this is the one
+// definition: what the view highlights and what a verb acts on must be the
+// same index, and an empty list selects 0, never -1.
+export const clampGroup = (selected: number, count: number): number =>
+  Math.min(Math.max(0, selected), Math.max(0, count - 1));
+
 const INDENT = "    ";
 
 function groupLines(
@@ -65,7 +72,7 @@ export function denialLines({
 }: DenialViewInput): PanelLine[] {
   if (!groups.length)
     return [{ text: "no denials recorded for this review", dim: true }];
-  const cursor = Math.min(Math.max(0, selected), groups.length - 1);
+  const cursor = clampGroup(selected, groups.length);
   const blocks = groups.map((g, i) => groupLines(g, cfg, i === cursor, width));
   const lines = blocks.flat();
   if (!height || lines.length <= height) return lines;

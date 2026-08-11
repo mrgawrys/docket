@@ -4,7 +4,7 @@ import { dirname } from "node:path";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { readAssessment } from "../assessment";
 import { runLogPath, type Config, type Paths } from "../config";
-import { denialLines } from "../denialview";
+import { clampGroup, denialLines } from "../denialview";
 import { buildResume, printPending } from "../list";
 import {
   buildOpener,
@@ -92,7 +92,7 @@ export function App({
   const [cursorKey, setCursorKey] = useState<string | undefined>(initialKey);
   const [view, setView] = useState<"queue" | "help" | "denials">("queue");
   const [status, setStatus] = useState<string | undefined>();
-  const [denialCursor, setDenialCursor] = useState(0);
+  const [rawDenialCursor, setDenialCursor] = useState(0);
 
   // saveState renames a temp file over state.json, which breaks a watch bound
   // to the file's inode — watch the directory instead.
@@ -189,6 +189,9 @@ export function App({
   // The denials view takes the whole region below the bars: legend, the two
   // bars and the row the frame must leave spare (see panelHeight).
   const denials = current?.entry.denials;
+  // Clamped here, not just where it is drawn: the watcher can shrink the list
+  // under an open view, and a verb must act on the group the user is looking at.
+  const denialCursor = clampGroup(rawDenialCursor, denials?.length ?? 0);
   const denialPanel = useMemo(
     () =>
       denialLines({
@@ -238,12 +241,12 @@ export function App({
     }
     // Read-only for now; later verbs act on the group under this cursor.
     if (view === "denials") {
-      const last = (denials?.length ?? 0) - 1;
+      const count = denials?.length ?? 0;
       if (input === "D" || key.escape) return setView("queue");
       if (input === "j" || key.downArrow)
-        return setDenialCursor((c) => Math.min(last, c + 1));
+        return setDenialCursor(clampGroup(denialCursor + 1, count));
       if (input === "k" || key.upArrow)
-        return setDenialCursor((c) => Math.max(0, c - 1));
+        return setDenialCursor(clampGroup(denialCursor - 1, count));
       return;
     }
     if (input === "?") return setView("help");
