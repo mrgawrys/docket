@@ -112,7 +112,7 @@ function homeWithClones(): string {
 test("the wizard writes a config loadConfig accepts, with the picked account and the scanned clones", async () => {
   const sb = fresh();
   const home = homeWithClones();
-  const r = await drive(sb, ["2", "1", "1", "", ""], {
+  const r = await drive(sb, ["2", "2", "1", "", ""], {
     HOME: home,
     GH_AUTH_STATUS_TEXT: TWO_ACCOUNTS,
     GH_ORG_LIST: "acme\nbeta",
@@ -131,10 +131,44 @@ test("the wizard writes a config loadConfig accepts, with the picked account and
   expect(placeholderEntries(cfg)).toEqual([]);
 });
 
+test("the account's own login is offered alongside the orgs gh lists, and can be picked", async () => {
+  const sb = fresh();
+  const home = mkdtempSync(join(tmpdir(), "dk-home-"));
+  const mine = mkClone(
+    join(home, "Development", "docket"),
+    "git@github.com:mrgawrys/docket.git",
+  );
+  const r = await drive(sb, ["1", "1", "", ""], {
+    HOME: home,
+    GH_AUTH_STATUS_TEXT: ONE_ACCOUNT,
+    GH_ORG_LIST: "acme\nbeta",
+  });
+  expect(r.out).toContain("mrgawrys (your account)");
+  expect(r.out).toContain("acme");
+  expect(r.config().orgs).toEqual(["mrgawrys"]);
+  expect(r.config().repos).toEqual({ "mrgawrys/docket": mine });
+});
+
+test("an empty gh org list still offers the login before falling back to typing", async () => {
+  const sb = fresh();
+  const home = mkdtempSync(join(tmpdir(), "dk-home-"));
+  mkClone(
+    join(home, "Development", "docket"),
+    "git@github.com:mrgawrys/docket.git",
+  );
+  const r = await drive(sb, ["1", "beta", "1", "", ""], {
+    HOME: home,
+    GH_AUTH_STATUS_TEXT: ONE_ACCOUNT,
+    GH_ORG_LIST: "",
+  });
+  expect(r.out).toContain("mrgawrys (your account)");
+  expect(r.config().orgs).toEqual(["mrgawrys", "beta"]);
+});
+
 test("the written config is 2-space indented and ends with a newline", async () => {
   const sb = fresh();
   const home = homeWithClones();
-  const r = await drive(sb, ["2", "1", "1", "", ""], {
+  const r = await drive(sb, ["2", "2", "1", "", ""], {
     HOME: home,
     GH_AUTH_STATUS_TEXT: TWO_ACCOUNTS,
     GH_ORG_LIST: "acme",
@@ -147,7 +181,7 @@ test("the written config is 2-space indented and ends with a newline", async () 
 test("the wizard scopes gh to the chosen account by token and never runs gh auth switch", async () => {
   const sb = fresh();
   const home = homeWithClones();
-  await drive(sb, ["2", "1", "1", "", ""], {
+  await drive(sb, ["2", "2", "1", "", ""], {
     HOME: home,
     GH_AUTH_STATUS_TEXT: TWO_ACCOUNTS,
     GH_ORG_LIST: "acme",
@@ -160,7 +194,7 @@ test("the wizard scopes gh to the chosen account by token and never runs gh auth
 test("a single gh account is used silently and writes no gh_account key", async () => {
   const sb = fresh();
   const home = homeWithClones();
-  const r = await drive(sb, ["1", "1", "", ""], {
+  const r = await drive(sb, ["2", "1", "", ""], {
     HOME: home,
     GH_AUTH_STATUS_TEXT: ONE_ACCOUNT,
     GH_ORG_LIST: "acme",
@@ -173,7 +207,7 @@ test("a single gh account is used silently and writes no gh_account key", async 
 test("doctor runs after the config is on disk", async () => {
   const sb = fresh();
   const home = homeWithClones();
-  const r = await drive(sb, ["1", "1", "", ""], {
+  const r = await drive(sb, ["2", "1", "", ""], {
     HOME: home,
     GH_AUTH_STATUS_TEXT: ONE_ACCOUNT,
     GH_ORG_LIST: "acme",
@@ -185,7 +219,7 @@ test("doctor runs after the config is on disk", async () => {
 test("an empty gh org list falls back to org names typed by hand", async () => {
   const sb = fresh();
   const home = homeWithClones();
-  const r = await drive(sb, ["acme, beta", "1", "", ""], {
+  const r = await drive(sb, ["none", "acme, beta", "1", "", ""], {
     HOME: home,
     GH_AUTH_STATUS_TEXT: ONE_ACCOUNT,
     GH_ORG_LIST: "",
@@ -197,7 +231,7 @@ test("an empty gh org list falls back to org names typed by hand", async () => {
 test("a failed gh org list falls back to org names typed by hand", async () => {
   const sb = fresh();
   const home = homeWithClones();
-  const r = await drive(sb, ["acme", "1", "", ""], {
+  const r = await drive(sb, ["none", "acme", "1", "", ""], {
     HOME: home,
     GH_AUTH_STATUS_TEXT: ONE_ACCOUNT,
     GH_ORG_LIST_FAIL: "1",
@@ -209,7 +243,7 @@ test("a failed gh org list falls back to org names typed by hand", async () => {
 test("ending with no orgs comes up short but still leaves a config behind", async () => {
   const sb = fresh();
   const home = homeWithClones();
-  const r = await drive(sb, [""], {
+  const r = await drive(sb, ["none", ""], {
     HOME: home,
     GH_AUTH_STATUS_TEXT: ONE_ACCOUNT,
     GH_ORG_LIST: "",
@@ -223,7 +257,7 @@ test("a scan that finds nothing, with nothing added by hand, comes up short", as
   const sb = fresh();
   const home = mkdtempSync(join(tmpdir(), "dk-home-"));
   mkdirSync(join(home, "Development"));
-  const r = await drive(sb, ["1", "1", ""], {
+  const r = await drive(sb, ["2", "1", ""], {
     HOME: home,
     GH_AUTH_STATUS_TEXT: ONE_ACCOUNT,
     GH_ORG_LIST: "acme",
@@ -235,7 +269,7 @@ test("a scan that finds nothing, with nothing added by hand, comes up short", as
 test("a projects root that does not exist skips the scan instead of failing", async () => {
   const sb = fresh();
   const home = mkdtempSync(join(tmpdir(), "dk-home-"));
-  const r = await drive(sb, ["1", "/no/such/root", ""], {
+  const r = await drive(sb, ["2", "/no/such/root", ""], {
     HOME: home,
     GH_AUTH_STATUS_TEXT: ONE_ACCOUNT,
     GH_ORG_LIST: "acme",
@@ -249,7 +283,7 @@ test("repos added by hand are recorded and count as a real result", async () => 
   const sb = fresh();
   const home = mkdtempSync(join(tmpdir(), "dk-home-"));
   const clone = mkClone(join(home, "elsewhere"), "git@github.com:acme/x.git");
-  const r = await drive(sb, ["1", "1", "acme/manual", clone, ""], {
+  const r = await drive(sb, ["2", "1", "acme/manual", clone, ""], {
     HOME: home,
     GH_AUTH_STATUS_TEXT: ONE_ACCOUNT,
     GH_ORG_LIST: "acme",
@@ -261,7 +295,7 @@ test("repos added by hand are recorded and count as a real result", async () => 
 test("declining every clone the scan found is a deliberate skip, not a shortfall", async () => {
   const sb = fresh();
   const home = homeWithClones();
-  const r = await drive(sb, ["1", "1", "none", ""], {
+  const r = await drive(sb, ["2", "1", "none", ""], {
     HOME: home,
     GH_AUTH_STATUS_TEXT: ONE_ACCOUNT,
     GH_ORG_LIST: "acme",
@@ -303,7 +337,7 @@ test("a second checkout of the same repo is collapsed, reported, and the clone w
     worktree,
   ]);
 
-  const r = await drive(sb, ["1", "1", "", ""], {
+  const r = await drive(sb, ["2", "1", "", ""], {
     HOME: home,
     GH_AUTH_STATUS_TEXT: ONE_ACCOUNT,
     GH_ORG_LIST: "acme",
@@ -315,7 +349,7 @@ test("a second checkout of the same repo is collapsed, reported, and the clone w
 test("an out-of-range pick is re-asked rather than accepted", async () => {
   const sb = fresh();
   const home = homeWithClones();
-  const r = await drive(sb, ["9", "2", "1", "", ""], {
+  const r = await drive(sb, ["9", "3", "1", "", ""], {
     HOME: home,
     GH_AUTH_STATUS_TEXT: ONE_ACCOUNT,
     GH_ORG_LIST: "acme\nbeta",
@@ -376,7 +410,7 @@ test("a config of the wrong shape is replaced without asking, not crashed on", a
   const sb = makeSandbox();
   sb.writeConfig({ orgs: "acme", repos: [] });
   const home = homeWithClones();
-  const r = await drive(sb, ["1", "1", "", ""], {
+  const r = await drive(sb, ["2", "1", "", ""], {
     HOME: home,
     GH_AUTH_STATUS_TEXT: ONE_ACCOUNT,
     GH_ORG_LIST: "acme",
@@ -393,7 +427,7 @@ test("the starter placeholder config is replaced without asking", async () => {
     ),
   );
   const home = homeWithClones();
-  const r = await drive(sb, ["1", "1", "", ""], {
+  const r = await drive(sb, ["2", "1", "", ""], {
     HOME: home,
     GH_AUTH_STATUS_TEXT: ONE_ACCOUNT,
     GH_ORG_LIST: "acme",

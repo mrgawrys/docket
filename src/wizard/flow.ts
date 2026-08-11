@@ -156,7 +156,9 @@ function makeUi(
 // --------------------------------------------------------- step 1: account --
 
 type AccountStep =
-  | { ok: true; account?: string; env: NodeJS.ProcessEnv }
+  // `login` is who gh is acting as either way; `account` is only set when the
+  // user chose between accounts, and only that gets pinned in the config.
+  | { ok: true; login: string; account?: string; env: NodeJS.ProcessEnv }
   | { ok: false; message: string };
 
 async function chooseAccount(
@@ -214,27 +216,31 @@ async function chooseAccount(
     ui.say(`   using ${ui.bold(chosen.name)}`);
   }
 
-  const account = explicit ? chosen.name : undefined;
+  const login = chosen.name;
+  const account = explicit ? login : undefined;
   // Pin the token per command so org listing reflects the chosen account.
   // `gh auth switch` would do it by mutating the user's global gh state.
-  const token = ghAccountToken(gh, chosen.name, cleanEnv(env));
+  const token = ghAccountToken(gh, login, cleanEnv(env));
   if ("error" in token) {
     ui.say(
       ui.dim(
-        `   (couldn't read a token for ${chosen.name}; using gh's active account)`,
+        `   (couldn't read a token for ${login}; using gh's active account)`,
       ),
     );
-    return { ok: true, account, env };
+    return { ok: true, login, account, env };
   }
-  return { ok: true, account, env: { ...env, GH_TOKEN: token.token } };
+  return { ok: true, login, account, env: { ...env, GH_TOKEN: token.token } };
 }
 
 // ------------------------------------------------------------ step 2: orgs --
+
+const sameOwner = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
 async function chooseOrgs(
   ui: Ui,
   gh: string,
   env: NodeJS.ProcessEnv,
+  login: string,
 ): Promise<string[]> {
   ui.step(2, "Organizations");
   const listed = run([gh, "org", "list"], env);
@@ -242,20 +248,31 @@ async function chooseOrgs(
     .split("\n")
     .map((l) => l.trim())
     .filter(Boolean);
-  if (!listed.ok || orgs.length === 0) {
+  const listedAny = listed.ok && orgs.length > 0;
+  if (!listedAny) {
     ui.say(ui.dim("   gh listed no organizations for this account."));
-    const typed = await ui.ask("   type org names by hand (comma separated): ");
-    return typed
-      .split(",")
-      .map((o) => o.trim())
-      .filter(Boolean);
   }
-  ui.say("   which orgs should docket watch?");
+  // The account's own login is a candidate in its own right: `gh org list`
+  // never returns it, and personal repos are a mainstream case (docket's own
+  // PRs live under one).
+  const owners = [login, ...orgs.filter((o) => !sameOwner(o, login))];
+  ui.say("   whose PRs should docket watch?");
   const picked = await ui.multiSelect(
-    orgs,
+    owners.map((o) => (o === login ? `${o} ${ui.dim("(your account)")}` : o)),
     "   numbers, comma separated [empty = all]:",
   );
-  return picked.map((i) => orgs[i]!);
+  const chosen = picked.map((i) => owners[i]!);
+  // Only when gh had nothing to offer: an org it cannot see (SSO, or someone
+  // else's) still has to be reachable.
+  if (listedAny) return chosen;
+  const typed = await ui.ask(
+    "   any others? type org names by hand (comma separated): ",
+  );
+  const all = [...chosen];
+  for (const o of typed.split(",").map((s) => s.trim())) {
+    if (o && !all.some((held) => sameOwner(held, o))) all.push(o);
+  }
+  return all;
 }
 
 // ----------------------------------------------------------- step 3: repos --
@@ -470,7 +487,7 @@ export async function runNativeWizard(
       ui.say(`   ${account.message}`);
       return "came-up-short";
     }
-    const orgs = await chooseOrgs(ui, gh, account.env);
+    const orgs = await chooseOrgs(ui, gh, account.env, account.login);
     const { repos, shortfall } = await chooseRepos(ui, orgs, home, getOrigin);
     // Written even when the answers were thin: the user still ends up with a
     // real file to edit, and doctor below tells them what it is missing.
