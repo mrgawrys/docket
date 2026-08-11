@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import {
   ConfigError,
+  type Paths,
   claudeBin,
   claudeEnv,
   effectiveReviewPrompt,
@@ -36,8 +37,9 @@ function runs(cmd: string[], extraEnv: Record<string, string> = {}): RunResult {
 // Walks the dependency chain a review run needs, one ✓/✗ line per check.
 // Deliberately not withCtx: withCtx hard-exits on the very conditions doctor
 // must report (missing config, unresolvable gh_account token).
-export async function doctorCommand(): Promise<number> {
-  const p = resolvePaths();
+export async function doctorCommand(
+  p: Paths = resolvePaths(),
+): Promise<number> {
   let failed = 0;
   const pass = (label: string) => console.log(`✓ ${label}`);
   const fail = (label: string, hint: string) => {

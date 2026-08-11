@@ -179,7 +179,7 @@ export function parseSelection(input: string, count: number): number[] | null {
 
 // -------------------------------------------------------------- completion --
 
-const expandHome = (p: string, homeDir: string) =>
+export const expandHome = (p: string, homeDir: string) =>
   p.startsWith("~") ? join(homeDir, p.slice(1)) : p;
 
 // Tab-completes directory names for the clone-root prompt. Returns hits as
