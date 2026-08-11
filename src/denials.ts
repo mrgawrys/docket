@@ -184,7 +184,7 @@ function exampleOf(input: Record<string, unknown>): string | undefined {
 const WRITE_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
 
 const WRITE_SHAPED: RegExp[] = [
-  /^git (?:push|commit|add|rm|mv|reset|clean|revert|restore|stash|apply|cherry-pick|merge|rebase|tag|config|remote|gc)\b/,
+  /^git (?:push|commit|add|rm|mv|reset|clean|revert|restore|stash|apply|cherry-pick|merge|rebase|tag|config|remote|submodule|gc)\b/,
   // every gh verb but the few that only read; `gh api` is one flag away from
   // posting, whatever path it names
   /^gh (?!pr (?:view|diff|checks|list)\b|issue (?:view|list)\b|repo view\b|search\b|auth status\b)/,

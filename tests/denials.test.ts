@@ -177,6 +177,7 @@ test("write-shaped suggestions are flagged, so nothing offers a one-key apply", 
     ...deniedBash("t9", "sh -c 'cat pkg.json'"),
     ...deniedBash("t10", "sed -i '' s/a/b/ notes.md"),
     ...deniedBash("t11", "xargs rm < paths.txt"),
+    ...deniedBash("t12", "git submodule update --init"),
     used("t6", "Edit", { file_path: "/Users/me/wt/src/x.ts" }),
     denied("t6", "Edit"),
   );
@@ -196,6 +197,8 @@ test("write-shaped suggestions are flagged, so nothing offers a one-key apply", 
     "Bash(sh:*)": true,
     "Bash(sed:*)": true,
     "Bash(xargs:*)": true,
+    // `git submodule update` writes to the working tree
+    "Bash(git submodule:*)": true,
   });
 });
 
