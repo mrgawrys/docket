@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { render } from "ink-testing-library";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { paths, type Config } from "../src/config";
@@ -21,9 +21,10 @@ const resolved = resolveOpeners(
 // `real` makes dismiss do what the command does — mark the entry done, which
 // drops it from the queue. A stub that only records the call cannot catch a
 // cursor that moves when the row under it disappears.
-function mount(state: State, real = false) {
+function mount(state: State, real = false, configText = JSON.stringify(cfg)) {
   const dir = mkdtempSync(join(tmpdir(), "docket-tui-"));
   writeFileSync(join(dir, "state.json"), JSON.stringify(state));
+  writeFileSync(join(dir, "config.json"), configText);
   const p = paths({
     DOCKET_CONFIG_DIR: dir,
     DOCKET_STATE_DIR: dir,
@@ -62,7 +63,7 @@ function mount(state: State, real = false) {
       request={(req) => requests.push(req)}
     />,
   );
-  return { ...r, calls, requests };
+  return { ...r, calls, requests, paths: p };
 }
 
 const entry = (over: Partial<Entry>): Entry => ({
@@ -168,6 +169,49 @@ test("the denials key opens the view only for a row that has denials", async () 
   ui.stdin.write("D");
   await Bun.sleep(20);
   expect(ui.lastFrame()).toContain("Bash(rg:*) — 2 denied");
+  ui.unmount();
+});
+
+test("apply writes the group under the cursor, and rails block a write-shaped one", async () => {
+  const ui = mount({
+    "acme/two#2": entry({
+      title: "Two",
+      updated_at: "2026-01-02T00:00:00Z",
+      denials: [
+        {
+          tool: "Bash",
+          suggestion: "Bash(git push:*)",
+          count: 1,
+          examples: ["git push origin HEAD"],
+          writeShaped: true,
+          alreadyAllowed: false,
+        },
+        {
+          tool: "Bash",
+          suggestion: "Bash(rg:*)",
+          count: 2,
+          examples: ["rg TODO src"],
+          writeShaped: false,
+          alreadyAllowed: false,
+        },
+      ],
+    }),
+  });
+  await Bun.sleep(20);
+  ui.stdin.write("D");
+  await Bun.sleep(20);
+  ui.stdin.write("a"); // cursor starts on the write-shaped group: no apply
+  await Bun.sleep(20);
+  let config = JSON.parse(readFileSync(ui.paths.configPath, "utf8"));
+  expect(config.extra_allowed_tools ?? []).toEqual([]);
+  ui.stdin.write("j"); // move to Bash(rg:*)
+  await Bun.sleep(20);
+  ui.stdin.write("a");
+  await Bun.sleep(20);
+  config = JSON.parse(readFileSync(ui.paths.configPath, "utf8"));
+  expect(config.extra_allowed_tools).toEqual(["Bash(rg:*)"]);
+  // the view reflects the write immediately, without restarting the TUI
+  expect(ui.lastFrame()).toContain("rule exists but didn't match");
   ui.unmount();
 });
 

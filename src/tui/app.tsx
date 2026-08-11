@@ -1,9 +1,10 @@
 import { Box, render, Text, useApp, useInput, useWindowSize } from "ink";
-import { watch } from "node:fs";
+import { readFileSync, renameSync, watch, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { readAssessment } from "../assessment";
 import { runLogPath, type Config, type Paths } from "../config";
+import { applySuggestion, isAllowed } from "../denials";
 import { clampGroup, denialLines } from "../denialview";
 import { buildResume, printPending } from "../list";
 import {
@@ -93,6 +94,9 @@ export function App({
   const [view, setView] = useState<"queue" | "help" | "denials">("queue");
   const [status, setStatus] = useState<string | undefined>();
   const [rawDenialCursor, setDenialCursor] = useState(0);
+  // `cfg` is the startup snapshot; an apply writes config.json underneath it,
+  // so the denials view — the one place freshness matters — reads this instead.
+  const [liveCfg, setLiveCfg] = useState(cfg);
 
   // saveState renames a temp file over state.json, which breaks a watch bound
   // to the file's inode — watch the directory instead.
@@ -196,12 +200,12 @@ export function App({
     () =>
       denialLines({
         groups: denials ?? [],
-        cfg,
+        cfg: liveCfg,
         selected: denialCursor,
         width: width - 2,
         height: Math.max(1, height - 4 - (footer ? 1 : 0)),
       }),
-    [denials, cfg, denialCursor, width, height, footer],
+    [denials, liveCfg, denialCursor, width, height, footer],
   );
 
   const move = (delta: number) => {
@@ -239,7 +243,6 @@ export function App({
       if (input === "?" || key.escape) setView("queue");
       return;
     }
-    // Read-only for now; later verbs act on the group under this cursor.
     if (view === "denials") {
       const count = denials?.length ?? 0;
       if (input === "D" || key.escape) return setView("queue");
@@ -247,6 +250,32 @@ export function App({
         return setDenialCursor(clampGroup(denialCursor + 1, count));
       if (input === "k" || key.upArrow)
         return setDenialCursor(clampGroup(denialCursor - 1, count));
+      if (input === "a") {
+        const group = denials?.[denialCursor];
+        if (!group) return;
+        // Rails enforced here, not just displayed: a write-shaped suggestion or
+        // one already in the live allowlist gets no one-key apply.
+        if (group.writeShaped)
+          return setStatus(
+            `${group.suggestion}: conflicts with docket's read-only stance`,
+          );
+        if (isAllowed(group.suggestion, liveCfg))
+          return setStatus(`${group.suggestion}: rule already exists`);
+        try {
+          const text = readFileSync(paths.configPath, "utf8");
+          const updated = applySuggestion(text, group.suggestion);
+          // tmp + rename, like saveState: a kill mid-write must not corrupt the
+          // user's hand-maintained config.
+          const tmp = `${paths.configPath}.tmp`;
+          writeFileSync(tmp, updated);
+          renameSync(tmp, paths.configPath);
+          setLiveCfg(JSON.parse(updated) as Config);
+          setStatus(`applied ${group.suggestion}`);
+        } catch (e) {
+          setStatus(`apply ${group.suggestion} failed: ${e}`);
+        }
+        return;
+      }
       return;
     }
     if (input === "?") return setView("help");
@@ -313,7 +342,7 @@ export function App({
         <>
           <Bar
             label={`${current?.key ?? ""} denials`}
-            right="j/k moves · esc closes"
+            right="j/k moves · a applies · esc closes"
             width={width}
           />
           <Panel lines={denialPanel} />

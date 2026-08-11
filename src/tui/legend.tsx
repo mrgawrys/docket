@@ -13,6 +13,7 @@ export const KEYMAP: Binding[] = [
   { keys: "s", label: "shell", verb: "shell" },
   { keys: "d", label: "diff", verb: "diff" },
   { keys: "D", label: "denials", verb: "denials" },
+  { keys: "a", label: "apply (denials view)" },
   { keys: "w", label: "watch live" },
   { keys: "r", label: "retry" },
   { keys: "x", label: "dismiss" },

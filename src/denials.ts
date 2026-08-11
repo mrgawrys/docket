@@ -216,6 +216,21 @@ export function isAllowed(suggestion: string, cfg: Config): boolean {
     .some((entry) => entry.trim() === suggestion);
 }
 
+// A group's suggestion, added to the config text on disk. JSON.parse/stringify
+// round-trips key order (object keys iterate in the order JSON.parse read
+// them), so this survives without a diff-preserving JSON library.
+export function applySuggestion(
+  configText: string,
+  suggestion: string,
+): string {
+  const cfg = JSON.parse(configText) as Config;
+  const tools = cfg.extra_allowed_tools ?? [];
+  if (!tools.some((t) => t.trim() === suggestion)) {
+    cfg.extra_allowed_tools = [...tools, suggestion];
+  }
+  return JSON.stringify(cfg, null, 2) + "\n";
+}
+
 // The denials of one run, grouped and classified: what to suggest, how often it
 // bit, and the two reasons a suggestion must not be applied blindly.
 export function denialGroups(logText: string, cfg: Config): DenialGroup[] {

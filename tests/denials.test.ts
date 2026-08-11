@@ -1,6 +1,11 @@
 import { expect, test } from "bun:test";
 import type { Config } from "../src/config";
-import { denialGroups, isAllowed, parseDenials } from "../src/denials";
+import {
+  applySuggestion,
+  denialGroups,
+  isAllowed,
+  parseDenials,
+} from "../src/denials";
 
 // The opening of a real dontAsk denial, verbatim; the rest of the message is
 // boilerplate advice to the agent that nothing here reads.
@@ -301,4 +306,74 @@ test("groups are ordered by how often the review was turned away", () => {
     "Bash(cat:*)",
     "Bash(rg:*)",
   ]);
+});
+
+test("applying a suggestion creates extra_allowed_tools when absent", () => {
+  const text = JSON.stringify({ orgs: [], repos: {} }, null, 2) + "\n";
+  const applied = applySuggestion(text, "Bash(rg:*)");
+  expect(JSON.parse(applied)).toEqual({
+    orgs: [],
+    repos: {},
+    extra_allowed_tools: ["Bash(rg:*)"],
+  });
+});
+
+test("applying a suggestion pushes onto an existing extra_allowed_tools", () => {
+  const text =
+    JSON.stringify(
+      { orgs: [], repos: {}, extra_allowed_tools: ["Bash(gh pr view:*)"] },
+      null,
+      2,
+    ) + "\n";
+  const applied = applySuggestion(text, "Bash(rg:*)");
+  expect(JSON.parse(applied).extra_allowed_tools).toEqual([
+    "Bash(gh pr view:*)",
+    "Bash(rg:*)",
+  ]);
+});
+
+test("applying a suggestion twice never writes a duplicate", () => {
+  const text =
+    JSON.stringify(
+      { orgs: [], repos: {}, extra_allowed_tools: ["Bash(rg:*)"] },
+      null,
+      2,
+    ) + "\n";
+  const applied = applySuggestion(text, "Bash(rg:*)");
+  expect(JSON.parse(applied).extra_allowed_tools).toEqual(["Bash(rg:*)"]);
+});
+
+test("applying a suggestion keeps every other key exactly where it was", () => {
+  const text =
+    JSON.stringify(
+      {
+        orgs: ["acme"],
+        repos: { "acme/x": "/clone" },
+        poll_interval_minutes: 15,
+        extra_allowed_tools: ["Bash(gh pr view:*)"],
+        notifications: true,
+      },
+      null,
+      2,
+    ) + "\n";
+  const applied = applySuggestion(text, "Bash(rg:*)");
+  expect(Object.keys(JSON.parse(applied))).toEqual([
+    "orgs",
+    "repos",
+    "poll_interval_minutes",
+    "extra_allowed_tools",
+    "notifications",
+  ]);
+});
+
+test("applying a suggestion rewrites with 2-space indent and a trailing newline", () => {
+  const text = JSON.stringify({ orgs: [], repos: {} }, null, 2) + "\n";
+  const applied = applySuggestion(text, "Bash(rg:*)");
+  expect(applied).toBe(
+    JSON.stringify(
+      { orgs: [], repos: {}, extra_allowed_tools: ["Bash(rg:*)"] },
+      null,
+      2,
+    ) + "\n",
+  );
 });
