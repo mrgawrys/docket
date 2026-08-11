@@ -100,6 +100,25 @@ test("a review that ignores the summary instruction still lands as ready", async
   expect(e.summary).toBeUndefined();
 });
 
+test("a finished review with a denial records the grouped denial on the entry", async () => {
+  const sb = makeSandbox();
+  sb.gitInitDemo();
+  const r = sb.run(["review", "testorg/demo#7"], { CLAUDE_EMIT_DENIAL: "1" });
+  expect(r.code).toBe(0);
+  const e = await sb.waitEntry("testorg/demo#7", (x) => x.status === "ready");
+  expect(e.denials).toEqual([
+    expect.objectContaining({ suggestion: "Bash(rg:*)", count: 1 }),
+  ]);
+});
+
+test("a clean review leaves the denials field absent", async () => {
+  const sb = makeSandbox();
+  sb.gitInitDemo();
+  expect(sb.run(["review", "testorg/demo#7"]).code).toBe(0);
+  const e = await sb.waitEntry("testorg/demo#7", (x) => x.status === "ready");
+  expect(e.denials).toBeUndefined();
+});
+
 test("runner records the worktree the agent created, wherever it put it", async () => {
   const sb = makeSandbox();
   sb.gitInitDemo();

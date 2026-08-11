@@ -5,6 +5,7 @@ import {
   existsSync,
   mkdirSync,
   openSync,
+  readFileSync,
   rmSync,
   writeSync,
 } from "node:fs";
@@ -19,6 +20,7 @@ import {
   type Config,
   type Paths,
 } from "./config";
+import { denialGroups, type DenialGroup } from "./denials";
 import type { GhCtx } from "./github";
 import type { Logger } from "./log";
 import { notify } from "./notify";
@@ -343,6 +345,14 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
     sha,
   );
 
+  // Best-effort: a denial is worth surfacing, but never at the cost of the
+  // status write below, which must land whatever this does.
+  let denials: DenialGroup[] | undefined;
+  try {
+    const groups = denialGroups(readFileSync(runLog, "utf8"), ctx.cfg);
+    if (groups.length) denials = groups;
+  } catch {}
+
   let sessionId = "";
   let summary: Summary | undefined;
   if (exitCode === 0) {
@@ -387,6 +397,7 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
   const patch: Partial<Entry> = {};
   if (worktrees.length) patch.worktrees = worktrees;
   if (summary) patch.summary = summary;
+  if (denials) patch.denials = denials;
   if (Object.keys(patch).length) patchEntry(statePath, key, patch);
   ctx.current.key = "";
   return 0;
