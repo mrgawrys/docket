@@ -14,6 +14,16 @@ export const KEYMAP: Binding[] = [
   { keys: "d", label: "diff", verb: "diff" },
   { keys: "D", label: "denials", verb: "denials" },
   { keys: "a", label: "apply (denials view)" },
+  {
+    keys: "h",
+    label: "hand off group to claude (denials view)",
+    verb: "handoff",
+  },
+  {
+    keys: "H",
+    label: "hand off batch to claude (denials view)",
+    verb: "handoff",
+  },
   { keys: "w", label: "watch live" },
   { keys: "r", label: "retry" },
   { keys: "x", label: "dismiss" },

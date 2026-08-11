@@ -1,8 +1,21 @@
 import { expect, test } from "bun:test";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildResume, killEntry } from "../src/list";
+import { paths } from "../src/config";
+import type { DenialGroup } from "../src/denials";
+import { buildHandoff, buildResume, killEntry } from "../src/list";
 import { makeSandbox } from "./harness";
+
+const denialGroup = (over: Partial<DenialGroup> = {}): DenialGroup => ({
+  tool: "Bash",
+  suggestion: "Bash(rg:*)",
+  count: 2,
+  examples: ["rg --files"],
+  writeShaped: false,
+  alreadyAllowed: false,
+  ...over,
+});
 
 test("buildResume guards and command construction", () => {
   const cfg = {
@@ -158,4 +171,81 @@ test("buildResume points a reviewing entry at watch/kill", () => {
   expect(r).toHaveProperty("error");
   expect((r as { error: string }).error).toContain("w watches");
   expect((r as { error: string }).error).toContain("K kills");
+});
+
+test("buildHandoff is unavailable without a clone to run claude in", () => {
+  const dir = mkdtempSync(join(tmpdir(), "docket-handoff-"));
+  const p = paths({ DOCKET_CONFIG_DIR: dir, DOCKET_STATE_DIR: dir } as any);
+  const r = buildHandoff(
+    { status: "ready", updated_at: "t" },
+    { orgs: [], repos: {} },
+    p,
+    "acme/demo#7",
+    [denialGroup()],
+    "group",
+  );
+  expect(r).toHaveProperty("error");
+});
+
+test("buildHandoff is unavailable with nothing selected to hand off", () => {
+  const dir = mkdtempSync(join(tmpdir(), "docket-handoff-"));
+  const p = paths({ DOCKET_CONFIG_DIR: dir, DOCKET_STATE_DIR: dir } as any);
+  const r = buildHandoff(
+    { status: "ready", local_path: "/clone", updated_at: "t" },
+    { orgs: [], repos: {} },
+    p,
+    "acme/demo#7",
+    [],
+    "group",
+  );
+  expect(r).toHaveProperty("error");
+});
+
+test("buildHandoff launches claude directly, with no --permission-mode flag", () => {
+  const dir = mkdtempSync(join(tmpdir(), "docket-handoff-"));
+  const p = paths({ DOCKET_CONFIG_DIR: dir, DOCKET_STATE_DIR: dir } as any);
+  const cfg = {
+    orgs: [],
+    repos: {},
+    claude_bin: "/x/claude",
+    claude_config_dir: "/x/home",
+    extra_allowed_tools: ["Bash(gh pr view:*)"],
+  };
+  const r = buildHandoff(
+    { status: "ready", local_path: "/repo", updated_at: "t" },
+    cfg,
+    p,
+    "acme/demo#7",
+    [denialGroup({ suggestion: "Bash(rg:*)" })],
+    "group",
+  );
+  expect(r).not.toHaveProperty("error");
+  const ok = r as { argv: string[]; cwd: string; env: Record<string, string> };
+  expect(ok.argv[0]).toBe("/x/claude");
+  expect(ok.argv).toHaveLength(2); // claude, prompt — no flags at all
+  expect(ok.argv.join(" ")).not.toContain("--permission-mode");
+  expect(ok.argv[1]).toContain("Bash(rg:*)");
+  expect(ok.argv[1]).toContain("not available"); // no run log on disk here
+  expect(ok.cwd).toBe("/repo");
+  expect(ok.env).toEqual({ CLAUDE_CONFIG_DIR: "/x/home" });
+});
+
+test("buildHandoff points at the run log when one exists", () => {
+  const dir = mkdtempSync(join(tmpdir(), "docket-handoff-"));
+  const p = paths({ DOCKET_CONFIG_DIR: dir, DOCKET_STATE_DIR: dir } as any);
+  const key = "acme/demo#7";
+  const runsDir = join(p.stateDir, "runs");
+  mkdirSync(runsDir, { recursive: true });
+  const logFile = join(runsDir, "acme-demo-7.jsonl");
+  writeFileSync(logFile, '{"type":"result"}\n');
+  const r = buildHandoff(
+    { status: "ready", local_path: "/repo", updated_at: "t" },
+    { orgs: [], repos: {} },
+    p,
+    key,
+    [denialGroup()],
+    "batch",
+  );
+  expect(r).not.toHaveProperty("error");
+  expect((r as { argv: string[] }).argv[1]).toContain(logFile);
 });

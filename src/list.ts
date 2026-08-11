@@ -1,4 +1,14 @@
-import { claudeBin, claudeEnv, type Config } from "./config";
+import { existsSync } from "node:fs";
+import {
+  claudeBin,
+  claudeEnv,
+  effectiveAllowedTools,
+  runLogPath,
+  type Config,
+  type Paths,
+} from "./config";
+import type { DenialGroup } from "./denials";
+import { handoffPrompt, type HandoffScope } from "./handoff";
 import { cleanupEntry, type Ctx } from "./reviewer";
 import {
   isLiveReview,
@@ -24,6 +34,47 @@ export function buildResume(
     // claude stores sessions under a slug of the directory it ran in, so a
     // resume must run in the clone the review ran in, never in the worktree
     argv: [claudeBin(cfg), "--resume", entry.session_id],
+    cwd: entry.local_path,
+    env: claudeEnv(cfg),
+  };
+}
+
+// The escape hatch for what the denials panel's one-key apply can't settle:
+// launches claude directly, in default permission mode, so the user answers
+// any permission prompt an edit would trigger — never docket. `cfg` should be
+// the freshest one available (`liveCfg` in the TUI), since a just-applied
+// suggestion belongs in the prompt.
+export function buildHandoff(
+  entry: Entry,
+  cfg: Config,
+  paths: Paths,
+  key: string,
+  groups: DenialGroup[],
+  scope: HandoffScope,
+):
+  | { argv: string[]; cwd: string; env: Record<string, string> }
+  | { error: string } {
+  if (!entry.local_path) {
+    return { error: "no clone — nothing to run claude in" };
+  }
+  if (!groups.length) {
+    return { error: "nothing selected to hand off" };
+  }
+  const logPath = runLogPath(paths, key);
+  const prompt = handoffPrompt({
+    key,
+    groups,
+    scope,
+    configPath: paths.configPath,
+    extraAllowedTools: cfg.extra_allowed_tools ?? [],
+    effectiveAllowedTools: effectiveAllowedTools(cfg),
+    runLogPath: logPath,
+    runLogExists: existsSync(logPath),
+  });
+  return {
+    // no --permission-mode: a default session hits a real prompt on any edit,
+    // which is the enforcement half of "research only, change nothing"
+    argv: [claudeBin(cfg), prompt],
     cwd: entry.local_path,
     env: claudeEnv(cfg),
   };

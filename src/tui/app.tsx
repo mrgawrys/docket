@@ -6,7 +6,7 @@ import { readAssessment } from "../assessment";
 import { runLogPath, type Config, type Paths } from "../config";
 import { applySuggestion, isAllowed } from "../denials";
 import { clampGroup, denialLines } from "../denialview";
-import { buildResume, printPending } from "../list";
+import { buildHandoff, buildResume, printPending } from "../list";
 import {
   buildOpener,
   openerContext,
@@ -149,6 +149,11 @@ export function App({
       else if ("missing" in wt) u[verb] = wt.missing;
     }
     if (!current.entry.denials?.length) u.denials = "no denials recorded";
+    if (!current.entry.local_path) {
+      u.handoff = "no clone — nothing to run claude in";
+    } else if (!current.entry.denials?.length) {
+      u.handoff = "no denials recorded";
+    }
     return u;
   }, [current, cfg, resolved]);
 
@@ -157,7 +162,7 @@ export function App({
     for (const [verb, reason] of Object.entries(unavailable)) {
       // A review that tripped no denials is the normal case, not a machine
       // this verb cannot run on: the greyed key says it, the panel need not.
-      if (verb === "denials") continue;
+      if (verb === "denials" || verb === "handoff") continue;
       byReason.set(reason, [...(byReason.get(reason) ?? []), verb]);
     }
     return [...byReason].map(
@@ -276,6 +281,30 @@ export function App({
         }
         return;
       }
+      if (input === "h" || input === "H") {
+        if (!current) return;
+        const scope = input === "H" ? "batch" : "group";
+        const selected = denials?.[denialCursor];
+        const targets =
+          scope === "batch" ? (denials ?? []) : selected ? [selected] : [];
+        const r = buildHandoff(
+          current.entry,
+          liveCfg,
+          paths,
+          current.key,
+          targets,
+          scope,
+        );
+        if ("error" in r) return setStatus(`hand off: ${r.error}`);
+        request({
+          ...r,
+          banner: `hand off (${scope}): ${current.key}`,
+          // an interactive claude session's exit status is whatever the user
+          // last ran in it, not a verdict on the hand-off
+          interactive: true,
+        });
+        return;
+      }
       return;
     }
     if (input === "?") return setView("help");
@@ -342,7 +371,7 @@ export function App({
         <>
           <Bar
             label={`${current?.key ?? ""} denials`}
-            right="j/k moves · a applies · esc closes"
+            right="j/k moves · a applies · h/H hands off · esc closes"
             width={width}
           />
           <Panel lines={denialPanel} />

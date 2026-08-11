@@ -215,6 +215,52 @@ test("apply writes the group under the cursor, and rails block a write-shaped on
   ui.unmount();
 });
 
+test("hand-off scopes to the group under the cursor, or the whole batch on H", async () => {
+  const ui = mount({
+    "acme/two#2": entry({
+      title: "Two",
+      local_path: "/repo",
+      updated_at: "2026-01-02T00:00:00Z",
+      denials: [
+        {
+          tool: "Bash",
+          suggestion: "Bash(git push:*)",
+          count: 1,
+          examples: ["git push origin HEAD"],
+          writeShaped: true,
+          alreadyAllowed: false,
+        },
+        {
+          tool: "Bash",
+          suggestion: "Bash(rg:*)",
+          count: 2,
+          examples: ["rg TODO src"],
+          writeShaped: false,
+          alreadyAllowed: false,
+        },
+      ],
+    }),
+  });
+  await Bun.sleep(20);
+  ui.stdin.write("D");
+  await Bun.sleep(20);
+  ui.stdin.write("j"); // cursor moves to Bash(rg:*)
+  await Bun.sleep(20);
+  ui.stdin.write("h"); // group scope: only the group under the cursor
+  await Bun.sleep(20);
+  expect(ui.requests).toHaveLength(1);
+  expect(ui.requests[0]?.cwd).toBe("/repo");
+  expect(ui.requests[0]?.argv[1]).toContain("Bash(rg:*)");
+  expect(ui.requests[0]?.argv[1]).not.toContain("Bash(git push:*)");
+
+  ui.stdin.write("H"); // batch scope: every group, cursor position irrelevant
+  await Bun.sleep(20);
+  expect(ui.requests).toHaveLength(2);
+  expect(ui.requests[1]?.argv[1]).toContain("Bash(rg:*)");
+  expect(ui.requests[1]?.argv[1]).toContain("Bash(git push:*)");
+  ui.unmount();
+});
+
 test("an empty queue keeps the TUI open so poll can populate it", async () => {
   const ui = mount({});
   await Bun.sleep(20);
