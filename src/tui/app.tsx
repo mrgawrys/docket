@@ -6,7 +6,12 @@ import { readAssessment } from "../assessment";
 import { runLogPath, type Config, type Paths } from "../config";
 import { applySuggestion, isAllowed } from "../denials";
 import { clampGroup, denialLines } from "../denialview";
-import { buildHandoff, buildResume, printPending } from "../list";
+import {
+  buildHandoff,
+  buildResume,
+  NO_CLONE_REASON,
+  printPending,
+} from "../list";
 import {
   buildOpener,
   openerContext,
@@ -150,7 +155,7 @@ export function App({
     }
     if (!current.entry.denials?.length) u.denials = "no denials recorded";
     if (!current.entry.local_path) {
-      u.handoff = "no clone — nothing to run claude in";
+      u.handoff = NO_CLONE_REASON;
     } else if (!current.entry.denials?.length) {
       u.handoff = "no denials recorded";
     }

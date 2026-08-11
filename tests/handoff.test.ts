@@ -43,7 +43,7 @@ test("a single group carries its suggestion, count and example", () => {
     }),
   );
   expect(p).toContain("Bash(git log:*)");
-  expect(p).toContain("5");
+  expect(p).toContain("denied 5 times");
   expect(p).toContain("git log --oneline");
 });
 

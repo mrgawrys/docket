@@ -24,8 +24,8 @@ export interface HandoffInput {
 const INTRO =
   "docket pre-runs Claude Code's code review on GitHub PRs before you look " +
   "at them, unattended and on a deliberately read-only allowlist: it " +
-  "investigates and reports, and it never writes to GitHub, git history, " +
-  "or disk.";
+  "investigates and reports, and it never posts to GitHub or changes the " +
+  "PR — no comments, no pushes.";
 
 const STANDING_ORDER =
   "Research only: investigate these denials and propose options — which " +

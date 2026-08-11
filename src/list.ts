@@ -39,6 +39,10 @@ export function buildResume(
   };
 }
 
+// Shared with the TUI's `unavailable` check, so the reason greyed in the
+// legend and the reason a keypress reports are never two different sentences.
+export const NO_CLONE_REASON = "no clone — nothing to run claude in";
+
 // The escape hatch for what the denials panel's one-key apply can't settle:
 // launches claude directly, in default permission mode, so the user answers
 // any permission prompt an edit would trigger — never docket. `cfg` should be
@@ -55,7 +59,7 @@ export function buildHandoff(
   | { argv: string[]; cwd: string; env: Record<string, string> }
   | { error: string } {
   if (!entry.local_path) {
-    return { error: "no clone — nothing to run claude in" };
+    return { error: NO_CLONE_REASON };
   }
   if (!groups.length) {
     return { error: "nothing selected to hand off" };
