@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { PassThrough, Writable } from "node:stream";
 import { expect, test } from "bun:test";
 import {
+  type Config,
   loadConfig,
   paths as resolvePaths,
   placeholderEntries,
@@ -56,7 +57,8 @@ interface Driven {
   doctorRuns: number;
   configAtDoctor: string | null;
   configPath: string;
-  config(): Record<string, unknown>;
+  // whatever the wizard wrote — read loosely, like harness.state()
+  config(): Record<string, any>;
 }
 
 async function drive(
@@ -238,9 +240,10 @@ test("a failed gh org list falls back to org names typed by hand", async () => {
   });
   expect(r.outcome).toBe("completed");
   expect(r.config().orgs).toEqual(["acme"]);
+  expect(r.out).toContain("gh could not list organizations: boom");
 });
 
-test("ending with no orgs comes up short but still leaves a config behind", async () => {
+test("ending with no orgs writes nothing, so the next run offers setup again", async () => {
   const sb = fresh();
   const home = homeWithClones();
   const r = await drive(sb, ["none", ""], {
@@ -249,11 +252,11 @@ test("ending with no orgs comes up short but still leaves a config behind", asyn
     GH_ORG_LIST: "",
   });
   expect(r.outcome).toBe("came-up-short");
-  expect(r.config()).toEqual({ orgs: [], repos: {} });
-  expect(r.doctorRuns).toBe(1);
+  expect(existsSync(r.configPath)).toBe(false);
+  expect(r.doctorRuns).toBe(0);
 });
 
-test("a scan that finds nothing, with nothing added by hand, comes up short", async () => {
+test("orgs with no repos mapped is still written — the poller works without them", async () => {
   const sb = fresh();
   const home = mkdtempSync(join(tmpdir(), "dk-home-"));
   mkdirSync(join(home, "Development"));
@@ -263,6 +266,7 @@ test("a scan that finds nothing, with nothing added by hand, comes up short", as
     GH_ORG_LIST: "acme",
   });
   expect(r.outcome).toBe("came-up-short");
+  expect(existsSync(r.configPath)).toBe(true);
   expect(r.config()).toEqual({ orgs: ["acme"], repos: {} });
 });
 
@@ -419,13 +423,16 @@ test("a config of the wrong shape is replaced without asking, not crashed on", a
   expect(r.config().orgs).toEqual(["acme"]);
 });
 
-test("the starter placeholder config is replaced without asking", async () => {
+test("the starter placeholder config is replaced without asking, but its other keys survive", async () => {
   const sb = makeSandbox();
-  sb.writeConfig(
-    JSON.parse(
-      readFileSync(join(import.meta.dir, "..", "config.example.json"), "utf8"),
-    ),
+  const example = JSON.parse(
+    readFileSync(join(import.meta.dir, "..", "config.example.json"), "utf8"),
   );
+  // placeholder orgs, but an opener the user has already customized
+  example.openers.diff = [{ cmd: ["my-differ", "{base}", "{head}"] }];
+  example.extra_allowed_tools = ["Bash(rg:*)"];
+  sb.writeConfig(example);
+
   const home = homeWithClones();
   const r = await drive(sb, ["2", "1", "", ""], {
     HOME: home,
@@ -433,5 +440,49 @@ test("the starter placeholder config is replaced without asking", async () => {
     GH_ORG_LIST: "acme",
   });
   expect(r.outcome).toBe("completed");
+  const cfg = r.config();
+  expect(cfg.orgs).toEqual(["acme"]);
+  expect(placeholderEntries(cfg as Config)).toEqual([]);
+  expect(cfg.openers.diff).toEqual([
+    { cmd: ["my-differ", "{base}", "{head}"] },
+  ]);
+  expect(cfg.extra_allowed_tools).toEqual(["Bash(rg:*)"]);
+  expect(cfg.poll_interval_minutes).toBe(15);
+});
+
+test("a consented overwrite keeps the keys the wizard does not own", async () => {
+  const sb = makeSandbox();
+  sb.writeConfig({
+    orgs: ["old-org"],
+    repos: { "old-org/thing": "/somewhere" },
+    extra_allowed_tools: ["Bash(rg:*)"],
+    notifications: false,
+  });
+  const home = homeWithClones();
+  const r = await drive(sb, ["y", "2", "1", "", ""], {
+    HOME: home,
+    GH_AUTH_STATUS_TEXT: ONE_ACCOUNT,
+    GH_ORG_LIST: "acme",
+  });
+  expect(r.outcome).toBe("completed");
   expect(r.config().orgs).toEqual(["acme"]);
+  expect(r.config().extra_allowed_tools).toEqual(["Bash(rg:*)"]);
+  expect(r.config().notifications).toBe(false);
+});
+
+test("an account pin the wizard is not using does not survive the write", async () => {
+  const sb = makeSandbox();
+  sb.writeConfig({
+    orgs: ["your-github-org"], // placeholder, so no overwrite prompt
+    repos: {},
+    gh_account: "someone-else",
+  });
+  const home = homeWithClones();
+  const r = await drive(sb, ["2", "1", "", ""], {
+    HOME: home,
+    GH_AUTH_STATUS_TEXT: ONE_ACCOUNT, // one account: nothing to pin
+    GH_ORG_LIST: "acme",
+  });
+  expect(r.outcome).toBe("completed");
+  expect("gh_account" in r.config()).toBe(false);
 });

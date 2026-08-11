@@ -8,7 +8,6 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import {
-  type Config,
   type Paths,
   ghBin,
   placeholderEntries,
@@ -249,7 +248,12 @@ async function chooseOrgs(
     .map((l) => l.trim())
     .filter(Boolean);
   const listedAny = listed.ok && orgs.length > 0;
-  if (!listedAny) {
+  if (!listed.ok) {
+    // an org list that failed is not an account with no orgs — SSO and scope
+    // errors both land here, and only gh's own words say which
+    const why = listed.err.split("\n").find(Boolean) ?? "no reason given";
+    ui.say(ui.dim(`   gh could not list organizations: ${why}`));
+  } else if (orgs.length === 0) {
     ui.say(ui.dim("   gh listed no organizations for this account."));
   }
   // The account's own login is a candidate in its own right: `gh org list`
@@ -341,11 +345,6 @@ async function chooseRepos(
   getOrigin: (dir: string) => string | null,
 ): Promise<RepoStep> {
   ui.step(3, "Local clones");
-  if (orgs.length === 0) {
-    ui.say(ui.dim("   no orgs chosen — skipping the repo scan."));
-    return { repos: {}, shortfall: true };
-  }
-
   const root = await chooseRoot(ui, home);
   const repos: Record<string, string> = {};
   let matches: Array<{ slug: string; path: string }> = [];
@@ -398,44 +397,62 @@ async function chooseRepos(
 
 // ---------------------------------------------------------- step 4: finish --
 
+interface OverwriteCheck {
+  proceed: boolean;
+  // what is on disk now, so the write can keep the keys the wizard doesn't own
+  existing?: Record<string, unknown>;
+}
+
 // The trigger only starts the wizard when there is no usable config, but a
 // hand-run one must not silently overwrite a config someone has filled in.
-async function mayOverwrite(ui: Ui, p: Paths): Promise<boolean> {
-  if (!existsSync(p.configPath)) return true;
-  let cfg: Config | undefined;
+async function mayOverwrite(ui: Ui, p: Paths): Promise<OverwriteCheck> {
+  if (!existsSync(p.configPath)) return { proceed: true };
+  // whatever is on disk, not a Config — read every field defensively
+  let cfg: Record<string, unknown> | undefined;
   try {
-    cfg = JSON.parse(readFileSync(p.configPath, "utf8")) as Config;
+    cfg = JSON.parse(readFileSync(p.configPath, "utf8")) as Record<
+      string,
+      unknown
+    >;
   } catch {
     // unreadable: still the user's file, so still their call
   }
   if (cfg) {
-    // read defensively: this file is whatever is on disk, not a valid Config
-    const orgs = Array.isArray(cfg.orgs) ? cfg.orgs : [];
+    const orgs = Array.isArray(cfg.orgs) ? (cfg.orgs as string[]) : [];
     const repos =
       cfg.repos && typeof cfg.repos === "object" && !Array.isArray(cfg.repos)
-        ? cfg.repos
+        ? (cfg.repos as Record<string, string>)
         : {};
     const filled = orgs.length > 0 || Object.keys(repos).length > 0;
     // the seeded starter config is exactly what the wizard is here to replace
-    if (!filled || placeholderEntries({ orgs, repos }).length > 0) return true;
+    if (!filled || placeholderEntries({ orgs, repos }).length > 0) {
+      return { proceed: true, existing: cfg };
+    }
     ui.say(ui.dim(`   ${p.configPath} already lists orgs and repos.`));
   } else {
     ui.say(ui.dim(`   ${p.configPath} is not valid JSON.`));
   }
   const answer = await ui.ask("   overwrite it? [y/N] ");
-  return answer.toLowerCase().startsWith("y");
+  return { proceed: answer.toLowerCase().startsWith("y"), existing: cfg };
 }
 
 function writeConfig(
   ui: Ui,
   p: Paths,
+  existing: Record<string, unknown> | undefined,
   orgs: string[],
   repos: Record<string, string>,
+  login: string,
   account: string | undefined,
 ): void {
   ui.step(4, "Writing config");
-  const cfg: Record<string, unknown> = { orgs, repos };
+  // Everything the wizard doesn't own survives — openers, extra_allowed_tools
+  // and friends are the user's, whether they seeded them or wrote them.
+  const cfg: Record<string, unknown> = { ...existing, orgs, repos };
   if (account) cfg.gh_account = account;
+  // A pin the wizard didn't set, naming an account it isn't using, resolves to
+  // no token later; the empty one the starter config ships is harmless.
+  else if (cfg.gh_account && cfg.gh_account !== login) delete cfg.gh_account;
   mkdirSync(p.configDir, { recursive: true });
   const text = `${JSON.stringify(cfg, null, 2)}\n`;
   // Synchronous on purpose: doctor reads this file moments later.
@@ -478,7 +495,8 @@ export async function runNativeWizard(
   const flow = async (): Promise<WizardOutcome> => {
     ui.say(ui.bold("docket setup"));
     ui.say(ui.dim(`config → ${p.configPath}`));
-    if (!(await mayOverwrite(ui, p))) {
+    const { proceed, existing } = await mayOverwrite(ui, p);
+    if (!proceed) {
       ui.say("   leaving it as it is — nothing was written.");
       return "aborted";
     }
@@ -488,10 +506,17 @@ export async function runNativeWizard(
       return "came-up-short";
     }
     const orgs = await chooseOrgs(ui, gh, account.env, account.login);
+    if (orgs.length === 0) {
+      // Nothing to poll, so nothing worth writing: a config here would count
+      // as configured and stop the first run from ever offering setup again.
+      ui.say(ui.dim("   nothing to watch — no config written, so docket will"));
+      ui.say(ui.dim("   offer setup again next time."));
+      return "came-up-short";
+    }
     const { repos, shortfall } = await chooseRepos(ui, orgs, home, getOrigin);
-    // Written even when the answers were thin: the user still ends up with a
-    // real file to edit, and doctor below tells them what it is missing.
-    writeConfig(ui, p, orgs, repos, account.account);
+    // Written even with no repos mapped: that config is genuinely useful (the
+    // poller works, unmapped repos skip at review time) and doctor says so.
+    writeConfig(ui, p, existing, orgs, repos, account.login, account.account);
     wrote = true;
     return shortfall ? "came-up-short" : "completed";
   };
