@@ -140,6 +140,37 @@ test("verbs are unavailable, with the reason shown, when the worktree or session
   ui.unmount();
 });
 
+test("the denials key opens the view only for a row that has denials", async () => {
+  const ui = mount({
+    "acme/one#1": entry({ title: "One", updated_at: "2026-01-01T00:00:00Z" }),
+    "acme/two#2": entry({
+      title: "Two",
+      updated_at: "2026-01-02T00:00:00Z",
+      denials: [
+        {
+          tool: "Bash",
+          suggestion: "Bash(rg:*)",
+          count: 2,
+          examples: ["rg TODO src"],
+          writeShaped: false,
+          alreadyAllowed: false,
+        },
+      ],
+    }),
+  });
+  await Bun.sleep(20);
+  ui.stdin.write("D"); // row 1 has none: the queue stays put, and says why
+  await Bun.sleep(20);
+  expect(ui.lastFrame()).toContain("acme/two#2"); // the queue, not a view
+  expect(ui.lastFrame()).toContain("no denials");
+  ui.stdin.write("j");
+  await Bun.sleep(20);
+  ui.stdin.write("D");
+  await Bun.sleep(20);
+  expect(ui.lastFrame()).toContain("Bash(rg:*) — 2 denied");
+  ui.unmount();
+});
+
 test("an empty queue keeps the TUI open so poll can populate it", async () => {
   const ui = mount({});
   await Bun.sleep(20);

@@ -4,6 +4,7 @@ import { dirname } from "node:path";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { readAssessment } from "../assessment";
 import { runLogPath, type Config, type Paths } from "../config";
+import { denialLines } from "../denialview";
 import { buildResume, printPending } from "../list";
 import {
   buildOpener,
@@ -89,8 +90,9 @@ export function App({
   );
   const [rows, setRows] = useState<Row[]>(load);
   const [cursorKey, setCursorKey] = useState<string | undefined>(initialKey);
-  const [view, setView] = useState<"queue" | "help">("queue");
+  const [view, setView] = useState<"queue" | "help" | "denials">("queue");
   const [status, setStatus] = useState<string | undefined>();
+  const [denialCursor, setDenialCursor] = useState(0);
 
   // saveState renames a temp file over state.json, which breaks a watch bound
   // to the file's inode — watch the directory instead.
@@ -142,12 +144,16 @@ export function App({
       if (!resolved[verb]) u[verb] = `no ${verb} opener found on PATH`;
       else if ("missing" in wt) u[verb] = wt.missing;
     }
+    if (!current.entry.denials?.length) u.denials = "no denials recorded";
     return u;
   }, [current, cfg, resolved]);
 
   const notes = useMemo(() => {
     const byReason = new Map<string, string[]>();
     for (const [verb, reason] of Object.entries(unavailable)) {
+      // A review that tripped no denials is the normal case, not a machine
+      // this verb cannot run on: the greyed key says it, the panel need not.
+      if (verb === "denials") continue;
       byReason.set(reason, [...(byReason.get(reason) ?? []), verb]);
     }
     return [...byReason].map(
@@ -178,6 +184,21 @@ export function App({
         height: panelHeight,
       }),
     [summary, assessment, notes, width, panelHeight],
+  );
+
+  // The denials view takes the whole region below the bars: legend, the two
+  // bars and the row the frame must leave spare (see panelHeight).
+  const denials = current?.entry.denials;
+  const denialPanel = useMemo(
+    () =>
+      denialLines({
+        groups: denials ?? [],
+        cfg,
+        selected: denialCursor,
+        width: width - 2,
+        height: Math.max(1, height - 4 - (footer ? 1 : 0)),
+      }),
+    [denials, cfg, denialCursor, width, height, footer],
   );
 
   const move = (delta: number) => {
@@ -215,6 +236,16 @@ export function App({
       if (input === "?" || key.escape) setView("queue");
       return;
     }
+    // Read-only for now; later verbs act on the group under this cursor.
+    if (view === "denials") {
+      const last = (denials?.length ?? 0) - 1;
+      if (input === "D" || key.escape) return setView("queue");
+      if (input === "j" || key.downArrow)
+        return setDenialCursor((c) => Math.min(last, c + 1));
+      if (input === "k" || key.upArrow)
+        return setDenialCursor((c) => Math.max(0, c - 1));
+      return;
+    }
     if (input === "?") return setView("help");
     if (input === "j" || key.downArrow) return move(1);
     if (input === "k" || key.upArrow) return move(-1);
@@ -231,6 +262,11 @@ export function App({
         banner: `resuming ${current.key}`,
       });
       return;
+    }
+    if (input === "D") {
+      if (!denials?.length) return setStatus(`${current.key}: no denials`);
+      setDenialCursor(0);
+      return setView("denials");
     }
     if (input === "s") return open("shell");
     // ink reports ctrl+letter as the bare letter, and Ctrl+D is muscle memory
@@ -270,6 +306,15 @@ export function App({
       />
       {view === "help" ? (
         <Help unavailable={unavailable} />
+      ) : view === "denials" ? (
+        <>
+          <Bar
+            label={`${current?.key ?? ""} denials`}
+            right="j/k moves · esc closes"
+            width={width}
+          />
+          <Panel lines={denialPanel} />
+        </>
       ) : (
         <>
           <Queue rows={rows} cursor={cursor} height={queueHeight} />

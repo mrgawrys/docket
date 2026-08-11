@@ -12,6 +12,7 @@ export const KEYMAP: Binding[] = [
   { keys: "enter", label: "claude", verb: "claude" },
   { keys: "s", label: "shell", verb: "shell" },
   { keys: "d", label: "diff", verb: "diff" },
+  { keys: "D", label: "denials", verb: "denials" },
   { keys: "w", label: "watch live" },
   { keys: "r", label: "retry" },
   { keys: "x", label: "dismiss" },
@@ -23,7 +24,7 @@ export const KEYMAP: Binding[] = [
 ];
 
 // The one-line footer: the per-entry verbs plus the way out.
-const FOOTER = ["enter", "s", "d", "w", "x", "?"];
+const FOOTER = ["enter", "s", "d", "D", "w", "x", "?"];
 
 export function Legend({
   unavailable,
