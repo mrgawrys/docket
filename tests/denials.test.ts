@@ -98,6 +98,42 @@ test("repeated denials of one command shape collapse into a counted group", () =
   ]);
 });
 
+test("an argument is not part of the rule — one command is one group", () => {
+  // Only a multiplexer's second word is a subcommand. Taking one anywhere else
+  // gives `Bash(echo done:*)`: a rule covering exactly the call already denied,
+  // and three echo denials become three rows instead of one group of three.
+  const [group, ...rest] = denialGroups(
+    log(
+      ...deniedBash("t1", "echo starting"),
+      ...deniedBash("t2", "echo done"),
+      ...deniedBash("t3", "echo finished"),
+    ),
+    cfg(),
+  );
+  expect(group?.suggestion).toBe("Bash(echo:*)");
+  expect(group?.count).toBe(3);
+  expect(rest).toEqual([]);
+});
+
+test("a multiplexer keeps its subcommand, which is what the rule is about", () => {
+  // `Bash(git:*)` would allow `git push`, `Bash(gh pr:*)` would allow
+  // `gh pr comment` — these rules are only safe at their full depth.
+  const lines = log(
+    ...deniedBash("t1", "git check-ignore -v a.md"),
+    ...deniedBash("t2", "gh pr view 6520 --json title"),
+    ...deniedBash("t3", "npm test"),
+  );
+  expect(
+    denialGroups(lines, cfg())
+      .map((g) => g.suggestion)
+      .sort(),
+  ).toEqual([
+    "Bash(gh pr view:*)",
+    "Bash(git check-ignore:*)",
+    "Bash(npm test:*)",
+  ]);
+});
+
 test("a denial of anything but Bash suggests the bare tool name", () => {
   const lines = log(
     used("t1", "WebFetch", { url: "https://example.com/rfc", prompt: "what" }),
@@ -136,6 +172,11 @@ test("write-shaped suggestions are flagged, so nothing offers a one-key apply", 
     ...deniedBash("t5", "rg --files"),
     ...deniedBash("t7", "gh auth status 2>&1 | grep 'Logged in to'"),
     ...deniedBash("t8", "gh pr view 6520 --json title"),
+    // an interpreter, an in-place editor and a command-builder are write tools
+    // wearing a read tool's name: `Bash(sh:*)` grants everything `Bash(rm:*)` does
+    ...deniedBash("t9", "sh -c 'cat pkg.json'"),
+    ...deniedBash("t10", "sed -i '' s/a/b/ notes.md"),
+    ...deniedBash("t11", "xargs rm < paths.txt"),
     used("t6", "Edit", { file_path: "/Users/me/wt/src/x.ts" }),
     denied("t6", "Edit"),
   );
@@ -152,6 +193,9 @@ test("write-shaped suggestions are flagged, so nothing offers a one-key apply", 
     // the gh verbs that only read still get an apply
     "Bash(gh auth status:*)": false,
     "Bash(gh pr view:*)": false,
+    "Bash(sh:*)": true,
+    "Bash(sed:*)": true,
+    "Bash(xargs:*)": true,
   });
 });
 
@@ -175,9 +219,7 @@ test("a suggestion the user already configured counts as allowed too", () => {
   );
   expect(denialGroups(lines, cfg([]))[0]?.alreadyAllowed).toBe(false);
   expect(isAllowed("Bash(git fetch:*)", cfg())).toBe(true);
-  expect(isAllowed("Bash(git fetch:*)", cfg())).not.toBe(
-    isAllowed("Bash(rg:*)", cfg()),
-  );
+  expect(isAllowed("Bash(rg:*)", cfg())).toBe(false);
 });
 
 test("junk and half-written lines do not stop the parse", () => {

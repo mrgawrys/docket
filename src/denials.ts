@@ -121,9 +121,22 @@ const SHELL_KEYWORDS = new Set([
   "do",
   "then",
 ]);
-// How many words past the command name the rule needs. `Bash(gh pr:*)` would
-// allow `gh pr comment`, so gh rules carry the verb too.
-const RULE_WORDS: Record<string, number> = { gh: 2 };
+// How many words past the command name the rule needs. Only a multiplexer's
+// second word is a subcommand — anywhere else it is an argument, and
+// `Bash(echo done:*)` is a rule covering the one call already denied. `gh`
+// takes two: `Bash(gh pr:*)` would allow `gh pr comment`.
+const RULE_WORDS: Record<string, number> = {
+  git: 1,
+  gh: 2,
+  npm: 1,
+  pnpm: 1,
+  yarn: 1,
+  bun: 1,
+  docker: 1,
+  brew: 1,
+  cargo: 1,
+  go: 1,
+};
 
 // The allowlist entry that would have covered a denied shell command, derived
 // from its leading words — `cd /wt && git fetch origin` -> `Bash(git fetch:*)`.
@@ -144,7 +157,7 @@ function bashSuggestion(command: string): string | undefined {
   // `git -C <dir> log` is `cd <dir> && git log` spelled differently
   if (name === "git" && rest[0] === "-C") rest.splice(0, 2);
   const words = [name];
-  const limit = RULE_WORDS[name] ?? 1;
+  const limit = RULE_WORDS[name] ?? 0;
   for (const word of rest) {
     if (words.length > limit || !RULE_WORD.test(word)) break;
     words.push(word);
@@ -177,7 +190,11 @@ const WRITE_SHAPED: RegExp[] = [
   /^gh (?!pr (?:view|diff|checks|list)\b|issue (?:view|list)\b|repo view\b|search\b|auth status\b)/,
   // a bare multiplexer drags its write subcommands in with it
   /^(?:git|gh|npm|pnpm|yarn|bun|pip|brew|docker)$/,
-  /^(?:rm|rmdir|mv|cp|mkdir|touch|chmod|chown|ln|dd|tee|truncate|kill|killall|curl|wget|npm|pnpm|yarn|pip|brew|docker|make)\b/,
+  /^(?:rm|rmdir|mv|cp|mkdir|touch|chmod|chown|ln|dd|tee|truncate|kill|killall|curl|wget|npm|pnpm|yarn|bun|pip|brew|docker|make)\b/,
+  // An interpreter, an in-place editor or a command-builder is a write tool
+  // wearing a read tool's name — `Bash(sh:*)` grants everything `Bash(rm:*)`
+  // does, and every pattern here is anchored, so `xargs rm` would slip past.
+  /^(?:sh|bash|zsh|fish|python3?|node|deno|ruby|perl|osascript|sudo|env|eval|xargs|sed|awk|find|tee)\b/,
 ];
 
 // "Bash(git push:*)" -> "git push"; any other suggestion is a bare tool name.
