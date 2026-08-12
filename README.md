@@ -41,12 +41,18 @@ You'll also need:
 
 ## Quickstart
 
-1. **`docket`** — with no config yet it offers to set one up: a few questions
-   right there in the terminal, or a claude-guided session that does the
-   discovery for you. Either way it ends on doctor's ✓/✗ list, and the command
-   you asked for carries on. Steps 2 and 3 are the by-hand route (which is
-   what `docket doctor` leaves you, and what the poller gets when nobody is
-   there to ask).
+1. **`docket`** — with no config yet, or one still holding the starter
+   placeholders, it offers to set one up: a few questions right there in the
+   terminal, or a claude-guided session that does the discovery for you. The
+   quick route asks which GitHub account (of the ones `gh` is logged in as),
+   whose PRs to watch — your orgs, and your own login for personal repos —
+   and where your clones live, scanning three levels down for repos it can
+   map. It writes the config and ends on doctor's ✓/✗ list, then the command
+   you asked for carries on. When it comes up short — `gh` lists no orgs, the
+   scan finds nothing — it offers to hand the rest to claude instead.
+   Declining the offer leaves you steps 2 and 3, the by-hand route (which is
+   also what `docket doctor` leaves you, and what the poller gets when nobody
+   is there to ask).
 2. **Edit `~/.config/docket/config.json`.** Two keys are required:
 
    ```json
@@ -61,8 +67,8 @@ You'll also need:
    `orgs` is polled for PRs where your review is requested; `repos` maps each
    repo to its local clone. Everything else has a sensible default — see the
    [configuration reference](docs/configuration.md).
-3. **`docket doctor`** again — it now checks the whole review chain (config,
-   clones, gh auth, claude, plugin). Every line should be ✓.
+3. **`docket doctor`** — it checks the whole review chain (config, clones, gh
+   auth, claude, plugin). Every line should be ✓.
 4. **`docket poll --dry-run`** — read-only; lists what would be reviewed.
    **Everything listed gets reviewed (and billed) once the poller is on**, so
    seed a pre-existing backlog as done first:
@@ -89,6 +95,9 @@ screen: `enter` is how a review actually gets read.
 
 ```
 j/k ↑/↓  move          enter  claude       s  shell      d  diff
+D  denials             a  apply (denials view)
+h  hand off group to claude (denials view)
+H  hand off batch to claude (denials view)
 w  watch live          r  retry            x  dismiss    K  kill
 p  poll                S  sync             ?  help       q  quit
 ```
@@ -112,6 +121,36 @@ The rest of the CLI:
 | `docket doctor` | check the whole setup and print fixes |
 | `docket on` / `off` / `status` | manage the launchd poller |
 | `docket log [N]` | tail the poller log |
+
+## Denied permissions
+
+Reviews run headless on a read-only tool allowlist, so a call outside it is
+denied and the run carries on without whatever it asked for. Those denials are
+read back off the run log when the review ends — for failed runs as much as
+finished ones — and kept with the entry.
+
+A `⊘ 5` chip on a row is how many calls that run had denied. `D` opens the
+denials view: one block per allowlist entry that would have covered them, how
+many calls each covers, and up to three of the commands turned away.
+
+`a` adds the selected suggestion to
+[`extra_allowed_tools`](docs/configuration.md#extra_allowed_tools), so the next
+review has it. Two kinds of group never get that one keypress:
+
+- **write-shaped** ones — `git push`, most `gh` verbs, `rm`, an interpreter
+  like `sh` or `python` — read "conflicts with docket's read-only stance — add
+  manually or hand to claude". Allowing them wholesale gives up the guarantee
+  that an unattended review changes nothing, so they stay a deliberate edit.
+- ones **already in the allowlist** read "rule exists but didn't match": the
+  call was denied anyway — a `*` in the middle of a pattern, a prefix the call
+  never matched — so adding the same rule again fixes nothing.
+
+`h` hands the selected group to an interactive claude session, `H` the whole
+batch. It starts in the repo's local clone (so the key needs one) and carries
+the groups, your config path, the effective allowlist and the run log. The
+standing order is research only: propose options, change nothing. The session
+runs in claude's default permission mode, so anything it does want to change
+prompts you, not docket.
 
 ## Configuration
 

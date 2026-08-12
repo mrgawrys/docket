@@ -1,7 +1,8 @@
 # Configuration reference
 
-Config lives at `~/.config/docket/config.json`; the first run of
-`docket doctor` writes a starter file there. `DOCKET_CONFIG_DIR` and
+Config lives at `~/.config/docket/config.json`. Running `docket` in a terminal
+with no config offers to write one for you; `docket doctor` writes a starter
+file there instead, to fill in by hand. `DOCKET_CONFIG_DIR` and
 `DOCKET_STATE_DIR` override the config and state locations
 (`~/.config/docket/` and `~/.local/state/docket/`).
 
@@ -87,7 +88,8 @@ Entries appended to the built-in tool allowlist for the headless run, in
 claude's `--allowedTools` grammar (e.g. `"Bash(bun test:*)"`,
 `"Skill(my-review)"`). Needed when a custom `review_prompt` uses tools the
 baseline doesn't cover — headless runs can't prompt, so anything outside the
-allowlist is silently denied.
+allowlist is denied mid-run; the queue's `D` view is where those denials show
+up afterwards, and its `a` key appends here.
 
 The baseline is read-only and never posts to GitHub; entries you add here
 run without prompts, so adding posting tools (e.g. `Bash(gh pr comment:*)`)

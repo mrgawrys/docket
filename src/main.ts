@@ -32,8 +32,8 @@ const USAGE = `docket — pre-run Claude Code reviews for PRs awaiting you
 
 Usage:
   docket                    review queue (enter resume, s shell, d diff,
-                            w watch live, r retry, x dismiss, K kill,
-                            p poll, S sync, ? help, q quit)
+                            D denials, w watch live, r retry, x dismiss,
+                            K kill, p poll, S sync, ? help, q quit)
   docket poll [--dry-run]   one poll cycle (what launchd runs); reviews run
                             in parallel as detached background processes
   docket sync               reconcile state with GitHub
