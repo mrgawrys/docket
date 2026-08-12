@@ -23,6 +23,7 @@ import {
   notifyEnabled,
   paths,
   placeholderEntries,
+  readConfigSync,
   seedExampleConfig,
 } from "../src/config";
 
@@ -358,4 +359,26 @@ test("effectiveReviewPrompt: a set prompt is used verbatim", () => {
       review_prompt: "Review this PR for security issues.",
     }),
   ).toBe("Review this PR for security issues.");
+});
+
+test("readConfigSync answers with what is on disk right now", () => {
+  const dir = mkdtempSync(join(tmpdir(), "rv-cfg-"));
+  const file = join(dir, "config.json");
+  const startup = { orgs: ["stale"], repos: {} };
+  writeFileSync(file, JSON.stringify({ orgs: ["fresh"], repos: {} }));
+  expect(readConfigSync(file, startup).orgs).toEqual(["fresh"]);
+});
+
+test("readConfigSync falls back to the snapshot rather than throwing", () => {
+  const dir = mkdtempSync(join(tmpdir(), "rv-cfg-"));
+  const startup = { orgs: ["stale"], repos: {} };
+  // absent, unparsable, and valid JSON that is not an object: a remounting
+  // view must come back with a config either way
+  expect(readConfigSync(join(dir, "gone.json"), startup)).toBe(startup);
+  const half = join(dir, "half.json");
+  writeFileSync(half, '{"orgs": ["fre');
+  expect(readConfigSync(half, startup)).toBe(startup);
+  const list = join(dir, "list.json");
+  writeFileSync(list, "[]");
+  expect(readConfigSync(list, startup)).toBe(startup);
 });

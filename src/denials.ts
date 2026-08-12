@@ -206,7 +206,10 @@ const WRITE_SHAPED: RegExp[] = [
 const ruleCommand = (suggestion: string): string =>
   /^Bash\((.*):\*\)$/.exec(suggestion)?.[1] ?? suggestion;
 
-function isWriteShaped(suggestion: string): boolean {
+// Exported because a group's flag is frozen at the end of the run that wrote
+// it: what the UI rails on, and what a hand-off prompt claims, must be what
+// this version of the classifier says now.
+export function isWriteShaped(suggestion: string): boolean {
   if (WRITE_TOOLS.has(suggestion)) return true;
   const command = ruleCommand(suggestion);
   return WRITE_SHAPED.some((re) => re.test(command));

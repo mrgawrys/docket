@@ -1,4 +1,11 @@
-import { cpSync, existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+} from "node:fs";
 import { basename, join } from "node:path";
 import EXAMPLE_CONFIG from "../config.example.json" with { type: "text" };
 
@@ -225,6 +232,24 @@ export async function loadConfig(p: Paths = paths()): Promise<Config> {
     );
   }
   return cfg;
+}
+
+// The config as it stands on disk, for a caller that already holds a startup
+// snapshot and needs the fresher one — the TUI re-seeds from here on every
+// remount, so a rule applied before a suspend is still applied after it. Any
+// failure (absent, half-written, not an object) keeps the snapshot: this runs
+// under a render, where there is nobody to report an error to.
+export function readConfigSync(path: string, fallback: Config): Config {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
+    return typeof parsed === "object" &&
+      parsed !== null &&
+      !Array.isArray(parsed)
+      ? (parsed as Config)
+      : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 export const claudeBin = (

@@ -142,3 +142,29 @@ test("an entry whose denials vanished says so rather than rendering blank", () =
     { text: "no denials recorded for this review", dim: true },
   ]);
 });
+
+test("a group applied this session reads as applied, not as a rule that missed", () => {
+  // the live re-check sees the rule the apply just wrote; the warning it would
+  // otherwise print means "adding it again fixes nothing", which is the
+  // opposite of what happened
+  const lines = denialLines({
+    groups: [group({ suggestion: "Bash(rg:*)" })],
+    cfg: { ...cfg, extra_allowed_tools: ["Bash(rg:*)"] },
+    applied: new Set(["Bash(rg:*)"]),
+    selected: 0,
+    width: 80,
+  });
+  expect(texts(lines)).toContain("    applied — takes effect next run");
+  expect(texts(lines)).not.toContain("    rule exists but didn't match");
+});
+
+test("a group nobody applied still warns that its rule did not match", () => {
+  const lines = denialLines({
+    groups: [group({ suggestion: "Bash(rg:*)" })],
+    cfg: { ...cfg, extra_allowed_tools: ["Bash(rg:*)"] },
+    applied: new Set(["Bash(cat:*)"]),
+    selected: 0,
+    width: 80,
+  });
+  expect(texts(lines)).toContain("    rule exists but didn't match");
+});

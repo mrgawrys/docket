@@ -249,3 +249,53 @@ test("buildHandoff points at the run log when one exists", () => {
   expect(r).not.toHaveProperty("error");
   expect((r as { argv: string[] }).argv[1]).toContain(logFile);
 });
+
+test("the handoff prompt states the flags as they are now, not as the run froze them", () => {
+  // a rule applied since the run makes alreadyAllowed a lie, and the prompt's
+  // own "current extra_allowed_tools" line would contradict it
+  const dir = mkdtempSync(join(tmpdir(), "docket-handoff-"));
+  const p = paths({ DOCKET_CONFIG_DIR: dir, DOCKET_STATE_DIR: dir } as any);
+  const r = buildHandoff(
+    { status: "ready", local_path: "/repo", updated_at: "t" },
+    { orgs: [], repos: {}, extra_allowed_tools: ["Bash(rg:*)"] },
+    p,
+    "acme/demo#7",
+    [denialGroup({ suggestion: "Bash(rg:*)", alreadyAllowed: false })],
+    "group",
+  );
+  expect((r as { argv: string[] }).argv[1]).toContain(
+    "already in the allowlist",
+  );
+});
+
+test("a stale already-allowed flag is not carried into the prompt", () => {
+  const dir = mkdtempSync(join(tmpdir(), "docket-handoff-"));
+  const p = paths({ DOCKET_CONFIG_DIR: dir, DOCKET_STATE_DIR: dir } as any);
+  const r = buildHandoff(
+    { status: "ready", local_path: "/repo", updated_at: "t" },
+    { orgs: [], repos: {} },
+    p,
+    "acme/demo#7",
+    [denialGroup({ suggestion: "Bash(rg:*)", alreadyAllowed: true })],
+    "group",
+  );
+  expect((r as { argv: string[] }).argv[1]).not.toContain(
+    "already in the allowlist",
+  );
+});
+
+test("a group the classifier now calls write-shaped is handed off as one", () => {
+  // the entry was written before npx joined the blocklist; the prompt must
+  // not tell claude this one is a plain apply
+  const dir = mkdtempSync(join(tmpdir(), "docket-handoff-"));
+  const p = paths({ DOCKET_CONFIG_DIR: dir, DOCKET_STATE_DIR: dir } as any);
+  const r = buildHandoff(
+    { status: "ready", local_path: "/repo", updated_at: "t" },
+    { orgs: [], repos: {} },
+    p,
+    "acme/demo#7",
+    [denialGroup({ suggestion: "Bash(npx:*)", writeShaped: false })],
+    "group",
+  );
+  expect((r as { argv: string[] }).argv[1]).toContain("not a one-key apply");
+});

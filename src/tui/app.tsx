@@ -3,8 +3,8 @@ import { readFileSync, renameSync, watch, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { readAssessment } from "../assessment";
-import { runLogPath, type Config, type Paths } from "../config";
-import { applySuggestion, isAllowed } from "../denials";
+import { readConfigSync, runLogPath, type Config, type Paths } from "../config";
+import { applySuggestion, isAllowed, isWriteShaped } from "../denials";
 import { clampGroup, denialLines } from "../denialview";
 import {
   buildHandoff,
@@ -99,9 +99,15 @@ export function App({
   const [view, setView] = useState<"queue" | "help" | "denials">("queue");
   const [status, setStatus] = useState<string | undefined>();
   const [rawDenialCursor, setDenialCursor] = useState(0);
-  // `cfg` is the startup snapshot; an apply writes config.json underneath it,
-  // so the denials view — the one place freshness matters — reads this instead.
-  const [liveCfg, setLiveCfg] = useState(cfg);
+  // `cfg` is the startup snapshot, and every suspend verb remounts App with it
+  // — seeding from it would drop the rules `a` wrote before the suspend. Read
+  // the file instead; the prop is only the fallback.
+  const [liveCfg, setLiveCfg] = useState(() =>
+    readConfigSync(paths.configPath, cfg),
+  );
+  // What `a` wrote while this view has been up. The config re-check alone would
+  // render a just-applied rule as one that exists and didn't match.
+  const [applied, setApplied] = useState<ReadonlySet<string>>(() => new Set());
 
   // saveState renames a temp file over state.json, which breaks a watch bound
   // to the file's inode — watch the directory instead.
@@ -211,11 +217,12 @@ export function App({
       denialLines({
         groups: denials ?? [],
         cfg: liveCfg,
+        applied,
         selected: denialCursor,
         width: width - 2,
         height: Math.max(1, height - 4 - (footer ? 1 : 0)),
       }),
-    [denials, liveCfg, denialCursor, width, height, footer],
+    [denials, liveCfg, applied, denialCursor, width, height, footer],
   );
 
   const move = (delta: number) => {
@@ -264,8 +271,9 @@ export function App({
         const group = denials?.[denialCursor];
         if (!group) return;
         // Rails enforced here, not just displayed: a write-shaped suggestion or
-        // one already in the live allowlist gets no one-key apply.
-        if (group.writeShaped)
+        // one already in the live allowlist gets no one-key apply. The flag on
+        // the group froze when the run ended, so the classifier gets a say too.
+        if (isWriteShaped(group.suggestion) || group.writeShaped)
           return setStatus(
             `${group.suggestion}: conflicts with docket's read-only stance`,
           );
@@ -280,6 +288,7 @@ export function App({
           writeFileSync(tmp, updated);
           renameSync(tmp, paths.configPath);
           setLiveCfg(JSON.parse(updated) as Config);
+          setApplied((held) => new Set(held).add(group.suggestion));
           setStatus(`applied ${group.suggestion}`);
         } catch (e) {
           setStatus(`apply ${group.suggestion} failed: ${e}`);

@@ -210,8 +210,76 @@ test("apply writes the group under the cursor, and rails block a write-shaped on
   await Bun.sleep(20);
   config = JSON.parse(readFileSync(ui.paths.configPath, "utf8"));
   expect(config.extra_allowed_tools).toEqual(["Bash(rg:*)"]);
-  // the view reflects the write immediately, without restarting the TUI
-  expect(ui.lastFrame()).toContain("rule exists but didn't match");
+  // the view reflects the write immediately, without restarting the TUI — and
+  // says the rule landed, not that adding it again would fix nothing
+  expect(ui.lastFrame()).toContain("applied — takes effect next run");
+  expect(ui.lastFrame()).not.toContain("rule exists but didn't match");
+  ui.unmount();
+});
+
+test("apply reads the config off disk, not the snapshot the TUI started with", async () => {
+  // every suspend verb remounts App with the startup cfg prop; a rule applied
+  // before the suspend would otherwise be offered for applying all over again
+  const ui = mount(
+    {
+      "acme/two#2": entry({
+        title: "Two",
+        updated_at: "2026-01-02T00:00:00Z",
+        denials: [
+          {
+            tool: "Bash",
+            suggestion: "Bash(rg:*)",
+            count: 2,
+            examples: ["rg TODO src"],
+            writeShaped: false,
+            alreadyAllowed: false,
+          },
+        ],
+      }),
+    },
+    false,
+    JSON.stringify({ ...cfg, extra_allowed_tools: ["Bash(rg:*)"] }),
+  );
+  await Bun.sleep(20);
+  ui.stdin.write("D");
+  await Bun.sleep(20);
+  ui.stdin.write("a");
+  await Bun.sleep(20);
+  expect(ui.lastFrame()).toContain("rule already exists");
+  expect(
+    JSON.parse(readFileSync(ui.paths.configPath, "utf8")).extra_allowed_tools,
+  ).toEqual(["Bash(rg:*)"]);
+  ui.unmount();
+});
+
+test("the apply rail holds for a suggestion the classifier now calls write-shaped", async () => {
+  // the flag on the entry froze when the run ended, before npx was blocklisted
+  const ui = mount({
+    "acme/two#2": entry({
+      title: "Two",
+      updated_at: "2026-01-02T00:00:00Z",
+      denials: [
+        {
+          tool: "Bash",
+          suggestion: "Bash(npx:*)",
+          count: 1,
+          examples: ["npx prettier --write ."],
+          writeShaped: false,
+          alreadyAllowed: false,
+        },
+      ],
+    }),
+  });
+  await Bun.sleep(20);
+  ui.stdin.write("D");
+  await Bun.sleep(20);
+  ui.stdin.write("a");
+  await Bun.sleep(20);
+  expect(ui.lastFrame()).toContain("read-only stance");
+  expect(
+    JSON.parse(readFileSync(ui.paths.configPath, "utf8")).extra_allowed_tools ??
+      [],
+  ).toEqual([]);
   ui.unmount();
 });
 

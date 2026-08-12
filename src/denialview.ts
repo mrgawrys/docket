@@ -19,6 +19,10 @@ export interface DenialViewInput {
   // Re-checked against here rather than trusting `alreadyAllowed`: the flag was
   // frozen when the run finished, and an apply since then has made it a lie.
   cfg: Config;
+  // Suggestions `a` wrote during this view's life. The config re-check above
+  // cannot tell an apply that just landed from a rule that was there all along
+  // and missed — only the caller who pressed the key knows which.
+  applied?: ReadonlySet<string>;
   selected: number;
   width: number;
   height?: number;
@@ -36,6 +40,7 @@ const INDENT = "    ";
 function groupLines(
   group: DenialGroup,
   cfg: Config,
+  applied: ReadonlySet<string> | undefined,
   selected: boolean,
   width: number,
 ): PanelLine[] {
@@ -54,7 +59,9 @@ function groupLines(
       { color: "yellow" },
     );
   }
-  if (isAllowed(group.suggestion, cfg)) {
+  if (applied?.has(group.suggestion)) {
+    detail("applied — takes effect next run", { color: "green" });
+  } else if (isAllowed(group.suggestion, cfg)) {
     detail("rule exists but didn't match", { color: "yellow" });
   }
   for (const example of group.examples) detail(example, { dim: true });
@@ -66,6 +73,7 @@ function groupLines(
 export function denialLines({
   groups,
   cfg,
+  applied,
   selected,
   width,
   height,
@@ -73,7 +81,9 @@ export function denialLines({
   if (!groups.length)
     return [{ text: "no denials recorded for this review", dim: true }];
   const cursor = clampGroup(selected, groups.length);
-  const blocks = groups.map((g, i) => groupLines(g, cfg, i === cursor, width));
+  const blocks = groups.map((g, i) =>
+    groupLines(g, cfg, applied, i === cursor, width),
+  );
   const lines = blocks.flat();
   if (!height || lines.length <= height) return lines;
   // Scroll by whole blocks: show the selected group's head, and as much of the

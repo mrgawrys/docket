@@ -7,7 +7,7 @@ import {
   type Config,
   type Paths,
 } from "./config";
-import type { DenialGroup } from "./denials";
+import { isAllowed, isWriteShaped, type DenialGroup } from "./denials";
 import { handoffPrompt, type HandoffScope } from "./handoff";
 import { cleanupEntry, type Ctx } from "./reviewer";
 import {
@@ -67,7 +67,14 @@ export function buildHandoff(
   const logPath = runLogPath(paths, key);
   const prompt = handoffPrompt({
     key,
-    groups,
+    // Both flags were frozen when the run finished. The prompt states its own
+    // "current extra_allowed_tools" a few lines further down, so a stale
+    // already-allowed would hand claude two contradictory facts.
+    groups: groups.map((g) => ({
+      ...g,
+      writeShaped: isWriteShaped(g.suggestion) || g.writeShaped,
+      alreadyAllowed: isAllowed(g.suggestion, cfg),
+    })),
     scope,
     configPath: paths.configPath,
     extraAllowedTools: cfg.extra_allowed_tools ?? [],
