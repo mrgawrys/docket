@@ -95,11 +95,9 @@ screen: `enter` is how a review actually gets read.
 
 ```
 j/k ↑/↓  move          enter  claude       s  shell      d  diff
-D  denials             a  apply (denials view)
-h  hand off group to claude (denials view)
-H  hand off batch to claude (denials view)
-w  watch live          r  retry            x  dismiss    K  kill
-p  poll                S  sync             ?  help       q  quit
+D  denials             w  watch live       r  retry      x  dismiss
+K  kill                p  poll             S  sync
+?  help                q  quit
 ```
 
 `enter` resumes the Claude session where the review ran, with full context —
@@ -129,32 +127,48 @@ denied and the run carries on without whatever it asked for. Those denials are
 read back off the run log when the review ends — for failed runs as much as
 finished ones — and kept with the entry.
 
-A `⊘ 5` chip on a row is how many calls that run had denied. `D` opens the
-denials view: one block per allowlist entry that would have covered them, how
-many calls each covers, and up to three of the commands turned away.
+A `⊘ 5` chip on a row is how many calls that run had denied, and the panel
+under the queue summarises them: the three biggest groups, and how many more
+there are. `D` opens the denials view — one row per allowlist entry that would
+have covered them, how many calls each covers, and up to three of the commands
+turned away.
 
-`a` adds the selected suggestion to
+```
+─ denials: acme/docket#6 ──────────────────── 5 rules, 6 blocked calls ─
+ Bash(rg:*)             ×2
+     rg -n 'TODO' src/
+ Bash(gh pr comment:*)  ×1    ⚠ write-shaped
+     gh pr comment 6 --body 'nit'
+ Bash(gh pr diff:*)     ×1    ✓ already in your config
+
+ ⏎  hand all of this to claude
+ a  add the 1 safe rule to your config (4 skipped: 3 write-shaped, 1 already there)
+ esc back to the queue · j/k scroll
+```
+
+`a` adds every safe rule at once to
 [`extra_allowed_tools`](docs/configuration.md#extra_allowed_tools), so the next
-review has it. Two kinds of group never get that one keypress:
+review has them. Two kinds of group are always left out, and the line says how
+many of each:
 
 - **write-shaped** ones — `git push`, most `gh` verbs, `rm`, an interpreter or
-  command runner like `sh`, `python` or `npx` — read "conflicts with docket's
-  read-only stance — add manually or hand to claude". Allowing them wholesale
-  gives up the guarantee that an unattended review changes nothing, so they
-  stay a deliberate edit.
-- ones **already in the allowlist** read "rule exists but didn't match": the
-  call was denied anyway — a `*` in the middle of a pattern, a prefix the call
-  never matched — so adding the same rule again fixes nothing.
+  command runner like `sh`, `python` or `npx`. Allowing them wholesale gives up
+  the guarantee that an unattended review changes nothing, so they stay a
+  deliberate edit.
+- ones **already in your config**: the call was denied anyway — a `*` in the
+  middle of a pattern, a prefix the call never matched — so adding the same
+  rule again fixes nothing.
 
-A group you just applied reads "applied — takes effect next run": the rule is
-in the config, and the review it came from is over.
+Once a rule has landed the block says so and offers `r`, which re-runs that
+review — the one the view was opened on, whatever the queue cursor has moved to
+since.
 
-`h` hands the selected group to an interactive claude session, `H` the whole
-batch. It starts in the repo's local clone (so the key needs one) and carries
-the groups, your config path, the effective allowlist and the run log. The
-standing order is research only: propose options, change nothing. The session
-runs in claude's default permission mode, so anything it does want to change
-prompts you, not docket.
+`⏎` hands the whole set to an interactive claude session for what the
+mechanical add can't settle. It starts in the repo's local clone (so the key
+needs one) and carries the groups, your config path, the effective allowlist
+and the run log. The standing order is research only: propose options, change
+nothing. The session runs in claude's default permission mode, so anything it
+does want to change prompts you, not docket.
 
 ## Configuration
 
