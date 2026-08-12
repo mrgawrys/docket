@@ -41,7 +41,12 @@ You'll also need:
 
 ## Quickstart
 
-1. **`docket doctor`** — the first run writes a starter config and stops.
+1. **`docket`** — with no config yet it offers to set one up: a few questions
+   right there in the terminal, or a claude-guided session that does the
+   discovery for you. Either way it ends on doctor's ✓/✗ list, and the command
+   you asked for carries on. Steps 2 and 3 are the by-hand route (which is
+   what `docket doctor` leaves you, and what the poller gets when nobody is
+   there to ask).
 2. **Edit `~/.config/docket/config.json`.** Two keys are required:
 
    ```json

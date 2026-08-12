@@ -91,7 +91,31 @@ export function paths(env: NodeJS.ProcessEnv = process.env): Paths {
   };
 }
 
-export class ConfigError extends Error {}
+export class ConfigError extends Error {
+  // True only when there is no config file at all — the one config error the
+  // first-run wizard is an answer to. A typed marker, because matching on the
+  // message would break the first time the wording changes.
+  readonly noConfig: boolean;
+  constructor(message: string, noConfig = false) {
+    super(message);
+    this.noConfig = noConfig;
+  }
+}
+
+// What a run with no config does when there is nobody to ask: leave an
+// editable starter config rather than a pointer to a file the user may not
+// have checked out. Returns the message to report. Only ever called on a
+// config that is genuinely absent — it overwrites whatever is there.
+export async function seedExampleConfig(p: Paths): Promise<string> {
+  try {
+    mkdirSync(p.configDir, { recursive: true });
+    await Bun.write(p.configPath, EXAMPLE_TEXT);
+  } catch {
+    // unwritable config dir — fall back to telling them where it goes
+    return `no config at ${p.configPath} and it could not be written there — create it with "orgs" (array) and "repos" (object), or point DOCKET_CONFIG_DIR at a writable directory`;
+  }
+  return `no config yet — wrote a starter one to ${p.configPath}; fill in "orgs" and "repos", then run: docket doctor`;
+}
 
 // docket was called auto-review, and kept both directories under that name.
 // Copy them over on the first run that finds them, leaving the originals in
@@ -138,21 +162,9 @@ export async function loadConfig(p: Paths = paths()): Promise<Config> {
   migrateLegacyDirs(p);
   const file = Bun.file(p.configPath);
   if (!(await file.exists())) {
-    // Nothing to inherit and nothing to read: leave the user an editable
-    // config rather than a pointer to a file they may not have checked out.
-    let seeded = false;
-    try {
-      mkdirSync(p.configDir, { recursive: true });
-      await Bun.write(p.configPath, EXAMPLE_TEXT);
-      seeded = true;
-    } catch {
-      // unwritable config dir — fall back to telling them where it goes
-    }
-    throw new ConfigError(
-      seeded
-        ? `no config yet — wrote a starter one to ${p.configPath}; fill in "orgs" and "repos", then run: docket doctor`
-        : `no config at ${p.configPath} and it could not be written there — create it with "orgs" (array) and "repos" (object), or point DOCKET_CONFIG_DIR at a writable directory`,
-    );
+    // Nothing written here: a first run on a terminal gets the wizard offered
+    // before anything lands on disk, and its callers seed when it doesn't.
+    throw new ConfigError(`no config at ${p.configPath}`, true);
   }
   let cfg: Config;
   try {

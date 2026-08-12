@@ -23,6 +23,7 @@ import {
   notifyEnabled,
   paths,
   placeholderEntries,
+  seedExampleConfig,
 } from "../src/config";
 
 test("paths: env overrides beat XDG beats HOME defaults", () => {
@@ -80,11 +81,15 @@ const freshPaths = (prefix: string) => {
   } as NodeJS.ProcessEnv);
 };
 
-test("loadConfig: no config anywhere seeds an editable one and says to fill it in", async () => {
+test("loadConfig: no config anywhere is a marked error, and seeding leaves an editable one", async () => {
   const p = freshPaths("dk-seed-");
   const err = await loadConfig(p).catch((e) => e);
   expect(err).toBeInstanceOf(ConfigError);
-  expect(err.message).toMatch(/fill in/);
+  // the marker the first-run trigger reads; loading itself writes nothing, so
+  // a terminal gets the wizard offered before anything lands on disk
+  expect(err.noConfig).toBe(true);
+  expect(existsSync(p.configPath)).toBe(false);
+  expect(await seedExampleConfig(p)).toMatch(/fill in/);
   const seeded = JSON.parse(readFileSync(p.configPath, "utf8"));
   expect(seeded.orgs.length).toBeGreaterThan(0);
   expect(seeded.openers.diff.length).toBeGreaterThan(0);
@@ -171,7 +176,7 @@ test("loadConfig: migration inherits no lock, and the log arrives under the new 
 
 test("placeholderEntries: the untouched starter config is not a working config", async () => {
   const p = freshPaths("dk-ph-");
-  await loadConfig(p).catch(() => {}); // seeds the starter
+  await seedExampleConfig(p);
   const seeded = JSON.parse(readFileSync(p.configPath, "utf8"));
   expect(placeholderEntries(seeded).length).toBeGreaterThan(0);
   expect(
@@ -205,6 +210,9 @@ test("loadConfig: parses a valid config; rejects one without orgs/repos", async 
   expect(cfg.orgs).toEqual(["o"]);
   writeFileSync(join(dir, "config.json"), JSON.stringify({ hello: 1 }));
   await expect(loadConfig(p)).rejects.toThrow(ConfigError);
+  // a file that exists and is wrong is the user's own — nothing may seed over
+  // it, so it must not carry the no-config marker
+  expect((await loadConfig(p).catch((e) => e)).noConfig).toBe(false);
 });
 
 test("binary + notification resolution", () => {

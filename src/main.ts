@@ -1,11 +1,6 @@
 #!/usr/bin/env bun
 
-import {
-  ConfigError,
-  ghBin,
-  loadConfig,
-  paths as resolvePaths,
-} from "./config";
+import { ghBin, paths as resolvePaths } from "./config";
 import { doctorCommand } from "./doctor";
 import { ghAccountToken, prView } from "./github";
 import { makeLogger } from "./log";
@@ -31,6 +26,7 @@ import { logCommand, statusCommand, watchCommand } from "./status";
 import { reconcile } from "./sync";
 import { runTui } from "./tui/app";
 import { childOwnsTerminal } from "./tui/suspend";
+import { resolveConfig } from "./wizard/trigger";
 
 const USAGE = `docket — pre-run Claude Code reviews for PRs awaiting you
 
@@ -56,16 +52,12 @@ type Command = (args: string[]) => Promise<number>;
 
 async function withCtx(fn: (ctx: Ctx) => Promise<number>): Promise<number> {
   const paths = resolvePaths();
-  let cfg;
-  try {
-    cfg = await loadConfig(paths);
-  } catch (e) {
-    if (e instanceof ConfigError) {
-      console.error(e.message);
-      return 1;
-    }
-    throw e;
-  }
+  // Both streams, because the wizard both asks and prints: the launchd poller
+  // has neither, and must never end up waiting on a prompt nobody can answer.
+  const interactive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
+  const found = await resolveConfig(paths, interactive);
+  if ("code" in found) return found.code;
+  const cfg = found.cfg;
   ensureState(paths.statePath);
   const log = makeLogger(paths.logPath);
   let ghEnv = process.env as Record<string, string>;
