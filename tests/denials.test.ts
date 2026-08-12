@@ -183,6 +183,12 @@ test("write-shaped suggestions are flagged, so nothing offers a one-key apply", 
     ...deniedBash("t10", "sed -i '' s/a/b/ notes.md"),
     ...deniedBash("t11", "xargs rm < paths.txt"),
     ...deniedBash("t12", "git submodule update --init"),
+    // a command runner fetches and executes whatever it is pointed at, and a
+    // package installer writes wherever the environment lives
+    ...deniedBash("t13", "npx prettier --write ."),
+    ...deniedBash("t14", "bunx tsc --noEmit"),
+    ...deniedBash("t15", "pip3 install requests"),
+    ...deniedBash("t16", "rsync -a src/ /tmp/dest/"),
     used("t6", "Edit", { file_path: "/Users/me/wt/src/x.ts" }),
     denied("t6", "Edit"),
   );
@@ -204,6 +210,10 @@ test("write-shaped suggestions are flagged, so nothing offers a one-key apply", 
     "Bash(xargs:*)": true,
     // `git submodule update` writes to the working tree
     "Bash(git submodule:*)": true,
+    "Bash(npx:*)": true,
+    "Bash(bunx:*)": true,
+    "Bash(pip3:*)": true,
+    "Bash(rsync:*)": true,
   });
 });
 
@@ -264,6 +274,34 @@ test("a rule comes from the first real statement of a multi-line command", () =>
   expect(group?.examples).toEqual([
     '# probe what the ignore rules do W=/Users/me/wt git -C $W show --stat 070e8b5 2>&1 | grep -i "docs/"',
   ]);
+});
+
+test("a statement that carries its own environment still names its command", () => {
+  // `GH_PAGER=cat gh pr view 123` is one statement and one denial; naming the
+  // variable instead drops it from the chip and the view entirely.
+  const [group] = denialGroups(
+    log(...deniedBash("t1", "GH_PAGER=cat gh pr view 123")),
+    cfg(),
+  );
+  expect(group?.suggestion).toBe("Bash(gh pr view:*)");
+});
+
+test("several env assignments in front of a command are all stripped", () => {
+  const [group] = denialGroups(
+    log(...deniedBash("t1", "NO_COLOR=1 GIT_PAGER='less -R' rg --files")),
+    cfg(),
+  );
+  expect(group?.suggestion).toBe("Bash(rg:*)");
+});
+
+test("a bare assignment is still a prelude, not a command", () => {
+  // stripping env prefixes must not turn `W=/path` into a nameless statement
+  // the fallback then picks: the real command is on the next line
+  const [group] = denialGroups(
+    log(...deniedBash("t1", "W=/Users/me/wt\nrg --files $W")),
+    cfg(),
+  );
+  expect(group?.suggestion).toBe("Bash(rg:*)");
 });
 
 test("a backslash-continued line is one statement, not a command called `\\`", () => {

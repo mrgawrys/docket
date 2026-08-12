@@ -105,6 +105,10 @@ export function parseDenials(logText: string): DeniedCall[] {
 const SEPARATORS = /\s*(?:&&|\|\||[;|])\s*/;
 // Setup the real command hides behind: `cd <worktree> &&`, `W=<path>;`.
 const PRELUDE = /^(?:cd\s|\w+=)/;
+// A statement can carry its own environment — `GH_PAGER=cat gh pr view 1`.
+// Only assignments the command follows are stripped, so a statement that is
+// nothing but an assignment stays one and PRELUDE still skips it.
+const ENV_PREFIX = /^(?:\w+=(?:'[^']*'|"[^"]*"|\S*)\s+)+/;
 // A word that can still be part of the rule; a flag, path or argument ends it.
 const RULE_WORD = /^[a-z][a-z0-9-]*$/i;
 // What a program can be called. Reviews also run things no allowlist prefix
@@ -148,7 +152,7 @@ function bashSuggestion(command: string): string | undefined {
     .map((l) => l.trim())
     .filter((l) => l && !l.startsWith("#"))
     .flatMap((l) => l.split(SEPARATORS))
-    .map((s) => s.trim())
+    .map((s) => s.trim().replace(ENV_PREFIX, ""))
     .filter(Boolean);
   const statement = statements.find((s) => !PRELUDE.test(s)) ?? statements[0];
   const [name, ...rest] = statement?.split(/\s+/) ?? [];
@@ -189,12 +193,13 @@ const WRITE_SHAPED: RegExp[] = [
   // posting, whatever path it names
   /^gh (?!pr (?:view|diff|checks|list)\b|issue (?:view|list)\b|repo view\b|search\b|auth status\b)/,
   // a bare multiplexer drags its write subcommands in with it
-  /^(?:git|gh|npm|pnpm|yarn|bun|pip|brew|docker)$/,
-  /^(?:rm|rmdir|mv|cp|mkdir|touch|chmod|chown|ln|dd|tee|truncate|kill|killall|curl|wget|npm|pnpm|yarn|bun|pip|brew|docker|make)\b/,
+  /^(?:git|gh|npm|pnpm|yarn|bun|pip3?|brew|docker)$/,
+  /^(?:rm|rmdir|mv|cp|mkdir|touch|chmod|chown|ln|dd|tee|truncate|kill|killall|curl|wget|rsync|npm|pnpm|yarn|bun|pip3?|brew|docker|make)\b/,
   // An interpreter, an in-place editor or a command-builder is a write tool
   // wearing a read tool's name — `Bash(sh:*)` grants everything `Bash(rm:*)`
   // does, and every pattern here is anchored, so `xargs rm` would slip past.
-  /^(?:sh|bash|zsh|fish|python3?|node|deno|ruby|perl|osascript|sudo|env|eval|xargs|sed|awk|find|tee)\b/,
+  // npx/bunx belong here too: they fetch a package and run it.
+  /^(?:sh|bash|zsh|fish|python3?|node|deno|ruby|perl|osascript|sudo|env|eval|xargs|sed|awk|find|tee|npx|bunx)\b/,
 ];
 
 // "Bash(git push:*)" -> "git push"; any other suggestion is a bare tool name.
