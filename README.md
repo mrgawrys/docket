@@ -129,9 +129,13 @@ finished ones — and kept with the entry.
 
 A `⊘ 5` chip on a row is how many calls that run had denied, and the panel
 under the queue summarises them: the three biggest groups, and how many more
-there are. `D` opens the denials view — one row per allowlist entry that would
-have covered them, how many calls each covers, and up to three of the commands
-turned away.
+there are.
+
+A run that failed left no session for `enter` to resume, so on that row `enter`
+hands the denials to Claude instead — the panel says which it will do. `D` opens
+the denials view whenever you'd rather read them first: one row per allowlist
+entry that would have covered them, how many calls each covers, and up to three
+of the commands turned away.
 
 ```
 ─ denials: acme/docket#6 ──────────────────── 5 rules, 6 blocked calls ─

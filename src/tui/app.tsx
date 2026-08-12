@@ -10,7 +10,7 @@ import {
   type Config,
   type Paths,
 } from "../config";
-import { applySuggestion } from "../denials";
+import { applySuggestion, type DenialGroup } from "../denials";
 import { addable, denialTitle, denialView, TEASER_HEIGHT } from "../denialview";
 import {
   buildHandoff,
@@ -27,7 +27,7 @@ import {
 } from "../openers";
 import { selfArgs } from "../proc";
 import type { Ctx } from "../reviewer";
-import { loadState, pendingEntries } from "../state";
+import { type Entry, loadState, pendingEntries } from "../state";
 import { PANEL_HEIGHT, panelLines } from "../panel";
 import { Help, Legend } from "./legend";
 import { Panel } from "./panel";
@@ -155,13 +155,24 @@ export function App({
     [current, summary, paths],
   );
 
+  // A failed run has no session to resume, which is exactly where the denials
+  // are: enter was dead on the one row that most needed it. There it resolves
+  // them instead.
+  const enterResolves = useMemo(() => {
+    if (!current?.entry.denials?.length || !current.entry.local_path)
+      return false;
+    return "error" in buildResume(current.entry, cfg);
+  }, [current, cfg]);
+
   // Computed per row, never per keypress: a verb the machine cannot run is
   // greyed in the legend with its reason in the preview, not a dead key.
   const unavailable = useMemo(() => {
     const u: Record<string, string> = {};
     if (!current) return u;
     const resume = buildResume(current.entry, cfg);
-    if ("error" in resume) u.claude = resume.error;
+    // Not greyed when enter resolves: it still opens claude, just on the
+    // denials rather than on a session that was never written.
+    if ("error" in resume && !enterResolves) u.claude = resume.error;
     const wt = resolveWorktree(current.entry);
     for (const verb of ["shell", "diff"]) {
       if (!resolved[verb]) u[verb] = `no ${verb} opener found on PATH`;
@@ -174,7 +185,7 @@ export function App({
       u.handoff = "no denials recorded";
     }
     return u;
-  }, [current, cfg, resolved]);
+  }, [current, cfg, resolved, enterResolves]);
 
   const notes = useMemo(() => {
     const byReason = new Map<string, string[]>();
@@ -215,10 +226,20 @@ export function App({
         notes,
         denials,
         cfg: liveCfg,
+        enterResolves,
         width: width - 2,
         height: panelHeight,
       }),
-    [summary, assessment, notes, denials, liveCfg, width, panelHeight],
+    [
+      summary,
+      assessment,
+      notes,
+      denials,
+      liveCfg,
+      enterResolves,
+      width,
+      panelHeight,
+    ],
   );
 
   // The view reads the PR D was pressed on, not whatever the queue cursor has
@@ -251,6 +272,19 @@ export function App({
       .then(() => setStatus(undefined))
       .catch((e: unknown) => setStatus(`${label} failed: ${e}`))
       .finally(() => setRows(load()));
+  };
+
+  // Reached from the queue and from the denials view, on the same terms.
+  const handOff = (key: string, entry: Entry, groups: DenialGroup[]) => {
+    const r = buildHandoff(entry, liveCfg, paths, key, groups);
+    if ("error" in r) return setStatus(`hand off: ${r.error}`);
+    request({
+      ...r,
+      banner: `hand off: ${key}`,
+      // an interactive claude session's exit status is whatever the user last
+      // ran in it, not a verdict on the hand-off
+      interactive: true,
+    });
   };
 
   const open = (verb: "shell" | "diff") => {
@@ -306,22 +340,7 @@ export function App({
       }
       if (key.return) {
         if (!denialRow) return;
-        const r = buildHandoff(
-          denialRow.entry,
-          liveCfg,
-          paths,
-          denialRow.key,
-          viewGroups,
-        );
-        if ("error" in r) return setStatus(`hand off: ${r.error}`);
-        request({
-          ...r,
-          banner: `hand off: ${denialRow.key}`,
-          // an interactive claude session's exit status is whatever the user
-          // last ran in it, not a verdict on the hand-off
-          interactive: true,
-        });
-        return;
+        return handOff(denialRow.key, denialRow.entry, viewGroups);
       }
       return;
     }
@@ -335,6 +354,10 @@ export function App({
     if (input === "S") return run("syncing", actions.sync);
     if (!current) return;
     if (key.return) {
+      // enter opens claude either way: the review's own session when there is
+      // one, and otherwise the denials of a run that failed before it made one.
+      if (enterResolves)
+        return handOff(current.key, current.entry, current.entry.denials ?? []);
       const r = buildResume(current.entry, cfg);
       if ("error" in r) return setStatus(`${current.key} ${r.error}`);
       request({

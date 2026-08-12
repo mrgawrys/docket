@@ -91,6 +91,9 @@ export interface TeaserInput {
   cfg: Config;
   width: number;
   height?: number;
+  // Whether enter on this row resolves the denials rather than resuming a
+  // session. The teaser names the key that acts, so it has to know which.
+  enterResolves?: boolean;
 }
 
 // The denials section of the queue's detail panel — the only place this
@@ -100,6 +103,7 @@ export function denialTeaser({
   cfg,
   width,
   height = TEASER_HEIGHT,
+  enterResolves = false,
 }: TeaserInput): PanelLine[] {
   if (!groups.length || height < 2) return [];
   const total = calls(groups);
@@ -112,14 +116,22 @@ export function denialTeaser({
     Math.max(0, Math.min(TEASER_GROUPS, height - 2)),
   );
   const rest = groups.length - shown.length;
-  const tail = rest
-    ? `+ ${rest} more · D works through them`
-    : "D works through them";
+  const more = rest ? `+ ${rest} more · ` : "";
+  // When enter resolves, this is the call to action rather than a footnote:
+  // it names the key first and stays undimmed, because it is the one line
+  // that has to be read from across the panel.
+  const tail = enterResolves
+    ? `${more}⏎ resolves these with claude · D lists them first`
+    : `${more}D works through them`;
   const pad = widest(shown);
   return [
     ...wrapText(head, width).map((text) => ({ text })),
     ...shown.flatMap((g) => groupRow(g, cfg, "  ", pad, width)),
-    ...wrapText(tail, width).map((text) => ({ text, dim: true })),
+    ...wrapText(tail, width).map((text) => ({
+      text,
+      color: enterResolves ? "cyan" : undefined,
+      dim: !enterResolves,
+    })),
   ];
 }
 

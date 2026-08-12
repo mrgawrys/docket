@@ -62,6 +62,8 @@ export interface PanelInput {
   // of the detail rather than waiting behind a key nobody knows about.
   denials?: DenialGroup[];
   cfg?: Config;
+  // Passed to the teaser: whether enter on this row resolves the denials.
+  enterResolves?: boolean;
   width: number;
   height?: number;
 }
@@ -72,6 +74,7 @@ export function panelLines({
   notes,
   denials,
   cfg,
+  enterResolves,
   width,
   height = PANEL_HEIGHT,
 }: PanelInput): PanelLine[] {
@@ -84,6 +87,7 @@ export function panelLines({
     const teaser = denialTeaser({
       groups: denials,
       cfg,
+      enterResolves,
       width,
       height: Math.min(TEASER_HEIGHT, height - out.length - 2),
     });

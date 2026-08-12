@@ -16,8 +16,9 @@ import { setStatus, type Entry, type State } from "../src/state";
 import { App, type TuiActions } from "../src/tui/app";
 import type { SuspendRequest } from "../src/tui/suspend";
 
-// Only three component tests, deliberately — see "TUI tests stay thin" in
-// CLAUDE.md. Everything else about the UI is verified by running the binary.
+// Few component tests, deliberately — see "TUI tests stay thin" in CLAUDE.md.
+// Each one here guards a wrong wiring that costs work or money silently, or a
+// fallback path. Everything else about the UI is verified by running it.
 
 const cfg: Config = { orgs: [], repos: {} };
 const resolved = resolveOpeners(
@@ -322,6 +323,55 @@ test("adding writes through a symlinked config instead of replacing the link", a
   expect(JSON.parse(readFileSync(real, "utf8")).extra_allowed_tools).toEqual([
     "Bash(rg:*)",
   ]);
+  ui.unmount();
+});
+
+// The fallback CLAUDE.md asks for a test on: enter means two different things
+// depending on the row, and getting it backwards either hijacks resume or
+// leaves the dead key that started this redesign.
+test("enter resolves denials only when there is no session to resume", async () => {
+  const denials = [
+    {
+      tool: "Bash",
+      suggestion: "Bash(rg:*)",
+      count: 2,
+      examples: ["rg TODO src"],
+      writeShaped: false,
+      alreadyAllowed: false,
+    },
+  ];
+  const ui = mount({
+    // a session and denials: enter belongs to the session
+    "acme/one#1": entry({
+      title: "One",
+      local_path: "/repo",
+      updated_at: "2026-01-01T00:00:00Z",
+      denials,
+    }),
+    // the failed run that has no session to resume
+    "acme/two#2": entry({
+      status: "failed",
+      session_id: undefined,
+      title: "Two",
+      local_path: "/repo",
+      updated_at: "2026-01-02T00:00:00Z",
+      denials,
+    }),
+  });
+  await Bun.sleep(20);
+  ui.stdin.write("\r");
+  await Bun.sleep(20);
+  expect(ui.requests[0]?.banner).toContain("resuming acme/one#1");
+
+  ui.stdin.write("j");
+  await Bun.sleep(20);
+  // the panel says what enter will do before it is pressed
+  expect(ui.lastFrame()).toContain("⏎ resolves these with claude");
+  ui.stdin.write("\r");
+  await Bun.sleep(20);
+  expect(ui.requests).toHaveLength(2);
+  expect(ui.requests[1]?.banner).toContain("hand off: acme/two#2");
+  expect(ui.requests[1]?.argv[1]).toContain("Bash(rg:*)");
   ui.unmount();
 });
 

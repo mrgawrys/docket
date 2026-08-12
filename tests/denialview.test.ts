@@ -108,6 +108,20 @@ test("a teaser showing every group names the key without a remainder", () => {
   expect(lines[2]).toBe("D works through them");
 });
 
+test("the teaser names enter when enter is what resolves the denials", () => {
+  const lines = denialTeaser({
+    groups: [group()],
+    cfg,
+    width: 100,
+    enterResolves: true,
+  });
+  const tail = lines[lines.length - 1];
+  expect(tail?.text).toBe("⏎ resolves these with claude · D lists them first");
+  // the call to action, not a footnote: dimming it is what buried the last one
+  expect(tail?.dim).toBe(false);
+  expect(tail?.color).toBe("cyan");
+});
+
 test("a short teaser drops groups rather than the line naming the key", () => {
   const groups = ["A", "B", "C"].map((s) => group({ suggestion: s }));
   const lines = texts(denialTeaser({ groups, cfg, width: 100, height: 3 }));
