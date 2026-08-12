@@ -81,7 +81,12 @@ test("a finished review records its triage summary on the entry", async () => {
       "```",
   });
   expect(r.code).toBe(0);
-  const e = await sb.waitEntry("testorg/demo#7", (x) => x.status === "ready");
+  // the runner writes the status first and patches the summary on afterwards,
+  // so waiting on status alone races the second write
+  const e = await sb.waitEntry(
+    "testorg/demo#7",
+    (x) => x.status === "ready" && x.summary,
+  );
   expect(e.summary).toEqual({
     headline: "choice questions render as Text",
     issues: 1,
@@ -105,7 +110,11 @@ test("a finished review with a denial records the grouped denial on the entry", 
   sb.gitInitDemo();
   const r = sb.run(["review", "testorg/demo#7"], { CLAUDE_EMIT_DENIAL: "1" });
   expect(r.code).toBe(0);
-  const e = await sb.waitEntry("testorg/demo#7", (x) => x.status === "ready");
+  // denials are patched on after the status write — wait for both
+  const e = await sb.waitEntry(
+    "testorg/demo#7",
+    (x) => x.status === "ready" && x.denials,
+  );
   expect(e.denials).toEqual([
     expect.objectContaining({ suggestion: "Bash(rg:*)", count: 1 }),
   ]);
