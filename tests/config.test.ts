@@ -25,6 +25,7 @@ import {
   placeholderEntries,
   readConfigSync,
   seedExampleConfig,
+  writeConfigText,
 } from "../src/config";
 
 test("paths: env overrides beat XDG beats HOME defaults", () => {
@@ -381,4 +382,26 @@ test("readConfigSync falls back to the snapshot rather than throwing", () => {
   const list = join(dir, "list.json");
   writeFileSync(list, "[]");
   expect(readConfigSync(list, startup)).toBe(startup);
+});
+
+test("writeConfigText writes through a symlink instead of replacing it", () => {
+  // dotfiles setups point config.json at a file in their own repo; renaming a
+  // temp file over the link would leave a regular file and orphan the repo copy
+  const dir = mkdtempSync(join(tmpdir(), "rv-cfg-"));
+  const real = join(dir, "dotfiles-config.json");
+  const link = join(dir, "config.json");
+  writeFileSync(real, "{}\n");
+  symlinkSync(real, link);
+  writeConfigText(link, '{"orgs":[]}\n');
+  expect(lstatSync(link).isSymbolicLink()).toBe(true);
+  expect(readFileSync(real, "utf8")).toBe('{"orgs":[]}\n');
+  expect(existsSync(`${link}.tmp`)).toBe(false);
+});
+
+test("writeConfigText creates a config that is not there yet", () => {
+  const dir = mkdtempSync(join(tmpdir(), "rv-cfg-"));
+  const file = join(dir, "config.json");
+  writeConfigText(file, "{}\n");
+  expect(readFileSync(file, "utf8")).toBe("{}\n");
+  expect(existsSync(`${file}.tmp`)).toBe(false);
 });

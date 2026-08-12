@@ -3,7 +3,7 @@
 // write. Ported from the validated prototype
 // (prototypes/first-run-wizard/native-wizard/wizard.ts).
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
@@ -12,6 +12,7 @@ import {
   ghBin,
   placeholderEntries,
   paths as resolvePaths,
+  writeConfigText,
 } from "../config";
 import { doctorCommand } from "../doctor";
 import { ghAccountToken } from "../github";
@@ -438,6 +439,8 @@ async function mayOverwrite(ui: Ui, p: Paths): Promise<OverwriteCheck> {
   return { proceed: answer.toLowerCase().startsWith("y"), existing: cfg };
 }
 
+// False when the config could not be written — the wizard asked every question
+// for nothing, and saying so beats a stack trace over the last four steps.
 function writeConfig(
   ui: Ui,
   p: Paths,
@@ -446,7 +449,7 @@ function writeConfig(
   repos: Record<string, string>,
   login: string,
   account: string | undefined,
-): void {
+): boolean {
   ui.step(4, "Writing config");
   // Everything the wizard doesn't own survives — openers, extra_allowed_tools
   // and friends are the user's, whether they seeded them or wrote them.
@@ -455,10 +458,18 @@ function writeConfig(
   // A pin the wizard didn't set, naming an account it isn't using, resolves to
   // no token later; the empty one the starter config ships is harmless.
   else if (cfg.gh_account && cfg.gh_account !== login) delete cfg.gh_account;
-  mkdirSync(p.configDir, { recursive: true });
   const text = `${JSON.stringify(cfg, null, 2)}\n`;
-  // Synchronous on purpose: doctor reads this file moments later.
-  writeFileSync(p.configPath, text);
+  try {
+    mkdirSync(p.configDir, { recursive: true });
+    // Synchronous on purpose: doctor reads this file moments later.
+    writeConfigText(p.configPath, text);
+  } catch (e) {
+    ui.say(`   could not write ${p.configPath}: ${(e as Error).message}`);
+    ui.say(
+      "   point DOCKET_CONFIG_DIR at a writable directory, then run docket again.",
+    );
+    return false;
+  }
   ui.say(`   wrote ${p.configPath}`);
   ui.say(
     ui.dim(
@@ -469,6 +480,7 @@ function writeConfig(
         .join("\n"),
     ),
   );
+  return true;
 }
 
 // ------------------------------------------------------------------- flow --
@@ -518,7 +530,16 @@ export async function runNativeWizard(
     const { repos, shortfall } = await chooseRepos(ui, orgs, home, getOrigin);
     // Written even with no repos mapped: that config is genuinely useful (the
     // poller works, unmapped repos skip at review time) and doctor says so.
-    writeConfig(ui, p, existing, orgs, repos, account.login, account.account);
+    const ok = writeConfig(
+      ui,
+      p,
+      existing,
+      orgs,
+      repos,
+      account.login,
+      account.account,
+    );
+    if (!ok) return "came-up-short";
     wrote = true;
     return shortfall ? "came-up-short" : "completed";
   };

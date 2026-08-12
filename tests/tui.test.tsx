@@ -1,8 +1,15 @@
 import { expect, test } from "bun:test";
 import { render } from "ink-testing-library";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  lstatSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { paths, type Config } from "../src/config";
 import { resolveOpeners } from "../src/openers";
 import { setStatus, type Entry, type State } from "../src/state";
@@ -280,6 +287,40 @@ test("the apply rail holds for a suggestion the classifier now calls write-shape
     JSON.parse(readFileSync(ui.paths.configPath, "utf8")).extra_allowed_tools ??
       [],
   ).toEqual([]);
+  ui.unmount();
+});
+
+test("apply writes through a symlinked config instead of replacing the link", async () => {
+  // dotfiles setups point config.json at a file in their own repo; a rename
+  // over the link leaves a regular file and orphans the repo copy
+  const ui = mount({
+    "acme/two#2": entry({
+      title: "Two",
+      updated_at: "2026-01-02T00:00:00Z",
+      denials: [
+        {
+          tool: "Bash",
+          suggestion: "Bash(rg:*)",
+          count: 2,
+          examples: ["rg TODO src"],
+          writeShaped: false,
+          alreadyAllowed: false,
+        },
+      ],
+    }),
+  });
+  const real = join(dirname(ui.paths.configPath), "dotfiles-config.json");
+  renameSync(ui.paths.configPath, real);
+  symlinkSync(real, ui.paths.configPath);
+  await Bun.sleep(20);
+  ui.stdin.write("D");
+  await Bun.sleep(20);
+  ui.stdin.write("a");
+  await Bun.sleep(20);
+  expect(lstatSync(ui.paths.configPath).isSymbolicLink()).toBe(true);
+  expect(JSON.parse(readFileSync(real, "utf8")).extra_allowed_tools).toEqual([
+    "Bash(rg:*)",
+  ]);
   ui.unmount();
 });
 

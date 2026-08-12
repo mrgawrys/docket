@@ -3,8 +3,10 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
+  writeFileSync,
 } from "node:fs";
 import { basename, join } from "node:path";
 import EXAMPLE_CONFIG from "../config.example.json" with { type: "text" };
@@ -232,6 +234,18 @@ export async function loadConfig(p: Paths = paths()): Promise<Config> {
     );
   }
   return cfg;
+}
+
+// The one way docket writes the user's config — the TUI's apply verb and the
+// wizard both come through here. tmp + rename so a kill mid-write cannot
+// corrupt a hand-maintained file, and through realpath so a config.json
+// symlinked into a dotfiles repo keeps its link instead of becoming a regular
+// file with the repo copy orphaned.
+export function writeConfigText(path: string, text: string): void {
+  const real = existsSync(path) ? realpathSync(path) : path;
+  const tmp = `${real}.tmp`;
+  writeFileSync(tmp, text);
+  renameSync(tmp, real);
 }
 
 // The config as it stands on disk, for a caller that already holds a startup

@@ -4,6 +4,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,6 +12,7 @@ import { PassThrough, Writable } from "node:stream";
 import { expect, test } from "bun:test";
 import {
   type Config,
+  type Paths,
   loadConfig,
   paths as resolvePaths,
   placeholderEntries,
@@ -65,6 +67,7 @@ async function drive(
   sb: Sandbox,
   script: string[],
   extraEnv: Record<string, string> = {},
+  override?: Paths,
 ): Promise<Driven> {
   const input = new PassThrough();
   for (const line of script) input.write(`${line}\n`);
@@ -76,7 +79,7 @@ async function drive(
       cb();
     },
   });
-  const p = resolvePaths(sb.env);
+  const p = override ?? resolvePaths(sb.env);
   let doctorRuns = 0;
   let configAtDoctor: string | null = null;
   const outcome = await runNativeWizard({
@@ -487,4 +490,29 @@ test("an account pin the wizard is not using does not survive the write", async 
   });
   expect(r.outcome).toBe("completed");
   expect("gh_account" in r.config()).toBe(false);
+});
+
+test("a config the wizard cannot write is reported, not thrown at the user", async () => {
+  const sb = fresh();
+  const home = homeWithClones();
+  // a regular file where the config directory has to go: the same failure an
+  // unwritable directory gives, without a chmod that root would ignore
+  const blocked = join(sb.tmp, "blocked");
+  writeFileSync(blocked, "");
+  const p = resolvePaths({
+    DOCKET_CONFIG_DIR: join(blocked, "docket"),
+    DOCKET_STATE_DIR: sb.stateDir,
+  } as NodeJS.ProcessEnv);
+  const r = await drive(
+    sb,
+    ["2", "1", "", ""],
+    { HOME: home, GH_AUTH_STATUS_TEXT: ONE_ACCOUNT, GH_ORG_LIST: "acme" },
+    p,
+  );
+  expect(r.outcome).toBe("came-up-short");
+  expect(r.out).toContain("could not write");
+  expect(r.out).toContain("DOCKET_CONFIG_DIR");
+  // nothing was written, so checking the setup would only report its absence
+  expect(r.doctorRuns).toBe(0);
+  expect(existsSync(p.configPath)).toBe(false);
 });

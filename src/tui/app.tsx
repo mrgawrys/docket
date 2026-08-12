@@ -1,9 +1,15 @@
 import { Box, render, Text, useApp, useInput, useWindowSize } from "ink";
-import { readFileSync, renameSync, watch, writeFileSync } from "node:fs";
+import { readFileSync, watch } from "node:fs";
 import { dirname } from "node:path";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { readAssessment } from "../assessment";
-import { readConfigSync, runLogPath, type Config, type Paths } from "../config";
+import {
+  readConfigSync,
+  runLogPath,
+  writeConfigText,
+  type Config,
+  type Paths,
+} from "../config";
 import { applySuggestion, isAllowed, isWriteShaped } from "../denials";
 import { clampGroup, denialLines } from "../denialview";
 import {
@@ -282,11 +288,7 @@ export function App({
         try {
           const text = readFileSync(paths.configPath, "utf8");
           const updated = applySuggestion(text, group.suggestion);
-          // tmp + rename, like saveState: a kill mid-write must not corrupt the
-          // user's hand-maintained config.
-          const tmp = `${paths.configPath}.tmp`;
-          writeFileSync(tmp, updated);
-          renameSync(tmp, paths.configPath);
+          writeConfigText(paths.configPath, updated);
           setLiveCfg(JSON.parse(updated) as Config);
           setApplied((held) => new Set(held).add(group.suggestion));
           setStatus(`applied ${group.suggestion}`);
