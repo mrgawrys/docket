@@ -58,7 +58,7 @@ interface RunResult {
 
 // Bun rejects an env with undefined values, and NodeJS.ProcessEnv is full of
 // optionals — drop the holes rather than passing "undefined" through.
-function cleanEnv(env: NodeJS.ProcessEnv): Record<string, string> {
+export function cleanEnv(env: NodeJS.ProcessEnv): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(env)) if (v !== undefined) out[k] = v;
   return out;
@@ -242,7 +242,9 @@ async function chooseOrgs(
   login: string,
 ): Promise<string[]> {
   ui.step(2, "Organizations");
-  const listed = run([gh, "org", "list"], env);
+  // gh pages at 30 silently, and the type-by-hand fallback below only shows up
+  // when gh listed nothing — an org past the cap would be unreachable.
+  const listed = run([gh, "org", "list", "--limit", "100"], env);
   const orgs = listed.out
     .split("\n")
     .map((l) => l.trim())

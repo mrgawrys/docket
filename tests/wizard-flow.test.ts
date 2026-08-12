@@ -190,7 +190,9 @@ test("the wizard scopes gh to the chosen account by token and never runs gh auth
   });
   const calls = sb.ghCalls();
   expect(calls.some((c) => c.startsWith("auth switch"))).toBe(false);
-  expect(calls).toContain("org list token=tok-mrgawrys-work");
+  // gh caps the listing at 30 without --limit, and an org past the cap is
+  // unselectable: the type-by-hand fallback only appears when gh listed none
+  expect(calls).toContain("org list --limit 100 token=tok-mrgawrys-work");
 });
 
 test("a single gh account is used silently and writes no gh_account key", async () => {

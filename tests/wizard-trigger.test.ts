@@ -279,6 +279,42 @@ test("the claude wizard reports back whether a config actually appeared", async 
   ).toBe("completed");
 });
 
+test("the claude wizard runs the claude an existing config points at", async () => {
+  // the placeholders trigger reaches here with a real config on disk, which
+  // may name a different install or carry env every claude run needs
+  const p = freshPaths();
+  const out = new Writable({
+    write(_c, _e, cb) {
+      cb();
+    },
+  });
+  await Bun.write(
+    p.configPath,
+    JSON.stringify({
+      orgs: ["your-github-org"],
+      repos: {},
+      claude_bin: "/x/claude",
+      claude_env: { DOCKET_TEST: "1" },
+      claude_config_dir: "/x/home",
+    }),
+  );
+  let seen: { bin: string; env: Record<string, string> } | undefined;
+  await runClaudeWizard({
+    paths: p,
+    env: { PATH: "/usr/bin", EMPTY: undefined } as NodeJS.ProcessEnv,
+    output: out,
+    session: async (bin, _prompt, env) => {
+      seen = { bin, env };
+      return 0;
+    },
+  });
+  expect(seen?.bin).toBe("/x/claude");
+  expect(seen?.env.DOCKET_TEST).toBe("1");
+  expect(seen?.env.CLAUDE_CONFIG_DIR).toBe("/x/home");
+  expect(seen?.env.PATH).toBe("/usr/bin"); // the inherited environment survives
+  expect("EMPTY" in (seen?.env ?? {})).toBe(false); // Bun.spawn rejects holes
+});
+
 test("a claude binary that will not start is reported, not thrown", async () => {
   const p = freshPaths();
   const chunks: string[] = [];

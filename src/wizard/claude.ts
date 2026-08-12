@@ -4,13 +4,15 @@
 // validated prototype (prototypes/first-run-wizard/claude-wizard/).
 
 import {
+  type Config,
   type Paths,
   claudeBin,
+  claudeEnv,
   loadConfig,
   paths as resolvePaths,
 } from "../config";
 import { selfArgs } from "../proc";
-import type { WizardOutcome } from "./flow";
+import { type WizardOutcome, cleanEnv } from "./flow";
 import PROMPT from "./claude-prompt.md" with { type: "text" };
 
 // The prompt tells claude to run doctor at the end, so it needs the command
@@ -36,7 +38,11 @@ export interface ClaudeWizardOptions {
   env?: NodeJS.ProcessEnv;
   output?: NodeJS.WritableStream;
   // Real callers hand the terminal to claude; tests stand in for the session.
-  session?: (bin: string, prompt: string) => Promise<number | null>;
+  session?: (
+    bin: string,
+    prompt: string,
+    env: Record<string, string>,
+  ) => Promise<number | null>;
 }
 
 // The TUI is not running yet at first run, so this is a plain spawn with the
@@ -44,8 +50,10 @@ export interface ClaudeWizardOptions {
 async function claudeSession(
   bin: string,
   prompt: string,
+  env: Record<string, string>,
 ): Promise<number | null> {
   const child = Bun.spawn([bin, prompt], {
+    env,
     stdin: "inherit",
     stdout: "inherit",
     stderr: "inherit",
@@ -62,16 +70,26 @@ export async function runClaudeWizard(
   const say = (s = "") => {
     output.write(`${s}\n`);
   };
-  // No config exists yet, so claude_bin cannot have been configured — only the
-  // env override and the default name are in play.
-  const bin = claudeBin({ orgs: [], repos: {} }, env);
+  // The placeholders path gets here with a real config on disk, which may name
+  // its own claude or carry env every claude run needs.
+  let cfg: Config = { orgs: [], repos: {} };
+  try {
+    cfg = await loadConfig(p);
+  } catch {
+    // no usable config is the other half of first run — defaults it is
+  }
+  const bin = claudeBin(cfg, env);
   const session = opts.session ?? claudeSession;
 
   say();
   say(`handing over to ${bin} — it asks the questions and writes the config.`);
   say();
   try {
-    await session(bin, claudeWizardPrompt(p, doctorInvocation()));
+    await session(
+      bin,
+      claudeWizardPrompt(p, doctorInvocation()),
+      cleanEnv({ ...env, ...claudeEnv(cfg) }),
+    );
   } catch (e) {
     say(`could not start ${bin}: ${(e as Error).message}`);
     say(
