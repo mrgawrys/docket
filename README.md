@@ -137,13 +137,17 @@ many calls each covers, and up to three of the commands turned away.
 [`extra_allowed_tools`](docs/configuration.md#extra_allowed_tools), so the next
 review has it. Two kinds of group never get that one keypress:
 
-- **write-shaped** ones — `git push`, most `gh` verbs, `rm`, an interpreter
-  like `sh` or `python` — read "conflicts with docket's read-only stance — add
-  manually or hand to claude". Allowing them wholesale gives up the guarantee
-  that an unattended review changes nothing, so they stay a deliberate edit.
+- **write-shaped** ones — `git push`, most `gh` verbs, `rm`, an interpreter or
+  command runner like `sh`, `python` or `npx` — read "conflicts with docket's
+  read-only stance — add manually or hand to claude". Allowing them wholesale
+  gives up the guarantee that an unattended review changes nothing, so they
+  stay a deliberate edit.
 - ones **already in the allowlist** read "rule exists but didn't match": the
   call was denied anyway — a `*` in the middle of a pattern, a prefix the call
   never matched — so adding the same rule again fixes nothing.
+
+A group you just applied reads "applied — takes effect next run": the rule is
+in the config, and the review it came from is over.
 
 `h` hands the selected group to an interactive claude session, `H` the whole
 batch. It starts in the repo's local clone (so the key needs one) and carries
