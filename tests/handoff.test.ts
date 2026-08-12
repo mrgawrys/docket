@@ -15,7 +15,6 @@ const group = (over: Partial<DenialGroup> = {}): DenialGroup => ({
 const input = (over: Partial<Parameters<typeof handoffPrompt>[0]> = {}) => ({
   key: "acme/demo#42",
   groups: [group()],
-  scope: "group" as const,
   configPath: "/Users/me/.config/docket/config.json",
   extraAllowedTools: ["Bash(gh pr view:*)"],
   effectiveAllowedTools: "Read,Grep,Bash(gh pr view:*)",
@@ -47,10 +46,9 @@ test("a single group carries its suggestion, count and example", () => {
   expect(p).toContain("git log --oneline");
 });
 
-test("batch mode carries every group, not just the first", () => {
+test("every group is carried, not just the first", () => {
   const p = handoffPrompt(
     input({
-      scope: "batch",
       groups: [
         group({ suggestion: "Bash(rg:*)", examples: ["rg --files"] }),
         group({

@@ -182,12 +182,11 @@ test("buildHandoff is unavailable without a clone to run claude in", () => {
     p,
     "acme/demo#7",
     [denialGroup()],
-    "group",
   );
   expect(r).toHaveProperty("error");
 });
 
-test("buildHandoff is unavailable with nothing selected to hand off", () => {
+test("buildHandoff is unavailable with no denials to hand off", () => {
   const dir = mkdtempSync(join(tmpdir(), "docket-handoff-"));
   const p = paths({ DOCKET_CONFIG_DIR: dir, DOCKET_STATE_DIR: dir } as any);
   const r = buildHandoff(
@@ -196,7 +195,6 @@ test("buildHandoff is unavailable with nothing selected to hand off", () => {
     p,
     "acme/demo#7",
     [],
-    "group",
   );
   expect(r).toHaveProperty("error");
 });
@@ -217,7 +215,6 @@ test("buildHandoff launches claude directly, with no --permission-mode flag", ()
     p,
     "acme/demo#7",
     [denialGroup({ suggestion: "Bash(rg:*)" })],
-    "group",
   );
   expect(r).not.toHaveProperty("error");
   const ok = r as { argv: string[]; cwd: string; env: Record<string, string> };
@@ -244,7 +241,6 @@ test("buildHandoff points at the run log when one exists", () => {
     p,
     key,
     [denialGroup()],
-    "batch",
   );
   expect(r).not.toHaveProperty("error");
   expect((r as { argv: string[] }).argv[1]).toContain(logFile);
@@ -261,7 +257,6 @@ test("the handoff prompt states the flags as they are now, not as the run froze 
     p,
     "acme/demo#7",
     [denialGroup({ suggestion: "Bash(rg:*)", alreadyAllowed: false })],
-    "group",
   );
   expect((r as { argv: string[] }).argv[1]).toContain(
     "already in the allowlist",
@@ -277,7 +272,6 @@ test("a stale already-allowed flag is not carried into the prompt", () => {
     p,
     "acme/demo#7",
     [denialGroup({ suggestion: "Bash(rg:*)", alreadyAllowed: true })],
-    "group",
   );
   expect((r as { argv: string[] }).argv[1]).not.toContain(
     "already in the allowlist",
@@ -295,7 +289,6 @@ test("a group the classifier now calls write-shaped is handed off as one", () =>
     p,
     "acme/demo#7",
     [denialGroup({ suggestion: "Bash(npx:*)", writeShaped: false })],
-    "group",
   );
   expect((r as { argv: string[] }).argv[1]).toContain("not a one-key apply");
 });

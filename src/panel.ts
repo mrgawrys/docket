@@ -1,4 +1,7 @@
 import type { Assessment } from "./assessment";
+import type { Config } from "./config";
+import type { DenialGroup } from "./denials";
+import { denialTeaser, TEASER_HEIGHT } from "./denialview";
 import type { Summary } from "./summary";
 
 // Wrap here rather than letting the terminal do it: the panel is bounded, and a
@@ -54,6 +57,11 @@ export interface PanelInput {
   // Verbs this machine cannot run, with the reason — the one thing here that
   // is about the tool rather than the review, so it leads and it is coloured.
   notes: string[];
+  // The run's denials and the config to judge them against. The teaser they
+  // render into is where this feature is discovered, so it sits with the rest
+  // of the detail rather than waiting behind a key nobody knows about.
+  denials?: DenialGroup[];
+  cfg?: Config;
   width: number;
   height?: number;
 }
@@ -62,12 +70,25 @@ export function panelLines({
   summary,
   assessment,
   notes,
+  denials,
+  cfg,
   width,
   height = PANEL_HEIGHT,
 }: PanelInput): PanelLine[] {
   const out: PanelLine[] = notes
     .slice(0, height)
     .map((text) => ({ text, color: "yellow" }));
+  if (denials?.length && cfg) {
+    // The two rows held back are the blank and the headline: the denials are
+    // new here, not the reason the panel exists.
+    const teaser = denialTeaser({
+      groups: denials,
+      cfg,
+      width,
+      height: Math.min(TEASER_HEIGHT, height - out.length - 2),
+    });
+    if (teaser.length) out.push(...teaser, { text: " " });
+  }
   const room = height - out.length;
   if (room <= 0) return out;
 

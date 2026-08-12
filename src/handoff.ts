@@ -1,17 +1,14 @@
 import type { DenialGroup } from "./denials";
 
-// The one-shot prompt for an interactive claude session the user hands a
-// denials group (or the whole batch) to — for whatever the mechanical apply
-// can't settle: a write-shaped suggestion, a rule that exists but didn't
-// match, or plain confusion. Pure text in, text out — no fs, so it stays
-// unit-testable without a sandbox.
-
-export type HandoffScope = "group" | "batch";
+// The one-shot prompt for an interactive claude session the user hands a run's
+// denials to — for whatever the mechanical apply can't settle: a write-shaped
+// suggestion, a rule that exists but didn't match, or plain confusion. Always
+// the whole set: the view acts on the run, not on a group. Pure text in, text
+// out — no fs, so it stays unit-testable without a sandbox.
 
 export interface HandoffInput {
   key: string; // "org/repo#123", same as the queue and the panel show
   groups: DenialGroup[];
-  scope: HandoffScope;
   configPath: string;
   extraAllowedTools: string[];
   effectiveAllowedTools: string;
@@ -47,10 +44,8 @@ function groupBlock(g: DenialGroup): string {
 }
 
 export function handoffPrompt(input: HandoffInput): string {
-  const scopeLabel =
-    input.scope === "batch"
-      ? `all ${input.groups.length} denial group${input.groups.length === 1 ? "" : "s"}`
-      : "one denial group";
+  const count = input.groups.length;
+  const scopeLabel = `all ${count} denial group${count === 1 ? "" : "s"}`;
   const header =
     `A headless review of ${input.key} hit permission denials docket ` +
     `could not settle mechanically. Below is ${scopeLabel} it turned away:`;

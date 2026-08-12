@@ -175,11 +175,12 @@ test("the denials key opens the view only for a row that has denials", async () 
   await Bun.sleep(20);
   ui.stdin.write("D");
   await Bun.sleep(20);
-  expect(ui.lastFrame()).toContain("Bash(rg:*) — 2 denied");
+  expect(ui.lastFrame()).toContain("Bash(rg:*)");
+  expect(ui.lastFrame()).toContain("×2");
   ui.unmount();
 });
 
-test("apply writes the group under the cursor, and rails block a write-shaped one", async () => {
+test("a adds every safe rule in one press, and never a write-shaped one", async () => {
   const ui = mount({
     "acme/two#2": entry({
       title: "Two",
@@ -201,26 +202,26 @@ test("apply writes the group under the cursor, and rails block a write-shaped on
           writeShaped: false,
           alreadyAllowed: false,
         },
+        {
+          tool: "Bash",
+          suggestion: "Bash(fd:*)",
+          count: 1,
+          examples: ["fd denials"],
+          writeShaped: false,
+          alreadyAllowed: false,
+        },
       ],
     }),
   });
   await Bun.sleep(20);
   ui.stdin.write("D");
   await Bun.sleep(20);
-  ui.stdin.write("a"); // cursor starts on the write-shaped group: no apply
-  await Bun.sleep(20);
-  let config = JSON.parse(readFileSync(ui.paths.configPath, "utf8"));
-  expect(config.extra_allowed_tools ?? []).toEqual([]);
-  ui.stdin.write("j"); // move to Bash(rg:*)
-  await Bun.sleep(20);
   ui.stdin.write("a");
   await Bun.sleep(20);
-  config = JSON.parse(readFileSync(ui.paths.configPath, "utf8"));
-  expect(config.extra_allowed_tools).toEqual(["Bash(rg:*)"]);
-  // the view reflects the write immediately, without restarting the TUI — and
-  // says the rule landed, not that adding it again would fix nothing
-  expect(ui.lastFrame()).toContain("applied — takes effect next run");
-  expect(ui.lastFrame()).not.toContain("rule exists but didn't match");
+  const config = JSON.parse(readFileSync(ui.paths.configPath, "utf8"));
+  expect(config.extra_allowed_tools).toEqual(["Bash(rg:*)", "Bash(fd:*)"]);
+  // the view reflects the write immediately, without restarting the TUI
+  expect(ui.lastFrame()).toContain("2 rules added");
   ui.unmount();
 });
 
@@ -239,7 +240,7 @@ test("apply reads the config off disk, not the snapshot the TUI started with", a
             count: 2,
             examples: ["rg TODO src"],
             writeShaped: false,
-            alreadyAllowed: false,
+            alreadyAllowed: true,
           },
         ],
       }),
@@ -252,14 +253,14 @@ test("apply reads the config off disk, not the snapshot the TUI started with", a
   await Bun.sleep(20);
   ui.stdin.write("a");
   await Bun.sleep(20);
-  expect(ui.lastFrame()).toContain("rule already exists");
+  expect(ui.lastFrame()).toContain("nothing to add — 1 already in your config");
   expect(
     JSON.parse(readFileSync(ui.paths.configPath, "utf8")).extra_allowed_tools,
   ).toEqual(["Bash(rg:*)"]);
   ui.unmount();
 });
 
-test("the apply rail holds for a suggestion the classifier now calls write-shaped", async () => {
+test("the add rail holds for a suggestion the classifier now calls write-shaped", async () => {
   // the flag on the entry froze when the run ended, before npx was blocklisted
   const ui = mount({
     "acme/two#2": entry({
@@ -282,7 +283,7 @@ test("the apply rail holds for a suggestion the classifier now calls write-shape
   await Bun.sleep(20);
   ui.stdin.write("a");
   await Bun.sleep(20);
-  expect(ui.lastFrame()).toContain("read-only stance");
+  expect(ui.lastFrame()).toContain("nothing to add — 1 write-shaped");
   expect(
     JSON.parse(readFileSync(ui.paths.configPath, "utf8")).extra_allowed_tools ??
       [],
@@ -290,7 +291,7 @@ test("the apply rail holds for a suggestion the classifier now calls write-shape
   ui.unmount();
 });
 
-test("apply writes through a symlinked config instead of replacing the link", async () => {
+test("adding writes through a symlinked config instead of replacing the link", async () => {
   // dotfiles setups point config.json at a file in their own repo; a rename
   // over the link leaves a regular file and orphans the repo copy
   const ui = mount({
@@ -324,8 +325,9 @@ test("apply writes through a symlinked config instead of replacing the link", as
   ui.unmount();
 });
 
-test("hand-off scopes to the group under the cursor, or the whole batch on H", async () => {
+test("hand-off carries every group, and r retries the PR the view was opened on", async () => {
   const ui = mount({
+    "acme/one#1": entry({ title: "One", updated_at: "2026-01-01T00:00:00Z" }),
     "acme/two#2": entry({
       title: "Two",
       local_path: "/repo",
@@ -351,22 +353,21 @@ test("hand-off scopes to the group under the cursor, or the whole batch on H", a
     }),
   });
   await Bun.sleep(20);
+  ui.stdin.write("j");
+  await Bun.sleep(20);
   ui.stdin.write("D");
   await Bun.sleep(20);
-  ui.stdin.write("j"); // cursor moves to Bash(rg:*)
-  await Bun.sleep(20);
-  ui.stdin.write("h"); // group scope: only the group under the cursor
+  ui.stdin.write("\r"); // one hand-off, the whole set — no per-group scope left
   await Bun.sleep(20);
   expect(ui.requests).toHaveLength(1);
   expect(ui.requests[0]?.cwd).toBe("/repo");
   expect(ui.requests[0]?.argv[1]).toContain("Bash(rg:*)");
-  expect(ui.requests[0]?.argv[1]).not.toContain("Bash(git push:*)");
+  expect(ui.requests[0]?.argv[1]).toContain("Bash(git push:*)");
 
-  ui.stdin.write("H"); // batch scope: every group, cursor position irrelevant
+  // r bills a review: it must run the PR the view is about, never row 1
+  ui.stdin.write("r");
   await Bun.sleep(20);
-  expect(ui.requests).toHaveLength(2);
-  expect(ui.requests[1]?.argv[1]).toContain("Bash(rg:*)");
-  expect(ui.requests[1]?.argv[1]).toContain("Bash(git push:*)");
+  expect(ui.calls).toEqual(["retry:acme/two#2"]);
   ui.unmount();
 });
 

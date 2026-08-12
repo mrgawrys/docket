@@ -1,5 +1,5 @@
 import type { Config } from "./config";
-import { isAllowed, type DenialGroup } from "./denials";
+import { isAllowed, isWriteShaped, type DenialGroup } from "./denials";
 import { wrapText, type PanelLine } from "./panel";
 import type { Chip } from "./summary";
 
@@ -14,82 +14,211 @@ export function denialChip(denials?: DenialGroup[]): Chip | undefined {
   return { text: `⊘ ${total}`, color: "yellow" };
 }
 
+const calls = (groups: DenialGroup[]): number =>
+  groups.reduce((n, g) => n + g.count, 0);
+
+const plural = (n: number, word: string): string =>
+  `${n} ${word}${n === 1 ? "" : "s"}`;
+
+// What sits on the denials view's bar: the two numbers that say how much of
+// the run this was.
+export const denialTitle = (groups: DenialGroup[]): string =>
+  `${plural(groups.length, "rule")}, ${plural(calls(groups), "blocked call")}`;
+
+export interface Addable {
+  add: DenialGroup[];
+  writeShaped: DenialGroup[]; // docket never adds these
+  present: DenialGroup[]; // adding them again fixes nothing
+}
+
+// The groups `a` will write, and why each of the rest was left out. One place
+// decides it, so the count in the action line and the rules that reach config
+// cannot disagree. Both checks the per-group keystroke used to make survive:
+// the flag frozen when the run ended, and the live classifier, so a rule the
+// blocklist has since grown still gets turned away.
+export function addable(groups: DenialGroup[], cfg: Config): Addable {
+  const out: Addable = { add: [], writeShaped: [], present: [] };
+  for (const g of groups) {
+    if (g.writeShaped || isWriteShaped(g.suggestion)) out.writeShaped.push(g);
+    else if (isAllowed(g.suggestion, cfg)) out.present.push(g);
+    else out.add.push(g);
+  }
+  return out;
+}
+
+// Added since the run ended — in practice, by `a` a moment ago. Derived rather
+// than remembered: a set held in the view resets on every suspend, while the
+// config the run was judged against does not change under it.
+export const addedNow = (groups: DenialGroup[], cfg: Config): DenialGroup[] =>
+  groups.filter((g) => !g.alreadyAllowed && isAllowed(g.suggestion, cfg));
+
+function marker(
+  g: DenialGroup,
+  cfg: Config,
+): { text: string; color?: string } | undefined {
+  if (g.writeShaped || isWriteShaped(g.suggestion))
+    return { text: "⚠ write-shaped", color: "yellow" };
+  if (!isAllowed(g.suggestion, cfg)) return undefined;
+  return g.alreadyAllowed
+    ? { text: "✓ already in your config" }
+    : { text: "✓ added just now", color: "green" };
+}
+
+// `Bash(rg:*)   ×24   ⚠ write-shaped`, in a column so the counts line up.
+function groupRow(
+  g: DenialGroup,
+  cfg: Config,
+  indent: string,
+  pad: number,
+  width: number,
+): PanelLine[] {
+  const m = marker(g, cfg);
+  const text = `${indent}${g.suggestion.padEnd(pad)}  ×${g.count}${
+    m ? `    ${m.text}` : ""
+  }`;
+  return wrapText(text, width).map((t) => ({ text: t, color: m?.color }));
+}
+
+const widest = (groups: DenialGroup[]): number =>
+  Math.max(0, ...groups.map((g) => g.suggestion.length));
+
+// head, up to three groups, and the line naming the key.
+export const TEASER_HEIGHT = 5;
+const TEASER_GROUPS = 3;
+
+export interface TeaserInput {
+  groups: DenialGroup[];
+  cfg: Config;
+  width: number;
+  height?: number;
+}
+
+// The denials section of the queue's detail panel — the only place this
+// feature has to be discoverable from, so it ends on the key that opens it.
+export function denialTeaser({
+  groups,
+  cfg,
+  width,
+  height = TEASER_HEIGHT,
+}: TeaserInput): PanelLine[] {
+  if (!groups.length || height < 2) return [];
+  const total = calls(groups);
+  const head =
+    total === 1
+      ? "1 call was blocked — the review worked around it."
+      : `${total} calls were blocked — the review worked around them.`;
+  const shown = groups.slice(
+    0,
+    Math.max(0, Math.min(TEASER_GROUPS, height - 2)),
+  );
+  const rest = groups.length - shown.length;
+  const tail = rest
+    ? `+ ${rest} more · D works through them`
+    : "D works through them";
+  const pad = widest(shown);
+  return [
+    ...wrapText(head, width).map((text) => ({ text })),
+    ...shown.flatMap((g) => groupRow(g, cfg, "  ", pad, width)),
+    ...wrapText(tail, width).map((text) => ({ text, dim: true })),
+  ];
+}
+
+// Why `a` left rules behind — "4 write-shaped, 1 already there".
+function skipped(a: Addable, long: boolean): string {
+  const parts: string[] = [];
+  if (a.writeShaped.length) parts.push(`${a.writeShaped.length} write-shaped`);
+  if (a.present.length)
+    parts.push(
+      `${a.present.length} already ${long ? "in your config" : "there"}`,
+    );
+  return parts.join(", ");
+}
+
+// The verbs, as panel content rather than bar text: these lines wrap, and a
+// narrow terminal truncates the bar first.
+function actionLines(
+  groups: DenialGroup[],
+  cfg: Config,
+  width: number,
+): PanelLine[] {
+  const a = addable(groups, cfg);
+  const added = addedNow(groups, cfg);
+  // A space, not an empty string: ink gives a zero-length Text no row, and the
+  // action block needs the gap to read as a foot rather than another group.
+  const out: PanelLine[] = [{ text: " " }];
+  const push = (text: string, line: Partial<PanelLine> = {}) => {
+    for (const t of wrapText(text, width)) out.push({ text: t, ...line });
+  };
+  if (added.length) {
+    push(
+      added.length === 1
+        ? "1 rule added — it applies to the next run of this review."
+        : `${added.length} rules added — they apply to the next run of this review.`,
+      { color: "green" },
+    );
+    push("r  re-run the review now       ⏎  hand the rest to claude");
+  } else {
+    push("⏎  hand all of this to claude");
+  }
+  const rest = skipped(a, false);
+  if (a.add.length) {
+    const count = plural(a.add.length, "safe rule");
+    const why = rest
+      ? ` (${a.writeShaped.length + a.present.length} skipped: ${rest})`
+      : "";
+    push(`a  add the ${count} to your config${why}`);
+  } else if (rest && !added.length) {
+    // Say why rather than accept a key that then declines. Once an add has
+    // landed the line above already accounts for the set — repeating it as a
+    // refusal would read as if something had gone wrong.
+    push(`a  nothing to add — ${skipped(a, true)}`, { dim: true });
+  }
+  push("esc back to the queue · j/k scroll", { dim: true });
+  return out;
+}
+
 export interface DenialViewInput {
   groups: DenialGroup[];
   // Re-checked against here rather than trusting `alreadyAllowed`: the flag was
   // frozen when the run finished, and an apply since then has made it a lie.
   cfg: Config;
-  // Suggestions `a` wrote during this view's life. The config re-check above
-  // cannot tell an apply that just landed from a rule that was there all along
-  // and missed — only the caller who pressed the key knows which.
-  applied?: ReadonlySet<string>;
-  selected: number;
+  // First body line shown. Clamped here, so a `j` held down at the end of a
+  // long list cannot walk the offset off into nowhere.
+  scroll: number;
   width: number;
   height?: number;
 }
 
-// Which group is selected, given how many there are. The list can shrink under
-// an open view — a retry finishing rewrites the entry — so this is the one
-// definition: what the view highlights and what a verb acts on must be the
-// same index, and an empty list selects 0, never -1.
-export const clampGroup = (selected: number, count: number): number =>
-  Math.min(Math.max(0, selected), Math.max(0, count - 1));
-
-const INDENT = "    ";
-
-function groupLines(
-  group: DenialGroup,
-  cfg: Config,
-  applied: ReadonlySet<string> | undefined,
-  selected: boolean,
-  width: number,
-): PanelLine[] {
-  const head = `${selected ? "▸ " : "  "}${group.suggestion} — ${group.count} denied`;
-  const out: PanelLine[] = wrapText(head, width).map((text) => ({
-    text,
-    color: selected ? "cyan" : undefined,
-  }));
-  const detail = (text: string, line: Partial<PanelLine>) => {
-    for (const t of wrapText(INDENT + text, width))
-      out.push({ text: t, ...line });
-  };
-  if (group.writeShaped) {
-    detail(
-      "conflicts with docket's read-only stance — add manually or hand to claude",
-      { color: "yellow" },
-    );
-  }
-  if (applied?.has(group.suggestion)) {
-    detail("applied — takes effect next run", { color: "green" });
-  } else if (isAllowed(group.suggestion, cfg)) {
-    detail("rule exists but didn't match", { color: "yellow" });
-  }
-  for (const example of group.examples) detail(example, { dim: true });
-  return out;
+export interface DenialView {
+  lines: PanelLine[];
+  maxScroll: number;
 }
 
-// The denials view, one block per group. Bounded like the panel is: a review
-// with eight groups would otherwise push the frame off the terminal.
-export function denialLines({
+// The whole view: every group, then the action block pinned at the foot. Only
+// the groups scroll — the verbs are the one thing that must never scroll away.
+export function denialView({
   groups,
   cfg,
-  applied,
-  selected,
+  scroll,
   width,
   height,
-}: DenialViewInput): PanelLine[] {
+}: DenialViewInput): DenialView {
   if (!groups.length)
-    return [{ text: "no denials recorded for this review", dim: true }];
-  const cursor = clampGroup(selected, groups.length);
-  const blocks = groups.map((g, i) =>
-    groupLines(g, cfg, applied, i === cursor, width),
-  );
-  const lines = blocks.flat();
-  if (!height || lines.length <= height) return lines;
-  // Scroll by whole blocks: show the selected group's head, and as much of the
-  // rest of it as fits below.
-  const start = blocks.slice(0, cursor).reduce((n, b) => n + b.length, 0);
-  const end = start + (blocks[cursor]?.length ?? 0);
-  const top = Math.min(start, Math.max(0, end - height));
-  return lines.slice(top, top + height);
+    return {
+      lines: [{ text: "no denials recorded for this review", dim: true }],
+      maxScroll: 0,
+    };
+  const pad = widest(groups);
+  const body: PanelLine[] = [];
+  for (const g of groups) {
+    body.push(...groupRow(g, cfg, "", pad, width));
+    for (const example of g.examples)
+      for (const text of wrapText(`    ${example}`, width))
+        body.push({ text, dim: true });
+  }
+  const action = actionLines(groups, cfg, width);
+  const room = height ? Math.max(1, height - action.length) : body.length;
+  const maxScroll = Math.max(0, body.length - room);
+  const top = Math.min(Math.max(0, scroll), maxScroll);
+  return { lines: [...body.slice(top, top + room), ...action], maxScroll };
 }

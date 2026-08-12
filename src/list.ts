@@ -8,7 +8,7 @@ import {
   type Paths,
 } from "./config";
 import { isAllowed, isWriteShaped, type DenialGroup } from "./denials";
-import { handoffPrompt, type HandoffScope } from "./handoff";
+import { handoffPrompt } from "./handoff";
 import { cleanupEntry, type Ctx } from "./reviewer";
 import {
   isLiveReview,
@@ -54,7 +54,6 @@ export function buildHandoff(
   paths: Paths,
   key: string,
   groups: DenialGroup[],
-  scope: HandoffScope,
 ):
   | { argv: string[]; cwd: string; env: Record<string, string> }
   | { error: string } {
@@ -62,7 +61,7 @@ export function buildHandoff(
     return { error: NO_CLONE_REASON };
   }
   if (!groups.length) {
-    return { error: "nothing selected to hand off" };
+    return { error: "no denials to hand off" };
   }
   const logPath = runLogPath(paths, key);
   const prompt = handoffPrompt({
@@ -75,7 +74,6 @@ export function buildHandoff(
       writeShaped: isWriteShaped(g.suggestion) || g.writeShaped,
       alreadyAllowed: isAllowed(g.suggestion, cfg),
     })),
-    scope,
     configPath: paths.configPath,
     extraAllowedTools: cfg.extra_allowed_tools ?? [],
     effectiveAllowedTools: effectiveAllowedTools(cfg),

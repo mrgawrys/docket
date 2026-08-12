@@ -80,6 +80,53 @@ test("the panel never outgrows its height, whatever it is filled with", () => {
   }
 });
 
+test("the denials teaser leads the panel, and never at the headline's expense", () => {
+  const denials = [
+    {
+      tool: "Bash",
+      suggestion: "Bash(rg:*)",
+      count: 24,
+      examples: [],
+      writeShaped: false,
+      alreadyAllowed: false,
+    },
+  ];
+  const lines = panelLines({
+    summary: { headline: "the verdict", issues: 1 },
+    assessment: none,
+    notes: [],
+    denials,
+    cfg: { orgs: [], repos: {} },
+    width: 60,
+    height: 10,
+  }).map((l) => l.text);
+  expect(lines[0]).toContain("24 calls were blocked");
+  expect(lines).toContain("D works through them");
+  expect(lines.at(-1)).toBe("the verdict");
+});
+
+test("a panel with no room for both keeps the headline over the teaser", () => {
+  const lines = panelLines({
+    summary: { headline: "the verdict", issues: 1 },
+    assessment: none,
+    notes: [],
+    denials: [
+      {
+        tool: "Bash",
+        suggestion: "Bash(rg:*)",
+        count: 1,
+        examples: [],
+        writeShaped: false,
+        alreadyAllowed: false,
+      },
+    ],
+    cfg: { orgs: [], repos: {} },
+    width: 60,
+    height: 3,
+  }).map((l) => l.text);
+  expect(lines).toEqual(["the verdict"]);
+});
+
 test("an entry with no review at all says so rather than showing blank", () => {
   expect(panelLines({ assessment: none, notes: [], width: 60 })).toEqual([
     { text: "no run log", dim: true },

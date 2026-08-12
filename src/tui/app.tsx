@@ -10,8 +10,8 @@ import {
   type Config,
   type Paths,
 } from "../config";
-import { applySuggestion, isAllowed, isWriteShaped } from "../denials";
-import { clampGroup, denialLines } from "../denialview";
+import { applySuggestion } from "../denials";
+import { addable, denialTitle, denialView, TEASER_HEIGHT } from "../denialview";
 import {
   buildHandoff,
   buildResume,
@@ -103,17 +103,19 @@ export function App({
   const [rows, setRows] = useState<Row[]>(load);
   const [cursorKey, setCursorKey] = useState<string | undefined>(initialKey);
   const [view, setView] = useState<"queue" | "help" | "denials">("queue");
+  // Help is a detour, not a destination: esc goes back where it was opened.
+  const [helpFrom, setHelpFrom] = useState<"queue" | "denials">("queue");
   const [status, setStatus] = useState<string | undefined>();
-  const [rawDenialCursor, setDenialCursor] = useState(0);
+  // The PR the denials view is reading, pinned when D opened it. Its verbs act
+  // on this key and never on the queue cursor, which a finishing poll can move.
+  const [denialKey, setDenialKey] = useState<string | undefined>();
+  const [scroll, setScroll] = useState(0);
   // `cfg` is the startup snapshot, and every suspend verb remounts App with it
   // — seeding from it would drop the rules `a` wrote before the suspend. Read
   // the file instead; the prop is only the fallback.
   const [liveCfg, setLiveCfg] = useState(() =>
     readConfigSync(paths.configPath, cfg),
   );
-  // What `a` wrote while this view has been up. The config re-check alone would
-  // render a just-applied rule as one that exists and didn't match.
-  const [applied, setApplied] = useState<ReadonlySet<string>>(() => new Set());
 
   // saveState renames a temp file over state.json, which breaks a watch bound
   // to the file's inode — watch the directory instead.
@@ -192,13 +194,18 @@ export function App({
     1,
     Math.min(rows.length || 1, Math.min(10, height - 8)),
   );
+  const denials = current?.entry.denials;
   // Bounded, and it shrinks with the terminal — the panel never takes the
   // screen away from the queue the way the old scrolling pane did. The `- 3`
   // is the two bars plus the row the frame must leave spare: fill every row
-  // and the terminal scrolls the whole thing on each render.
+  // and the terminal scrolls the whole thing on each render. A run with
+  // denials asks for the teaser's rows on top of the summary's.
   const panelHeight = Math.max(
     1,
-    Math.min(PANEL_HEIGHT, height - 1 - queueHeight - 3 - (footer ? 1 : 0)),
+    Math.min(
+      PANEL_HEIGHT + (denials?.length ? TEASER_HEIGHT + 1 : 0),
+      height - 1 - queueHeight - 3 - (footer ? 1 : 0),
+    ),
   );
   const panel = useMemo(
     () =>
@@ -206,29 +213,30 @@ export function App({
         summary,
         assessment,
         notes,
+        denials,
+        cfg: liveCfg,
         width: width - 2,
         height: panelHeight,
       }),
-    [summary, assessment, notes, width, panelHeight],
+    [summary, assessment, notes, denials, liveCfg, width, panelHeight],
   );
 
+  // The view reads the PR D was pressed on, not whatever the queue cursor has
+  // drifted to since — retrying the wrong row bills a second review.
+  const denialRow = rows.find((r) => r.key === denialKey);
+  const viewGroups = denialRow?.entry.denials ?? [];
   // The denials view takes the whole region below the bars: legend, the two
   // bars and the row the frame must leave spare (see panelHeight).
-  const denials = current?.entry.denials;
-  // Clamped here, not just where it is drawn: the watcher can shrink the list
-  // under an open view, and a verb must act on the group the user is looking at.
-  const denialCursor = clampGroup(rawDenialCursor, denials?.length ?? 0);
   const denialPanel = useMemo(
     () =>
-      denialLines({
-        groups: denials ?? [],
+      denialView({
+        groups: viewGroups,
         cfg: liveCfg,
-        applied,
-        selected: denialCursor,
+        scroll,
         width: width - 2,
         height: Math.max(1, height - 4 - (footer ? 1 : 0)),
       }),
-    [denials, liveCfg, applied, denialCursor, width, height, footer],
+    [viewGroups, liveCfg, scroll, width, height, footer],
   );
 
   const move = (delta: number) => {
@@ -263,58 +271,52 @@ export function App({
   useInput((input, key) => {
     if (input === "q") return exit(); // quits from any view, help included
     if (view === "help") {
-      if (input === "?" || key.escape) setView("queue");
+      if (input === "?" || key.escape) setView(helpFrom);
       return;
     }
     if (view === "denials") {
-      const count = denials?.length ?? 0;
       if (input === "D" || key.escape) return setView("queue");
+      if (input === "?") {
+        setHelpFrom("denials");
+        return setView("help");
+      }
       if (input === "j" || key.downArrow)
-        return setDenialCursor(clampGroup(denialCursor + 1, count));
+        return setScroll(Math.min(denialPanel.maxScroll, scroll + 1));
       if (input === "k" || key.upArrow)
-        return setDenialCursor(clampGroup(denialCursor - 1, count));
+        return setScroll(Math.max(0, scroll - 1));
       if (input === "a") {
-        const group = denials?.[denialCursor];
-        if (!group) return;
-        // Rails enforced here, not just displayed: a write-shaped suggestion or
-        // one already in the live allowlist gets no one-key apply. The flag on
-        // the group froze when the run ended, so the classifier gets a say too.
-        if (isWriteShaped(group.suggestion) || group.writeShaped)
-          return setStatus(
-            `${group.suggestion}: conflicts with docket's read-only stance`,
-          );
-        if (isAllowed(group.suggestion, liveCfg))
-          return setStatus(`${group.suggestion}: rule already exists`);
+        // One write for N rules: the selector decides which, so what the action
+        // line promised and what reaches the config are the same set.
+        const { add } = addable(viewGroups, liveCfg);
+        if (!add.length) return setStatus("nothing to add");
         try {
-          const text = readFileSync(paths.configPath, "utf8");
-          const updated = applySuggestion(text, group.suggestion);
-          writeConfigText(paths.configPath, updated);
-          setLiveCfg(JSON.parse(updated) as Config);
-          setApplied((held) => new Set(held).add(group.suggestion));
-          setStatus(`applied ${group.suggestion}`);
+          let text = readFileSync(paths.configPath, "utf8");
+          for (const g of add) text = applySuggestion(text, g.suggestion);
+          writeConfigText(paths.configPath, text);
+          setLiveCfg(JSON.parse(text) as Config);
+          setStatus(`added ${add.length} rule${add.length === 1 ? "" : "s"}`);
         } catch (e) {
-          setStatus(`apply ${group.suggestion} failed: ${e}`);
+          setStatus(`add failed: ${e}`);
         }
         return;
       }
-      if (input === "h" || input === "H") {
-        if (!current) return;
-        const scope = input === "H" ? "batch" : "group";
-        const selected = denials?.[denialCursor];
-        const targets =
-          scope === "batch" ? (denials ?? []) : selected ? [selected] : [];
+      if (input === "r" && denialRow) {
+        const target = denialRow.key;
+        return run(`retrying ${target}`, () => actions.retry(target));
+      }
+      if (key.return) {
+        if (!denialRow) return;
         const r = buildHandoff(
-          current.entry,
+          denialRow.entry,
           liveCfg,
           paths,
-          current.key,
-          targets,
-          scope,
+          denialRow.key,
+          viewGroups,
         );
         if ("error" in r) return setStatus(`hand off: ${r.error}`);
         request({
           ...r,
-          banner: `hand off (${scope}): ${current.key}`,
+          banner: `hand off: ${denialRow.key}`,
           // an interactive claude session's exit status is whatever the user
           // last ran in it, not a verdict on the hand-off
           interactive: true,
@@ -323,7 +325,10 @@ export function App({
       }
       return;
     }
-    if (input === "?") return setView("help");
+    if (input === "?") {
+      setHelpFrom("queue");
+      return setView("help");
+    }
     if (input === "j" || key.downArrow) return move(1);
     if (input === "k" || key.upArrow) return move(-1);
     if (input === "p") return run("polling", actions.poll);
@@ -342,7 +347,8 @@ export function App({
     }
     if (input === "D") {
       if (!denials?.length) return setStatus(`${current.key}: no denials`);
-      setDenialCursor(0);
+      setDenialKey(current.key);
+      setScroll(0);
       return setView("denials");
     }
     if (input === "s") return open("shell");
@@ -375,7 +381,10 @@ export function App({
     <Box flexDirection="column" width={width}>
       {/* the legend leads: fixed at the top, it cannot be moved around by
           however much assessment the row below it happens to have */}
-      <Legend unavailable={unavailable} />
+      <Legend
+        view={view === "denials" ? "denials" : "queue"}
+        unavailable={unavailable}
+      />
       <Bar
         label="docket"
         right={rows.length ? `${cursor + 1}/${rows.length}` : "empty"}
@@ -386,11 +395,11 @@ export function App({
       ) : view === "denials" ? (
         <>
           <Bar
-            label={`${current?.key ?? ""} denials`}
-            right="j/k moves · a applies · h/H hands off · esc closes"
+            label={`denials: ${denialKey ?? ""}`}
+            right={viewGroups.length ? denialTitle(viewGroups) : undefined}
             width={width}
           />
-          <Panel lines={denialPanel} />
+          <Panel lines={denialPanel.lines} />
         </>
       ) : (
         <>
