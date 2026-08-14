@@ -26,7 +26,8 @@ import { logCommand, statusCommand, watchCommand } from "./status";
 import { reconcile } from "./sync";
 import { runTui } from "./tui/app";
 import { childOwnsTerminal } from "./tui/suspend";
-import { promptCommand, resolveConfig } from "./wizard/trigger";
+import { promptCommand } from "./wizard/prompt";
+import { resolveConfig } from "./wizard/trigger";
 
 const USAGE = `docket — pre-run Claude Code reviews for PRs awaiting you
 
