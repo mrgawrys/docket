@@ -82,6 +82,11 @@ Tokens `{number}` and `{repo}` (org/repo) are substituted; a prompt with no
 token is used as-is. A prompt that doesn't run `/code-review` needs no
 code-review plugin (doctor checks this).
 
+`docket prompt` is the intended way to set this key: it opens the task in
+`$EDITOR` and can ask claude to derive the `extra_allowed_tools` the task
+needs, so the two keys stay in step. Picking the default there removes the
+key. The same step runs as step 4 of the first-run wizard.
+
 ## extra_allowed_tools
 
 Entries appended to the built-in tool allowlist for the headless run, in
@@ -91,9 +96,17 @@ baseline doesn't cover — headless runs can't prompt, so anything outside the
 allowlist is denied mid-run; the queue's `D` view is where those denials show
 up afterwards, and its `a` key appends here.
 
+`docket prompt` (and the wizard's review-task step) fills this in for you: it
+asks claude to read the skills the task names and proposes entries, merged
+into whatever the key already holds — hand-set entries always survive.
+
 The baseline is read-only and never posts to GitHub; entries you add here
 run without prompts, so adding posting tools (e.g. `Bash(gh pr comment:*)`)
-gives that guarantee up knowingly. Empty = baseline only.
+gives that guarantee up knowingly — knowingly means by hand. The deriver
+never adds posting tools silently: obviously posting-shaped entries are
+dropped from its proposal before you see it. That filter is best-effort, not
+a guarantee — allowlist entries are prefix patterns, so reading the proposal
+before accepting is the real gate. Empty = baseline only.
 
 ## openers
 
