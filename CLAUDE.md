@@ -4,6 +4,18 @@ Pre-runs Claude Code's `/code-review` on PRs awaiting the user's review.
 See README.md for architecture; `bun test` is fully mocked (no network, no
 tokens) — keep it that way.
 
+## Manual runs use scratch dirs
+
+A bare `bun src/main.ts …` reads and writes the user's live setup
+(`~/.config/docket/config.json` and its state). Any command handed to the
+user to try must pin scratch directories inline:
+
+    DOCKET_CONFIG_DIR=$(mktemp -d) DOCKET_STATE_DIR=$(mktemp -d) bun src/main.ts …
+
+A test instruction that can touch the live config has already failed once: a
+wizard answer deleted a hand-written `review_prompt`, recovered only from
+terminal scrollback.
+
 ## Releases are tags
 
 A release is a pushed tag — `git tag vX.Y.Z && git push origin vX.Y.Z` —
