@@ -16,6 +16,7 @@ test("help prints usage and exits 0", () => {
   const r = cli("help");
   expect(r.code).toBe(0);
   expect(r.out).toContain("docket poll");
+  expect(r.out).toContain("docket prompt");
   expect(r.out).toContain("docket on | off");
 });
 

@@ -565,7 +565,7 @@ export async function runNativeWizard(
     ui.step(4, "Review task");
     // `existing` is the step's config on purpose: nothing is written yet, so
     // claude_bin/claude_config_dir/claude_env can only come from there.
-    const stepCfg = (existing ?? {}) as Config;
+    const stepCfg = (existing ?? {}) as unknown as Config;
     const task = await reviewTask({
       ui,
       cfg: stepCfg,
