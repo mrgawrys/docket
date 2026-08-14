@@ -165,6 +165,21 @@ test("[e] replaces the derived list; the edit still merges with extras", async (
   });
 });
 
+test("[e] deliberately bypasses the posting-tool tripwire — typed by hand is 'knowingly'", async () => {
+  // The tripwire only guards what claude *derived*; a posting tool the user
+  // types into the edit line is the by-hand path docs/configuration.md
+  // describes as giving the read-only guarantee up knowingly, so it survives.
+  const r = await drive(["2", "", "e", "Bash(gh pr comment:*)", ""], {
+    editor: () => "Custom task.",
+    deriveTools: ["Bash(node:*)"],
+  });
+  expect(r.result).toEqual({
+    task: "custom",
+    review_prompt: "Custom task.",
+    extra_allowed_tools: ["Bash(gh pr comment:*)"],
+  });
+});
+
 test("a proposal of only posting tools shows the dropped count and adds nothing", async () => {
   const r = await drive(["2", "", ""], {
     editor: () => "Custom task.",
