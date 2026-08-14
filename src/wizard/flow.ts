@@ -8,6 +8,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import {
+  type Config,
   type Paths,
   ghBin,
   placeholderEntries,
@@ -16,6 +17,13 @@ import {
 } from "../config";
 import { doctorCommand } from "../doctor";
 import { ghAccountToken } from "../github";
+import type { StepResult } from "../reviewtask";
+import {
+  type ReviewTaskOptions,
+  makeDerive,
+  makeEditor,
+  runReviewTaskStep,
+} from "./reviewtask";
 import {
   SCAN_MAX_DEPTH,
   completePath,
@@ -40,6 +48,9 @@ export interface WizardOptions {
   // Real callers ask git for a checkout's origin; tests answer directly.
   getOrigin?: (dir: string) => string | null;
   runDoctor?: (p: Paths) => Promise<number>;
+  // The review-task step, injected like getOrigin so flow tests don't have
+  // to drive its dialogue (that's tests/wizard-reviewtask.test.ts's job).
+  reviewTask?: (o: ReviewTaskOptions) => Promise<StepResult>;
 }
 
 const ROOT_SUGGESTIONS = ["Development", "Work", "Projects", "code"];
@@ -460,8 +471,9 @@ function writeConfig(
   repos: Record<string, string>,
   login: string,
   account: string | undefined,
+  task: Exclude<StepResult, "aborted">,
 ): boolean {
-  ui.step(4, "Writing config");
+  ui.step(5, "Writing config");
   // Everything the wizard doesn't own survives — openers, extra_allowed_tools
   // and friends are the user's, whether they seeded them or wrote them.
   const cfg: Record<string, unknown> = { ...existing, orgs, repos };
@@ -469,6 +481,16 @@ function writeConfig(
   // A pin the wizard didn't set, naming an account it isn't using, resolves to
   // no token later; the empty one the starter config ships is harmless.
   else if (cfg.gh_account && cfg.gh_account !== login) delete cfg.gh_account;
+  // "default" writes neither key — an omitted key beats a key restating the
+  // default, so a custom task inherited from `existing` is cleared, while
+  // extra_allowed_tools is never deleted: hand-set entries are the user's.
+  if (task.task === "default") delete cfg.review_prompt;
+  else {
+    cfg.review_prompt = task.review_prompt;
+    // already merged by the step; absent means "add nothing", not "empty"
+    if (task.extra_allowed_tools)
+      cfg.extra_allowed_tools = task.extra_allowed_tools;
+  }
   const text = `${JSON.stringify(cfg, null, 2)}\n`;
   try {
     mkdirSync(p.configDir, { recursive: true });
@@ -510,6 +532,7 @@ export async function runNativeWizard(
       return r.ok && r.out ? r.out : null;
     });
   const runDoctor = opts.runDoctor ?? doctorCommand;
+  const reviewTask = opts.reviewTask ?? runReviewTaskStep;
   const ui = makeUi(
     opts.input ?? process.stdin,
     opts.output ?? process.stdout,
@@ -539,6 +562,18 @@ export async function runNativeWizard(
       return "came-up-short";
     }
     const { repos, shortfall } = await chooseRepos(ui, orgs, home, getOrigin);
+    ui.step(4, "Review task");
+    // `existing` is the step's config on purpose: nothing is written yet, so
+    // claude_bin/claude_config_dir/claude_env can only come from there.
+    const stepCfg = (existing ?? {}) as Config;
+    const task = await reviewTask({
+      ui,
+      cfg: stepCfg,
+      editor: makeEditor(ui, env),
+      derive: makeDerive(stepCfg),
+    });
+    // the step's aborted is a closed stdin: same outcome, same message path
+    if (task === "aborted") throw new InputEnded("stdin closed");
     // Written even with no repos mapped: that config is genuinely useful (the
     // poller works, unmapped repos skip at review time) and doctor says so.
     const ok = writeConfig(
@@ -549,6 +584,7 @@ export async function runNativeWizard(
       repos,
       account.login,
       account.account,
+      task,
     );
     if (!ok) return "came-up-short";
     wrote = true;
@@ -569,7 +605,7 @@ export async function runNativeWizard(
   }
 
   if (wrote) {
-    ui.step(5, "Checking the setup");
+    ui.step(6, "Checking the setup");
     const code = await runDoctor(p);
     ui.say();
     ui.say(

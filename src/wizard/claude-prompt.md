@@ -113,7 +113,36 @@ or to strike out any repo they don't want reviewed. If an org they picked
 turned up no clones, just say so and move on — a repo with no local clone is
 simply skipped, not an error, and they can clone it and re-run later.
 
-## Step 4 — Write the config
+## Step 4 — Review task
+
+Ask whether the user wants the default review task — docket runs Claude Code's
+`/code-review` on each PR — or a custom one they write themselves. Default
+means you're done with this step: set neither `review_prompt` nor
+`extra_allowed_tools`.
+
+For a custom task, take the task text (multi-line is fine; `{number}` and
+`{repo}` are substituted at run time) and set it as `review_prompt`. Two things
+wrap every task and are not configurable: the run happens in a git worktree,
+and it ends with a json block `{headline, issues, risk}`.
+
+A custom task usually needs tools beyond docket's read-only baseline, and the
+headless review cannot ask for permission — anything unlisted is denied
+mid-run. You have file access, so work the list out yourself: if the task
+names a slash command or skill, find it under the Claude config directory's
+`plugins`, `~/.claude/skills`, or `.claude/skills` in the user's clones, read
+it, and propose `extra_allowed_tools` entries for what it actually runs. Every
+entry must be traceable to something you read; do not guess broadly. Show the
+proposed list and let the user accept, edit, or skip it — skipping is fine,
+docket surfaces denied tools after each review and they can be added then.
+
+**Never propose a tool that posts to GitHub** — `gh pr comment`, `gh pr
+review`, `gh pr create`, `gh pr merge`, `gh api` with `-X`/`--method`, or
+anything like them. The review must stay read-only; the user typing such an
+entry themselves is the only way one gets in. If a config is already there,
+merge your proposal into its existing `extra_allowed_tools` rather than
+replacing them — hand-set entries survive.
+
+## Step 5 — Write the config
 
 Write `{{CONFIG_PATH}}`, creating `{{CONFIG_DIR}}` if it isn't there. Include
 **only the keys you actually determined**:
@@ -122,6 +151,8 @@ Write `{{CONFIG_PATH}}`, creating `{{CONFIG_DIR}}` if it isn't there. Include
 - `repos` — object mapping `"org/repo"` to an absolute clone path (required,
   may be empty if nothing was found)
 - `gh_account` — only when the user chose among several accounts
+- `review_prompt` and `extra_allowed_tools` — only when the user chose a
+  custom task in step 4
 
 ```json
 {
@@ -138,7 +169,7 @@ show the user the finished file.
 If a config is already there, read it first and keep any keys you did not
 determine yourself; the user may have set them by hand.
 
-## Step 5 — Verify
+## Step 6 — Verify
 
 Run doctor and show the user its output verbatim:
 
