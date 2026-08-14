@@ -131,7 +131,7 @@ async function deriveExtras(
     ui.say();
     ui.say("   proposed extra_allowed_tools:");
     if (added.length === 0) ui.say(ui.dim("   (nothing new to add)"));
-    for (const t of added) ui.say(`   + ${ui.bold(t)}`);
+    for (const t of added) ui.say(`   + ${ui.accent(t)}`);
     if (dropped.length > 0) {
       ui.say(
         ui.dim(
@@ -185,7 +185,7 @@ async function dialogue(o: ReviewTaskOptions): Promise<StepResult> {
   const currentIsDefault = current === DEFAULT_REVIEW_PROMPT;
   if (!currentIsDefault) {
     ui.say(ui.dim("   current task:"));
-    for (const line of current.split("\n")) ui.say(`     ${ui.bold(line)}`);
+    for (const line of current.split("\n")) ui.say(`     ${ui.accent(line)}`);
   }
   ui.say("   1) default — run /code-review on the PR");
   ui.say("   2) custom  — write your own");
@@ -208,7 +208,7 @@ async function dialogue(o: ReviewTaskOptions): Promise<StepResult> {
 
   ui.say();
   ui.say(ui.dim("   review task:"));
-  for (const line of task.split("\n")) ui.say(`     ${ui.bold(line)}`);
+  for (const line of task.split("\n")) ui.say(`     ${ui.accent(line)}`);
 
   const extras = await deriveExtras(o, task);
   if (extras === null) return { task: "custom", review_prompt: task };

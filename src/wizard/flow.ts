@@ -106,6 +106,9 @@ export interface Ui {
   suspend<T>(fn: () => T): T;
   bold(s: string): string;
   dim(s: string): string;
+  // User-entered and derived content, so it reads apart from the step's own
+  // questions and labels — bold alone is near-invisible on white terminals.
+  accent(s: string): string;
   close(): void;
 }
 
@@ -128,6 +131,7 @@ export function makeUi(
     tty ? `\x1b[${code}m${s}\x1b[0m` : s;
   const bold = paint("1");
   const dim = paint("2");
+  const accent = paint("36");
   const say = (s = "") => {
     output.write(`${s}\n`);
   };
@@ -171,6 +175,7 @@ export function makeUi(
     },
     bold,
     dim,
+    accent,
     close: () => rl.close(),
   };
 }
