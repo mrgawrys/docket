@@ -99,9 +99,18 @@ async function deriveExtras(
   const clones = Object.values(
     typeof o.cfg.repos === "object" && o.cfg.repos !== null ? o.cfg.repos : {},
   ).filter((p): p is string => typeof p === "string");
+  // The same resolution doctor uses — truthiness, not ??: the seeded config
+  // carries claude_config_dir: "", which means "not set", never a path.
+  const claudeHome =
+    typeof o.cfg.claude_config_dir === "string" && o.cfg.claude_config_dir
+      ? o.cfg.claude_config_dir
+      : join(process.env.HOME ?? "", ".claude");
+  const pluginsDir = join(claudeHome, "plugins");
   let parsed: ReturnType<typeof parseDerivedTools>;
   try {
-    parsed = parseDerivedTools(await o.derive(derivationPrompt(task, clones)));
+    parsed = parseDerivedTools(
+      await o.derive(derivationPrompt(task, clones, pluginsDir)),
+    );
   } catch {
     parsed = { error: "derivation failed" };
   }

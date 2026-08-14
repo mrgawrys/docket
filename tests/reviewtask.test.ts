@@ -40,18 +40,19 @@ test("an all-comments file yields empty", () => {
 
 // -------------------------------------------------------- derivationPrompt --
 
-test("the derivation prompt carries the task, the baseline, and the clones", () => {
-  const p = derivationPrompt("Run the blast-radius skill.", [
-    "/home/me/dev/api",
-    "/home/me/dev/web",
-  ]);
+test("the derivation prompt carries the task, the baseline, the clones and the plugins dir", () => {
+  const p = derivationPrompt(
+    "Run the blast-radius skill.",
+    ["/home/me/dev/api", "/home/me/dev/web"],
+    "/claude/home/plugins",
+  );
   expect(p).toContain("Run the blast-radius skill.");
   expect(p).toContain(ALLOWED_TOOLS);
   expect(p).toContain("/home/me/dev/api");
   expect(p).toContain("/home/me/dev/web");
   expect(p).toContain("~/.claude/skills");
   expect(p).toContain(".claude/skills");
-  expect(p).toContain("plugins");
+  expect(p).toContain("/claude/home/plugins");
   expect(p).toContain("traceable to something you read");
   expect(p).toContain('"tools"');
 });

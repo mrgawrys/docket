@@ -63,7 +63,11 @@ export type StepResult =
 
 export function editorTemplate(current: string): string;
 export function stripEditorComments(text: string): string;
-export function derivationPrompt(task: string, clonePaths: string[]): string;
+export function derivationPrompt(
+  task: string,
+  clonePaths: string[],
+  pluginsDir: string,
+): string;
 export function parseDerivedTools(
   stdout: string,
 ): { tools: string[]; notes?: string } | { error: string };

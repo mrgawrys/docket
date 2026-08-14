@@ -551,8 +551,11 @@ test("a custom step result writes both keys, and the step saw the existing extra
     "Bash(rg:*)",
     "Bash(node:*)",
   ]);
-  // the union lives in the step, so the flow must hand it what is on disk
+  // the union lives in the step, so the flow must hand it what is on disk —
+  // except the repos, which are the ones just chosen in step 3, so the
+  // derivation prompt lists real clone paths on a fresh run
   expect(r.stepOptions?.cfg.extra_allowed_tools).toEqual(["Bash(rg:*)"]);
+  expect(r.stepOptions?.cfg.repos).toEqual(r.config().repos);
 });
 
 test("a custom result without extras leaves the existing extras untouched", async () => {

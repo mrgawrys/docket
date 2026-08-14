@@ -88,9 +88,13 @@ test("custom + accept returns the task and the union with hand-set extras", asyn
   expect(r.out).not.toContain("+ Bash(rg:*)");
 });
 
-test("the derivation prompt carries the configured clone paths", async () => {
+test("the derivation prompt carries the clone paths and the config's plugins dir", async () => {
   const r = await drive(["2", "", ""], {
-    cfg: { orgs: [], repos: { "acme/thing": "/clones/thing" } },
+    cfg: {
+      orgs: [],
+      repos: { "acme/thing": "/clones/thing" },
+      claude_config_dir: "/pinned/claude",
+    },
     editor: () => "Custom task.",
     deriveTools: ["Bash(node:*)"],
   });
@@ -98,6 +102,8 @@ test("the derivation prompt carries the configured clone paths", async () => {
   expect(r.prompts.length).toBe(1);
   expect(r.prompts[0]).toContain("/clones/thing");
   expect(r.prompts[0]).toContain("Custom task.");
+  // the same resolution doctor uses: claude_config_dir wins when set
+  expect(r.prompts[0]).toContain("/pinned/claude/plugins");
 });
 
 test("declining the offer returns the task alone and says where denials land", async () => {

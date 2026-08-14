@@ -563,9 +563,10 @@ export async function runNativeWizard(
     }
     const { repos, shortfall } = await chooseRepos(ui, orgs, home, getOrigin);
     ui.step(4, "Review task");
-    // `existing` is the step's config on purpose: nothing is written yet, so
-    // claude_bin/claude_config_dir/claude_env can only come from there.
-    const stepCfg = (existing ?? {}) as unknown as Config;
+    // claude_bin/claude_config_dir/claude_env can only come from `existing` —
+    // nothing is written yet — but the repos are the ones just chosen, so a
+    // fresh run's derivation prompt lists the step-3 clone paths.
+    const stepCfg = { ...(existing ?? {}), repos } as unknown as Config;
     const task = await reviewTask({
       ui,
       cfg: stepCfg,

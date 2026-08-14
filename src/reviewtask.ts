@@ -34,7 +34,11 @@ export function stripEditorComments(text: string): string {
     .trim();
 }
 
-export function derivationPrompt(task: string, clonePaths: string[]): string {
+export function derivationPrompt(
+  task: string,
+  clonePaths: string[],
+  pluginsDir: string,
+): string {
   const clones = clonePaths.length
     ? clonePaths.map((p) => `- ${p}`).join("\n")
     : "- (none configured)";
@@ -52,9 +56,8 @@ The baseline allowlist it already has:
 ${ALLOWED_TOOLS}
 
 If the task names a slash command or skill, locate it and read it — the tools
-it needs are in the file, not in the task text. Look under your Claude config
-directory's plugins directory, ~/.claude/skills, and .claude/skills in these
-configured clones:
+it needs are in the file, not in the task text. Look under ${pluginsDir},
+~/.claude/skills, and .claude/skills in these configured clones:
 
 ${clones}
 
