@@ -180,24 +180,27 @@ export async function doctorCommand(
     );
   }
 
+  // The plugin registry, read once and shared by the /code-review check and
+  // the per-entry Skill(plugin:name) checks below.
+  // `||`, not `??`: the seeded config carries claude_config_dir: "", and an
+  // empty one here would look up the registry at a relative path and report
+  // an installed plugin missing. claudeEnv() reads it the same way.
+  const claudeHome =
+    cfg.claude_config_dir || join(process.env.HOME ?? "", ".claude");
+  const registryPath = join(claudeHome, "plugins", "installed_plugins.json");
+  let registryKeys: string[] = [];
+  try {
+    const registry = await Bun.file(registryPath).json();
+    registryKeys = Object.keys(registry.plugins ?? {});
+  } catch {
+    // missing/unreadable registry → nothing installed
+  }
+  const installed = (plugin: string) =>
+    registryKeys.some((k) => k.startsWith(`${plugin}@`));
+
   // The plugin is only a dependency when the effective prompt runs /code-review.
   if (effectiveReviewPrompt(cfg).includes("/code-review")) {
-    // `||`, not `??`: the seeded config carries claude_config_dir: "", and an
-    // empty one here would look up the registry at a relative path and report
-    // an installed plugin missing. claudeEnv() reads it the same way.
-    const claudeHome =
-      cfg.claude_config_dir || join(process.env.HOME ?? "", ".claude");
-    const registryPath = join(claudeHome, "plugins", "installed_plugins.json");
-    let hasPlugin = false;
-    try {
-      const registry = await Bun.file(registryPath).json();
-      hasPlugin = Object.keys(registry.plugins ?? {}).some((k) =>
-        k.startsWith("code-review@"),
-      );
-    } catch {
-      // missing/unreadable registry → plugin not installed
-    }
-    if (hasPlugin) {
+    if (installed("code-review")) {
       pass("code-review plugin installed");
     } else {
       fail(
@@ -207,6 +210,24 @@ export async function doctorCommand(
     }
   } else {
     pass("code-review plugin: not required (custom review_prompt)");
+  }
+
+  // Every Skill(plugin:name) entry names a plugin that must be installed —
+  // this is what makes a copied config self-verifying. Bare Skill(foo) is a
+  // personal or project skill, not in the registry, so it is skipped.
+  for (const entry of cfg.extra_allowed_tools ?? []) {
+    const m = /^Skill\(([^:()]+):([^:()]+)\)$/.exec(entry);
+    if (!m) continue;
+    const plugin = m[1]!;
+    if (installed(plugin)) {
+      pass(`plugin for ${entry} installed`);
+    } else {
+      // docket cannot know which marketplace the plugin came from
+      fail(
+        `plugin for ${entry}: '${plugin}' not found in ${registryPath}`,
+        `install the '${plugin}' plugin: claude plugin install ${plugin}@<marketplace>`,
+      );
+    }
   }
 
   return failed === 0 ? 0 : 1;
