@@ -81,7 +81,12 @@ test("a finished review records its triage summary on the entry", async () => {
       "```",
   });
   expect(r.code).toBe(0);
-  const e = await sb.waitEntry("testorg/demo#7", (x) => x.status === "ready");
+  // the runner writes the status first and patches the summary on afterwards,
+  // so waiting on status alone races the second write
+  const e = await sb.waitEntry(
+    "testorg/demo#7",
+    (x) => x.status === "ready" && x.summary,
+  );
   expect(e.summary).toEqual({
     headline: "choice questions render as Text",
     issues: 1,
@@ -98,6 +103,48 @@ test("a review that ignores the summary instruction still lands as ready", async
   ).toBe(0);
   const e = await sb.waitEntry("testorg/demo#7", (x) => x.status === "ready");
   expect(e.summary).toBeUndefined();
+});
+
+test("a finished review with a denial records the grouped denial on the entry", async () => {
+  const sb = makeSandbox();
+  sb.gitInitDemo();
+  const r = sb.run(["review", "testorg/demo#7"], { CLAUDE_EMIT_DENIAL: "1" });
+  expect(r.code).toBe(0);
+  // denials are patched on after the status write — wait for both
+  const e = await sb.waitEntry(
+    "testorg/demo#7",
+    (x) => x.status === "ready" && x.denials,
+  );
+  expect(e.denials).toEqual([
+    expect.objectContaining({ suggestion: "Bash(rg:*)", count: 1 }),
+  ]);
+});
+
+test("a clean review leaves the denials field absent", async () => {
+  const sb = makeSandbox();
+  sb.gitInitDemo();
+  expect(sb.run(["review", "testorg/demo#7"]).code).toBe(0);
+  const e = await sb.waitEntry("testorg/demo#7", (x) => x.status === "ready");
+  expect(e.denials).toBeUndefined();
+});
+
+test("a failed run's denials still land on the entry — the run log is read regardless of outcome", async () => {
+  const sb = makeSandbox();
+  sb.gitInitDemo();
+  const r = sb.run(["review", "testorg/demo#7"], {
+    CLAUDE_EMIT_DENIAL: "1",
+    CLAUDE_FAIL: "1",
+  });
+  expect(r.code).toBe(0);
+  // the runner writes the status first and patches denials on afterwards, so
+  // waiting on status alone races the second write (see the worktrees test)
+  const e = await sb.waitEntry(
+    "testorg/demo#7",
+    (x) => x.status === "failed" && x.denials,
+  );
+  expect(e.denials).toEqual([
+    expect.objectContaining({ suggestion: "Bash(rg:*)", count: 1 }),
+  ]);
 });
 
 test("runner records the worktree the agent created, wherever it put it", async () => {

@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import {
   ConfigError,
+  type Paths,
   claudeBin,
   claudeEnv,
   effectiveReviewPrompt,
@@ -9,6 +10,7 @@ import {
   loadConfig,
   paths as resolvePaths,
   placeholderEntries,
+  seedExampleConfig,
 } from "./config";
 import { ghAccountToken } from "./github";
 import { effectiveOpeners, resolveOpeners } from "./openers";
@@ -36,8 +38,9 @@ function runs(cmd: string[], extraEnv: Record<string, string> = {}): RunResult {
 // Walks the dependency chain a review run needs, one ✓/✗ line per check.
 // Deliberately not withCtx: withCtx hard-exits on the very conditions doctor
 // must report (missing config, unresolvable gh_account token).
-export async function doctorCommand(): Promise<number> {
-  const p = resolvePaths();
+export async function doctorCommand(
+  p: Paths = resolvePaths(),
+): Promise<number> {
   let failed = 0;
   const pass = (label: string) => console.log(`✓ ${label}`);
   const fail = (label: string, hint: string) => {
@@ -51,7 +54,14 @@ export async function doctorCommand(): Promise<number> {
     cfg = await loadConfig(p);
     pass(`config: ${p.configPath}`);
   } catch (e) {
-    const msg = e instanceof ConfigError ? e.message : String(e);
+    // doctor is the one command a fresh install is told to run, and it is not
+    // interactive: no config means seed one and say what to fill in.
+    const msg =
+      e instanceof ConfigError
+        ? e.noConfig
+          ? await seedExampleConfig(p)
+          : e.message
+        : String(e);
     fail(`config: ${p.configPath}`, msg);
     console.log("  (remaining checks skipped — fix the config first)");
     return 1;

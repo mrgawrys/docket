@@ -8,6 +8,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname } from "node:path";
+import type { DenialGroup } from "./denials";
 import type { Logger } from "./log";
 import { pidAlive } from "./proc";
 import type { Summary } from "./summary";
@@ -40,6 +41,9 @@ export interface Entry {
   // Parsed once when the review finishes, so the queue renders from state
   // alone instead of reading a run log per row.
   summary?: Summary;
+  // Parsed once from the run log too, for the same reason; absent when the
+  // run had no denials.
+  denials?: DenialGroup[];
   updated_at: string;
 }
 

@@ -14,10 +14,12 @@ export interface GhCtx {
 export function ghAccountToken(
   gh: string,
   account: string,
+  env: NodeJS.ProcessEnv = process.env,
 ): { token: string } | { error: string } {
   try {
     const p = Bun.spawnSync([gh, "auth", "token", "--user", account], {
       stderr: "pipe",
+      env: env as Record<string, string>,
     });
     const token = p.stdout.toString().trim();
     if (p.exitCode !== 0 || !token) return { error: p.stderr.toString() };

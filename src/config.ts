@@ -1,4 +1,13 @@
-import { cpSync, existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { basename, join } from "node:path";
 import EXAMPLE_CONFIG from "../config.example.json" with { type: "text" };
 
@@ -91,7 +100,31 @@ export function paths(env: NodeJS.ProcessEnv = process.env): Paths {
   };
 }
 
-export class ConfigError extends Error {}
+export class ConfigError extends Error {
+  // True only when there is no config file at all — the one config error the
+  // first-run wizard is an answer to. A typed marker, because matching on the
+  // message would break the first time the wording changes.
+  readonly noConfig: boolean;
+  constructor(message: string, noConfig = false) {
+    super(message);
+    this.noConfig = noConfig;
+  }
+}
+
+// What a run with no config does when there is nobody to ask: leave an
+// editable starter config rather than a pointer to a file the user may not
+// have checked out. Returns the message to report. Only ever called on a
+// config that is genuinely absent — it overwrites whatever is there.
+export async function seedExampleConfig(p: Paths): Promise<string> {
+  try {
+    mkdirSync(p.configDir, { recursive: true });
+    await Bun.write(p.configPath, EXAMPLE_TEXT);
+  } catch {
+    // unwritable config dir — fall back to telling them where it goes
+    return `no config at ${p.configPath} and it could not be written there — create it with "orgs" (array) and "repos" (object), or point DOCKET_CONFIG_DIR at a writable directory`;
+  }
+  return `no config yet — wrote a starter one to ${p.configPath}; fill in "orgs" and "repos", then run: docket doctor`;
+}
 
 // docket was called auto-review, and kept both directories under that name.
 // Copy them over on the first run that finds them, leaving the originals in
@@ -138,21 +171,9 @@ export async function loadConfig(p: Paths = paths()): Promise<Config> {
   migrateLegacyDirs(p);
   const file = Bun.file(p.configPath);
   if (!(await file.exists())) {
-    // Nothing to inherit and nothing to read: leave the user an editable
-    // config rather than a pointer to a file they may not have checked out.
-    let seeded = false;
-    try {
-      mkdirSync(p.configDir, { recursive: true });
-      await Bun.write(p.configPath, EXAMPLE_TEXT);
-      seeded = true;
-    } catch {
-      // unwritable config dir — fall back to telling them where it goes
-    }
-    throw new ConfigError(
-      seeded
-        ? `no config yet — wrote a starter one to ${p.configPath}; fill in "orgs" and "repos", then run: docket doctor`
-        : `no config at ${p.configPath} and it could not be written there — create it with "orgs" (array) and "repos" (object), or point DOCKET_CONFIG_DIR at a writable directory`,
-    );
+    // Nothing written here: a first run on a terminal gets the wizard offered
+    // before anything lands on disk, and its callers seed when it doesn't.
+    throw new ConfigError(`no config at ${p.configPath}`, true);
   }
   let cfg: Config;
   try {
@@ -213,6 +234,36 @@ export async function loadConfig(p: Paths = paths()): Promise<Config> {
     );
   }
   return cfg;
+}
+
+// The one way docket writes the user's config — the TUI's apply verb and the
+// wizard both come through here. tmp + rename so a kill mid-write cannot
+// corrupt a hand-maintained file, and through realpath so a config.json
+// symlinked into a dotfiles repo keeps its link instead of becoming a regular
+// file with the repo copy orphaned.
+export function writeConfigText(path: string, text: string): void {
+  const real = existsSync(path) ? realpathSync(path) : path;
+  const tmp = `${real}.tmp`;
+  writeFileSync(tmp, text);
+  renameSync(tmp, real);
+}
+
+// The config as it stands on disk, for a caller that already holds a startup
+// snapshot and needs the fresher one — the TUI re-seeds from here on every
+// remount, so a rule applied before a suspend is still applied after it. Any
+// failure (absent, half-written, not an object) keeps the snapshot: this runs
+// under a render, where there is nobody to report an error to.
+export function readConfigSync(path: string, fallback: Config): Config {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
+    return typeof parsed === "object" &&
+      parsed !== null &&
+      !Array.isArray(parsed)
+      ? (parsed as Config)
+      : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 export const claudeBin = (

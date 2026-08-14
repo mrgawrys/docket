@@ -1,4 +1,14 @@
-import { claudeBin, claudeEnv, type Config } from "./config";
+import { existsSync } from "node:fs";
+import {
+  claudeBin,
+  claudeEnv,
+  effectiveAllowedTools,
+  runLogPath,
+  type Config,
+  type Paths,
+} from "./config";
+import { isAllowed, isWriteShaped, type DenialGroup } from "./denials";
+import { handoffPrompt } from "./handoff";
 import { cleanupEntry, type Ctx } from "./reviewer";
 import {
   isLiveReview,
@@ -24,6 +34,56 @@ export function buildResume(
     // claude stores sessions under a slug of the directory it ran in, so a
     // resume must run in the clone the review ran in, never in the worktree
     argv: [claudeBin(cfg), "--resume", entry.session_id],
+    cwd: entry.local_path,
+    env: claudeEnv(cfg),
+  };
+}
+
+// Shared with the TUI's `unavailable` check, so the reason greyed in the
+// legend and the reason a keypress reports are never two different sentences.
+export const NO_CLONE_REASON = "no clone — nothing to run claude in";
+
+// The escape hatch for what the denials panel's one-key apply can't settle:
+// launches claude directly, in default permission mode, so the user answers
+// any permission prompt an edit would trigger — never docket. `cfg` should be
+// the freshest one available (`liveCfg` in the TUI), since a just-applied
+// suggestion belongs in the prompt.
+export function buildHandoff(
+  entry: Entry,
+  cfg: Config,
+  paths: Paths,
+  key: string,
+  groups: DenialGroup[],
+):
+  | { argv: string[]; cwd: string; env: Record<string, string> }
+  | { error: string } {
+  if (!entry.local_path) {
+    return { error: NO_CLONE_REASON };
+  }
+  if (!groups.length) {
+    return { error: "no denials to hand off" };
+  }
+  const logPath = runLogPath(paths, key);
+  const prompt = handoffPrompt({
+    key,
+    // Both flags were frozen when the run finished. The prompt states its own
+    // "current extra_allowed_tools" a few lines further down, so a stale
+    // already-allowed would hand claude two contradictory facts.
+    groups: groups.map((g) => ({
+      ...g,
+      writeShaped: isWriteShaped(g.suggestion) || g.writeShaped,
+      alreadyAllowed: isAllowed(g.suggestion, cfg),
+    })),
+    configPath: paths.configPath,
+    extraAllowedTools: cfg.extra_allowed_tools ?? [],
+    effectiveAllowedTools: effectiveAllowedTools(cfg),
+    runLogPath: logPath,
+    runLogExists: existsSync(logPath),
+  });
+  return {
+    // no --permission-mode: a default session hits a real prompt on any edit,
+    // which is the enforcement half of "research only, change nothing"
+    argv: [claudeBin(cfg), prompt],
     cwd: entry.local_path,
     env: claudeEnv(cfg),
   };

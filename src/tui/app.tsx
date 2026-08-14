@@ -1,10 +1,23 @@
 import { Box, render, Text, useApp, useInput, useWindowSize } from "ink";
-import { watch } from "node:fs";
+import { readFileSync, watch } from "node:fs";
 import { dirname } from "node:path";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { readAssessment } from "../assessment";
-import { runLogPath, type Config, type Paths } from "../config";
-import { buildResume, printPending } from "../list";
+import {
+  readConfigSync,
+  runLogPath,
+  writeConfigText,
+  type Config,
+  type Paths,
+} from "../config";
+import { applySuggestion, type DenialGroup } from "../denials";
+import { addable, denialTitle, denialView, TEASER_HEIGHT } from "../denialview";
+import {
+  buildHandoff,
+  buildResume,
+  NO_CLONE_REASON,
+  printPending,
+} from "../list";
 import {
   buildOpener,
   openerContext,
@@ -14,7 +27,7 @@ import {
 } from "../openers";
 import { selfArgs } from "../proc";
 import type { Ctx } from "../reviewer";
-import { loadState, pendingEntries } from "../state";
+import { type Entry, loadState, pendingEntries } from "../state";
 import { PANEL_HEIGHT, panelLines } from "../panel";
 import { Help, Legend } from "./legend";
 import { Panel } from "./panel";
@@ -89,8 +102,20 @@ export function App({
   );
   const [rows, setRows] = useState<Row[]>(load);
   const [cursorKey, setCursorKey] = useState<string | undefined>(initialKey);
-  const [view, setView] = useState<"queue" | "help">("queue");
+  const [view, setView] = useState<"queue" | "help" | "denials">("queue");
+  // Help is a detour, not a destination: esc goes back where it was opened.
+  const [helpFrom, setHelpFrom] = useState<"queue" | "denials">("queue");
   const [status, setStatus] = useState<string | undefined>();
+  // The PR the denials view is reading, pinned when D opened it. Its verbs act
+  // on this key and never on the queue cursor, which a finishing poll can move.
+  const [denialKey, setDenialKey] = useState<string | undefined>();
+  const [scroll, setScroll] = useState(0);
+  // `cfg` is the startup snapshot, and every suspend verb remounts App with it
+  // — seeding from it would drop the rules `a` wrote before the suspend. Read
+  // the file instead; the prop is only the fallback.
+  const [liveCfg, setLiveCfg] = useState(() =>
+    readConfigSync(paths.configPath, cfg),
+  );
 
   // saveState renames a temp file over state.json, which breaks a watch bound
   // to the file's inode — watch the directory instead.
@@ -130,24 +155,44 @@ export function App({
     [current, summary, paths],
   );
 
+  // A failed run has no session to resume, which is exactly where the denials
+  // are: enter was dead on the one row that most needed it. There it resolves
+  // them instead.
+  const enterResolves = useMemo(() => {
+    if (!current?.entry.denials?.length || !current.entry.local_path)
+      return false;
+    return "error" in buildResume(current.entry, cfg);
+  }, [current, cfg]);
+
   // Computed per row, never per keypress: a verb the machine cannot run is
   // greyed in the legend with its reason in the preview, not a dead key.
   const unavailable = useMemo(() => {
     const u: Record<string, string> = {};
     if (!current) return u;
     const resume = buildResume(current.entry, cfg);
-    if ("error" in resume) u.claude = resume.error;
+    // Not greyed when enter resolves: it still opens claude, just on the
+    // denials rather than on a session that was never written.
+    if ("error" in resume && !enterResolves) u.claude = resume.error;
     const wt = resolveWorktree(current.entry);
     for (const verb of ["shell", "diff"]) {
       if (!resolved[verb]) u[verb] = `no ${verb} opener found on PATH`;
       else if ("missing" in wt) u[verb] = wt.missing;
     }
+    if (!current.entry.denials?.length) u.denials = "no denials recorded";
+    if (!current.entry.local_path) {
+      u.handoff = NO_CLONE_REASON;
+    } else if (!current.entry.denials?.length) {
+      u.handoff = "no denials recorded";
+    }
     return u;
-  }, [current, cfg, resolved]);
+  }, [current, cfg, resolved, enterResolves]);
 
   const notes = useMemo(() => {
     const byReason = new Map<string, string[]>();
     for (const [verb, reason] of Object.entries(unavailable)) {
+      // A review that tripped no denials is the normal case, not a machine
+      // this verb cannot run on: the greyed key says it, the panel need not.
+      if (verb === "denials" || verb === "handoff") continue;
       byReason.set(reason, [...(byReason.get(reason) ?? []), verb]);
     }
     return [...byReason].map(
@@ -160,13 +205,18 @@ export function App({
     1,
     Math.min(rows.length || 1, Math.min(10, height - 8)),
   );
+  const denials = current?.entry.denials;
   // Bounded, and it shrinks with the terminal — the panel never takes the
   // screen away from the queue the way the old scrolling pane did. The `- 3`
   // is the two bars plus the row the frame must leave spare: fill every row
-  // and the terminal scrolls the whole thing on each render.
+  // and the terminal scrolls the whole thing on each render. A run with
+  // denials asks for the teaser's rows on top of the summary's.
   const panelHeight = Math.max(
     1,
-    Math.min(PANEL_HEIGHT, height - 1 - queueHeight - 3 - (footer ? 1 : 0)),
+    Math.min(
+      PANEL_HEIGHT + (denials?.length ? TEASER_HEIGHT + 1 : 0),
+      height - 1 - queueHeight - 3 - (footer ? 1 : 0),
+    ),
   );
   const panel = useMemo(
     () =>
@@ -174,10 +224,40 @@ export function App({
         summary,
         assessment,
         notes,
+        denials,
+        cfg: liveCfg,
+        enterResolves,
         width: width - 2,
         height: panelHeight,
       }),
-    [summary, assessment, notes, width, panelHeight],
+    [
+      summary,
+      assessment,
+      notes,
+      denials,
+      liveCfg,
+      enterResolves,
+      width,
+      panelHeight,
+    ],
+  );
+
+  // The view reads the PR D was pressed on, not whatever the queue cursor has
+  // drifted to since — retrying the wrong row bills a second review.
+  const denialRow = rows.find((r) => r.key === denialKey);
+  const viewGroups = denialRow?.entry.denials ?? [];
+  // The denials view takes the whole region below the bars: legend, the two
+  // bars and the row the frame must leave spare (see panelHeight).
+  const denialPanel = useMemo(
+    () =>
+      denialView({
+        groups: viewGroups,
+        cfg: liveCfg,
+        scroll,
+        width: width - 2,
+        height: Math.max(1, height - 4 - (footer ? 1 : 0)),
+      }),
+    [viewGroups, liveCfg, scroll, width, height, footer],
   );
 
   const move = (delta: number) => {
@@ -192,6 +272,19 @@ export function App({
       .then(() => setStatus(undefined))
       .catch((e: unknown) => setStatus(`${label} failed: ${e}`))
       .finally(() => setRows(load()));
+  };
+
+  // Reached from the queue and from the denials view, on the same terms.
+  const handOff = (key: string, entry: Entry, groups: DenialGroup[]) => {
+    const r = buildHandoff(entry, liveCfg, paths, key, groups);
+    if ("error" in r) return setStatus(`hand off: ${r.error}`);
+    request({
+      ...r,
+      banner: `hand off: ${key}`,
+      // an interactive claude session's exit status is whatever the user last
+      // ran in it, not a verdict on the hand-off
+      interactive: true,
+    });
   };
 
   const open = (verb: "shell" | "diff") => {
@@ -212,16 +305,59 @@ export function App({
   useInput((input, key) => {
     if (input === "q") return exit(); // quits from any view, help included
     if (view === "help") {
-      if (input === "?" || key.escape) setView("queue");
+      if (input === "?" || key.escape) setView(helpFrom);
       return;
     }
-    if (input === "?") return setView("help");
+    if (view === "denials") {
+      if (input === "D" || key.escape) return setView("queue");
+      if (input === "?") {
+        setHelpFrom("denials");
+        return setView("help");
+      }
+      if (input === "j" || key.downArrow)
+        return setScroll(Math.min(denialPanel.maxScroll, scroll + 1));
+      if (input === "k" || key.upArrow)
+        return setScroll(Math.max(0, scroll - 1));
+      if (input === "a") {
+        // One write for N rules: the selector decides which, so what the action
+        // line promised and what reaches the config are the same set.
+        const { add } = addable(viewGroups, liveCfg);
+        if (!add.length) return setStatus("nothing to add");
+        try {
+          let text = readFileSync(paths.configPath, "utf8");
+          for (const g of add) text = applySuggestion(text, g.suggestion);
+          writeConfigText(paths.configPath, text);
+          setLiveCfg(JSON.parse(text) as Config);
+          setStatus(`added ${add.length} rule${add.length === 1 ? "" : "s"}`);
+        } catch (e) {
+          setStatus(`add failed: ${e}`);
+        }
+        return;
+      }
+      if (input === "r" && denialRow) {
+        const target = denialRow.key;
+        return run(`retrying ${target}`, () => actions.retry(target));
+      }
+      if (key.return) {
+        if (!denialRow) return;
+        return handOff(denialRow.key, denialRow.entry, viewGroups);
+      }
+      return;
+    }
+    if (input === "?") {
+      setHelpFrom("queue");
+      return setView("help");
+    }
     if (input === "j" || key.downArrow) return move(1);
     if (input === "k" || key.upArrow) return move(-1);
     if (input === "p") return run("polling", actions.poll);
     if (input === "S") return run("syncing", actions.sync);
     if (!current) return;
     if (key.return) {
+      // enter opens claude either way: the review's own session when there is
+      // one, and otherwise the denials of a run that failed before it made one.
+      if (enterResolves)
+        return handOff(current.key, current.entry, current.entry.denials ?? []);
       const r = buildResume(current.entry, cfg);
       if ("error" in r) return setStatus(`${current.key} ${r.error}`);
       request({
@@ -231,6 +367,12 @@ export function App({
         banner: `resuming ${current.key}`,
       });
       return;
+    }
+    if (input === "D") {
+      if (!denials?.length) return setStatus(`${current.key}: no denials`);
+      setDenialKey(current.key);
+      setScroll(0);
+      return setView("denials");
     }
     if (input === "s") return open("shell");
     // ink reports ctrl+letter as the bare letter, and Ctrl+D is muscle memory
@@ -262,7 +404,10 @@ export function App({
     <Box flexDirection="column" width={width}>
       {/* the legend leads: fixed at the top, it cannot be moved around by
           however much assessment the row below it happens to have */}
-      <Legend unavailable={unavailable} />
+      <Legend
+        view={view === "denials" ? "denials" : "queue"}
+        unavailable={unavailable}
+      />
       <Bar
         label="docket"
         right={rows.length ? `${cursor + 1}/${rows.length}` : "empty"}
@@ -270,6 +415,15 @@ export function App({
       />
       {view === "help" ? (
         <Help unavailable={unavailable} />
+      ) : view === "denials" ? (
+        <>
+          <Bar
+            label={`denials: ${denialKey ?? ""}`}
+            right={viewGroups.length ? denialTitle(viewGroups) : undefined}
+            width={width}
+          />
+          <Panel lines={denialPanel.lines} />
+        </>
       ) : (
         <>
           <Queue rows={rows} cursor={cursor} height={queueHeight} />

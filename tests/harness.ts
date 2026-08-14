@@ -11,13 +11,23 @@ import { join } from "node:path";
 const MAIN = join(import.meta.dir, "..", "src", "main.ts");
 
 // Same shims as tests/tests.sh, knobs included: GH_PR_STATUS_JSON,
-// GH_PR_VIEW_FAIL, CLAUDE_FAIL. The claude shim records its calls, the
+// GH_PR_VIEW_FAIL, GH_AUTH_STATUS_TEXT, GH_ORG_LIST, GH_ORG_LIST_FAIL,
+// CLAUDE_FAIL, CLAUDE_EMIT_DENIAL. The gh shim logs every invocation (with
+// the GH_TOKEN it saw) to GH_CALLS; the claude shim records its calls, the
 // prompt, CLAUDE_CONFIG_DIR, and the state of testorg/demo#7 at call time.
 const GH_SHIM = `#!/usr/bin/env bash
+[ -n "\${GH_CALLS:-}" ] && echo "$* token=\${GH_TOKEN:-}" >>"\$GH_CALLS"
 if [ "$1" = --version ]; then echo "gh version 0.0-test"; exit 0; fi
 if [ "$1" = auth ] && [ "$2" = status ]; then
   [ "\${GH_AUTH_STATUS_FAIL:-0}" = 1 ] && { echo "not logged in" >&2; exit 1; }
+  # real gh writes the human-readable status to stderr, so callers that want
+  # it have to read both streams — the shim keeps that true
+  [ -n "\${GH_AUTH_STATUS_TEXT:-}" ] && { printf '%s\n' "\$GH_AUTH_STATUS_TEXT" >&2; exit 0; }
   echo "Logged in"; exit 0
+fi
+if [ "$1" = org ] && [ "$2" = list ]; then
+  [ "\${GH_ORG_LIST_FAIL:-0}" = 1 ] && { echo "boom" >&2; exit 1; }
+  printf '%s\n' "\${GH_ORG_LIST:-}"; exit 0
 fi
 if [ "$1" = auth ] && [ "$2" = token ]; then
   [ "\${GH_AUTH_TOKEN_FAIL:-0}" = 1 ] && { echo "no such account" >&2; exit 1; }
@@ -79,6 +89,11 @@ bun -e 'const fs=require("fs");let s={};try{s=JSON.parse(fs.readFileSync(process
 # optionally simulate the agent creating a review worktree wherever it likes
 [ -n "\${CLAUDE_MAKE_WORKTREE:-}" ] && git -C "$PWD" worktree add --quiet --detach "\$CLAUDE_MAKE_WORKTREE" HEAD 2>/dev/null
 echo '{"type":"assistant","message":{"content":[{"type":"text","text":"Looking at the diff"},{"type":"tool_use","name":"Bash","input":{"command":"git fetch origin"}}]}}'
+# optionally simulate a dontAsk denial: a tool_use the allowlist turned away
+if [ -n "\${CLAUDE_EMIT_DENIAL:-}" ]; then
+  echo '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"denied-1","name":"Bash","input":{"command":"rg --files"}}]}}'
+  echo '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"denied-1","is_error":true,"content":"Permission to use Bash has been denied because Claude Code is running in dontAsk mode."}]}}'
+fi
 if [ "\${CLAUDE_FAIL:-0}" = 1 ]; then echo "boom" >&2; exit 1; fi
 [ -n "\${CLAUDE_SLEEP:-}" ] && sleep "\$CLAUDE_SLEEP"
 # CLAUDE_RESULT stands in for the agent's final message; bun does the escaping
@@ -115,6 +130,7 @@ export interface Sandbox {
   cfgdirCapture(): string;
   watchdogCapture(): string;
   ghTokenCapture(): string;
+  ghCalls(): string[];
   statusAtCall(): string;
   gitInitDemo(): void;
 }
@@ -154,6 +170,7 @@ export function makeSandbox(): Sandbox {
     CLAUDE_BIN: claudeShim,
     GH_BIN: ghShim,
     LAUNCHCTL_BIN: launchctlShim,
+    GH_CALLS: capture("gh-calls"),
     CLAUDE_CALLS: capture("claude-calls"),
     PROMPT_CAPTURE: capture("prompt-capture"),
     ALLOWED_CAPTURE: capture("allowed-capture"),
@@ -232,6 +249,8 @@ export function makeSandbox(): Sandbox {
     cfgdirCapture: () => readFileSync(env.CFGDIR_CAPTURE!, "utf8"),
     watchdogCapture: () => readFileSync(env.WATCHDOG_CAPTURE!, "utf8"),
     ghTokenCapture: () => readFileSync(env.GHTOKEN_CAPTURE!, "utf8"),
+    ghCalls: () =>
+      readFileSync(env.GH_CALLS!, "utf8").split("\n").filter(Boolean),
     statusAtCall: () => readFileSync(env.STATUS_AT_CALL!, "utf8").trim(),
     gitInitDemo() {
       const g = (...a: string[]) =>

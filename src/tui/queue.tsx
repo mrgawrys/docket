@@ -1,4 +1,5 @@
 import { Box, Text } from "ink";
+import { denialChip } from "../denialview";
 import type { Entry, Status } from "../state";
 import { issueChip, riskChip } from "../summary";
 
@@ -45,6 +46,10 @@ export function Queue({
   }
   const start = windowStart(cursor, rows.length, height);
   const keyWidth = Math.min(34, Math.max(...rows.map((r) => r.key.length)) + 1);
+  // The other chips hold their column whether or not the row fills it, so the
+  // grid stays a grid. This one is rarer than it is wide: with nothing in the
+  // queue to show, its six columns go back to the title.
+  const anyDenials = rows.some((r) => r.entry.denials?.length);
   return (
     <Box flexDirection="column">
       {rows.slice(start, start + height).map(({ key, entry }, i) => {
@@ -79,6 +84,18 @@ export function Queue({
                 {riskChip(entry.summary)?.text ?? ""}
               </Text>
             </Box>
+            {/* "⊘ 999" is 5 wide; the sixth column is the gap before the
+                flags, which have none of their own on the left */}
+            {anyDenials ? (
+              <Box width={6} flexShrink={0}>
+                <Text
+                  color={denialChip(entry.denials)?.color}
+                  wrap="truncate-end"
+                >
+                  {denialChip(entry.denials)?.text ?? ""}
+                </Text>
+              </Box>
+            ) : null}
             {flags ? (
               <Box flexShrink={0}>
                 <Text color="yellow">{flags} </Text>

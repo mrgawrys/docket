@@ -7,11 +7,14 @@ export interface Binding {
   verb?: string;
 }
 
-export const KEYMAP: Binding[] = [
+export type KeymapView = "queue" | "denials";
+
+export const QUEUE_KEYS: Binding[] = [
   { keys: "j/k ↑/↓", label: "move" },
   { keys: "enter", label: "claude", verb: "claude" },
   { keys: "s", label: "shell", verb: "shell" },
   { keys: "d", label: "diff", verb: "diff" },
+  { keys: "D", label: "denials", verb: "denials" },
   { keys: "w", label: "watch live" },
   { keys: "r", label: "retry" },
   { keys: "x", label: "dismiss" },
@@ -22,15 +25,38 @@ export const KEYMAP: Binding[] = [
   { keys: "q", label: "quit" },
 ];
 
+// The denials view is a mode, not a panel: its own keys, its own way out. The
+// verbs are spelled out in full in the view's action block; what the legend
+// adds is how to move and how to leave.
+export const DENIAL_KEYS: Binding[] = [
+  { keys: "enter", label: "hand all of it to claude", verb: "handoff" },
+  { keys: "a", label: "add every safe rule to your config" },
+  { keys: "r", label: "re-run this review" },
+  { keys: "j/k ↑/↓", label: "scroll" },
+  { keys: "esc D", label: "back to the queue" },
+  { keys: "?", label: "help" },
+  { keys: "q", label: "quit" },
+];
+
+const KEYMAPS: Record<KeymapView, Binding[]> = {
+  queue: QUEUE_KEYS,
+  denials: DENIAL_KEYS,
+};
+
 // The one-line footer: the per-entry verbs plus the way out.
-const FOOTER = ["enter", "s", "d", "w", "x", "?"];
+const FOOTER: Record<KeymapView, string[]> = {
+  queue: ["enter", "s", "d", "D", "w", "x", "?"],
+  denials: ["j/k ↑/↓", "esc D", "?", "q"],
+};
 
 export function Legend({
+  view = "queue",
   unavailable,
 }: {
+  view?: KeymapView;
   unavailable: Record<string, string>;
 }) {
-  const items = KEYMAP.filter((b) => FOOTER.includes(b.keys));
+  const items = KEYMAPS[view].filter((b) => FOOTER[view].includes(b.keys));
   return (
     <Box>
       {items.map((b, i) => {
@@ -46,11 +72,19 @@ export function Legend({
   );
 }
 
-export function Help({ unavailable }: { unavailable: Record<string, string> }) {
+function Keys({
+  title,
+  bindings,
+  unavailable,
+}: {
+  title: string;
+  bindings: Binding[];
+  unavailable: Record<string, string>;
+}) {
   return (
-    <Box flexDirection="column" paddingX={1}>
-      <Text bold>keys</Text>
-      {KEYMAP.map((b) => {
+    <>
+      <Text bold>{title}</Text>
+      {bindings.map((b) => {
         const reason = b.verb !== undefined ? unavailable[b.verb] : undefined;
         return (
           <Box key={b.keys}>
@@ -64,6 +98,19 @@ export function Help({ unavailable }: { unavailable: Record<string, string> }) {
           </Box>
         );
       })}
+    </>
+  );
+}
+
+export function Help({ unavailable }: { unavailable: Record<string, string> }) {
+  return (
+    <Box flexDirection="column" paddingX={1}>
+      <Keys title="queue" bindings={QUEUE_KEYS} unavailable={unavailable} />
+      <Keys
+        title="denials view"
+        bindings={DENIAL_KEYS}
+        unavailable={unavailable}
+      />
       <Text dimColor>? or esc closes this</Text>
     </Box>
   );

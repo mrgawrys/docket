@@ -1,11 +1,6 @@
 #!/usr/bin/env bun
 
-import {
-  ConfigError,
-  ghBin,
-  loadConfig,
-  paths as resolvePaths,
-} from "./config";
+import { ghBin, paths as resolvePaths } from "./config";
 import { doctorCommand } from "./doctor";
 import { ghAccountToken, prView } from "./github";
 import { makeLogger } from "./log";
@@ -31,13 +26,14 @@ import { logCommand, statusCommand, watchCommand } from "./status";
 import { reconcile } from "./sync";
 import { runTui } from "./tui/app";
 import { childOwnsTerminal } from "./tui/suspend";
+import { resolveConfig } from "./wizard/trigger";
 
 const USAGE = `docket — pre-run Claude Code reviews for PRs awaiting you
 
 Usage:
   docket                    review queue (enter resume, s shell, d diff,
-                            w watch live, r retry, x dismiss, K kill,
-                            p poll, S sync, ? help, q quit)
+                            D denials, w watch live, r retry, x dismiss,
+                            K kill, p poll, S sync, ? help, q quit)
   docket poll [--dry-run]   one poll cycle (what launchd runs); reviews run
                             in parallel as detached background processes
   docket sync               reconcile state with GitHub
@@ -56,16 +52,12 @@ type Command = (args: string[]) => Promise<number>;
 
 async function withCtx(fn: (ctx: Ctx) => Promise<number>): Promise<number> {
   const paths = resolvePaths();
-  let cfg;
-  try {
-    cfg = await loadConfig(paths);
-  } catch (e) {
-    if (e instanceof ConfigError) {
-      console.error(e.message);
-      return 1;
-    }
-    throw e;
-  }
+  // Both streams, because the wizard both asks and prints: the launchd poller
+  // has neither, and must never end up waiting on a prompt nobody can answer.
+  const interactive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
+  const found = await resolveConfig(paths, interactive);
+  if ("code" in found) return found.code;
+  const cfg = found.cfg;
   ensureState(paths.statePath);
   const log = makeLogger(paths.logPath);
   let ghEnv = process.env as Record<string, string>;
