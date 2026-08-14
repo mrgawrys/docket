@@ -118,12 +118,12 @@ test("declining with no config does exactly what a headless run does", async () 
   expect(f.errors).toEqual(["seeded message"]);
 });
 
-test("declining a placeholder config runs the command with it as it is", async () => {
+test("declining a placeholder config runs the command with it as it is, unflagged", async () => {
   const f = fakes();
   const r = await resolveConfig(freshPaths(), true, deps(f, [STARTER], false));
-  // still flagged: the offer path ran, so setup was just offered and turned
-  // down — `docket prompt` has nothing sensible to ask on top of that
-  expect(r).toEqual({ cfg: STARTER, wizardRan: true });
+  // no wizardRan: the task question was never asked, so `docket prompt`
+  // must still run its step rather than silently exiting
+  expect(r).toEqual({ cfg: STARTER });
   expect(f.seeds).toBe(0);
 });
 

@@ -153,8 +153,8 @@ export interface ResolveDeps {
   report?: (message: string) => void;
 }
 
-// wizardRan is true only on the offer-wizard path: setup just ran (or was
-// just declined), so a command whose question the wizard already asked —
+// wizardRan is true only when the offer-wizard path completed a wizard: setup
+// just asked every question, so a command whose question it already asked —
 // `docket prompt` — must not ask it again.
 export type Resolved = { cfg: Config; wizardRan?: boolean } | { code: number };
 
@@ -184,9 +184,16 @@ export async function resolveConfig(
     // What the wizard did is on disk, not in its return value, so read it back
     // rather than trust it — and from here the run does exactly what it would
     // have done with nobody there to ask.
-    await offer(p, found instanceof ConfigError ? "no-config" : "placeholders");
+    const outcome = await offer(
+      p,
+      found instanceof ConfigError ? "no-config" : "placeholders",
+    );
     const resolved = await resolveConfig(p, false, deps);
-    return "cfg" in resolved ? { ...resolved, wizardRan: true } : resolved;
+    // Only a completed wizard asked the review-task question; a declined or
+    // aborted offer never reached it, so `docket prompt` must still ask.
+    return "cfg" in resolved && outcome === "completed"
+      ? { ...resolved, wizardRan: true }
+      : resolved;
   }
   if (found instanceof ConfigError) {
     report(action === "seed-and-fail" ? await seed(p) : found.message);
