@@ -46,7 +46,7 @@ const ROOT_SUGGESTIONS = ["Development", "Work", "Projects", "code"];
 
 // Thrown when stdin ends mid-question, so a piped or closed stdin ends the
 // wizard with a message instead of hanging on a read that will never answer.
-class InputEnded extends Error {}
+export class InputEnded extends Error {}
 
 // ------------------------------------------------------------- subprocess --
 
@@ -85,17 +85,20 @@ function run(cmd: string[], env: NodeJS.ProcessEnv): RunResult {
 
 // ---------------------------------------------------------------- terminal --
 
-interface Ui {
+export interface Ui {
   say(s?: string): void;
   step(n: number, title: string): void;
   ask(question: string, fallback?: string): Promise<string>;
   multiSelect(items: string[], prompt: string): Promise<number[]>;
+  // Pauses readline around a child that inherits the terminal ($EDITOR) —
+  // two readers on one stdin would both eat the user's keystrokes.
+  suspend<T>(fn: () => T): T;
   bold(s: string): string;
   dim(s: string): string;
   close(): void;
 }
 
-function makeUi(
+export function makeUi(
   input: NodeJS.ReadableStream,
   output: NodeJS.WritableStream,
   home: string,
@@ -147,6 +150,14 @@ function makeUi(
     },
     ask,
     multiSelect,
+    suspend: (fn) => {
+      rl.pause();
+      try {
+        return fn();
+      } finally {
+        rl.resume();
+      }
+    },
     bold,
     dim,
     close: () => rl.close(),
