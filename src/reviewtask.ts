@@ -62,11 +62,12 @@ it needs are in the file, not in the task text. Look under ${pluginsDir},
 ${clones}
 
 Every entry must be traceable to something you read; do not guess broadly.
+If the task needs nothing beyond the baseline, answer with an empty list.
 
 End your answer with a fenced json block, and nothing after it:
 
 \`\`\`json
-{"tools": ["Bash(node:*)"], "notes": "one line on what you read"}
+{"tools": [], "notes": "one line on what you read"}
 \`\`\`
 `;
 }
