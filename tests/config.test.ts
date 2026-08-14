@@ -1,11 +1,13 @@
 import { expect, test } from "bun:test";
 import {
+  chmodSync,
   existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -404,4 +406,15 @@ test("writeConfigText creates a config that is not there yet", () => {
   writeConfigText(file, "{}\n");
   expect(readFileSync(file, "utf8")).toBe("{}\n");
   expect(existsSync(`${file}.tmp`)).toBe(false);
+});
+
+test("writeConfigText keeps a tightened mode across the rename", () => {
+  // claude_env can hold an API key, so a config the user chmod'd to 0600 must
+  // not come back 0644 on the next apply
+  const dir = mkdtempSync(join(tmpdir(), "rv-cfg-"));
+  const file = join(dir, "config.json");
+  writeFileSync(file, "{}\n");
+  chmodSync(file, 0o600);
+  writeConfigText(file, '{"orgs":[]}\n');
+  expect(statSync(file).mode & 0o777).toBe(0o600);
 });
