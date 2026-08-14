@@ -169,28 +169,18 @@ export function migrateLegacyDirs(p: Paths): void {
   }
 }
 
-export async function loadConfig(p: Paths = paths()): Promise<Config> {
-  migrateLegacyDirs(p);
-  const file = Bun.file(p.configPath);
-  if (!(await file.exists())) {
-    // Nothing written here: a first run on a terminal gets the wizard offered
-    // before anything lands on disk, and its callers seed when it doesn't.
-    throw new ConfigError(`no config at ${p.configPath}`, true);
-  }
-  let cfg: Config;
-  try {
-    cfg = (await file.json()) as Config;
-  } catch (e) {
-    throw new ConfigError(`invalid JSON in ${p.configPath}: ${e}`);
-  }
+// Every rule about a well-formed config, in one place: the message to report,
+// or null when it is sound. The two readers react differently — loadConfig
+// throws at startup, readConfigSync keeps its snapshot mid-render — but neither
+// gets to disagree about what valid means, so a field added here is guarded on
+// both paths at once.
+export function configProblem(cfg: Config, where: string): string | null {
   if (
     !Array.isArray(cfg.orgs) ||
     typeof cfg.repos !== "object" ||
     cfg.repos === null
   ) {
-    throw new ConfigError(
-      `invalid config at ${p.configPath} — need "orgs" (array of GitHub orgs) and "repos" (object mapping "org/repo" to a local clone path)`,
-    );
+    return `invalid config at ${where} — need "orgs" (array of GitHub orgs) and "repos" (object mapping "org/repo" to a local clone path)`;
   }
   if (
     cfg.claude_env !== undefined &&
@@ -199,9 +189,7 @@ export async function loadConfig(p: Paths = paths()): Promise<Config> {
       Array.isArray(cfg.claude_env) ||
       Object.values(cfg.claude_env).some((v) => typeof v !== "string"))
   ) {
-    throw new ConfigError(
-      `invalid config at ${p.configPath} — "claude_env" must be an object of string values`,
-    );
+    return `invalid config at ${where} — "claude_env" must be an object of string values`;
   }
   if (cfg.openers !== undefined) {
     const bad =
@@ -221,9 +209,7 @@ export async function loadConfig(p: Paths = paths()): Promise<Config> {
           ),
       );
     if (bad) {
-      throw new ConfigError(
-        `invalid config at ${p.configPath} — "openers" must map a verb to a list of { "cmd": ["prog", "args"] }`,
-      );
+      return `invalid config at ${where} — "openers" must map a verb to a list of { "cmd": ["prog", "args"] }`;
     }
   }
   if (
@@ -231,10 +217,27 @@ export async function loadConfig(p: Paths = paths()): Promise<Config> {
     (!Array.isArray(cfg.extra_allowed_tools) ||
       cfg.extra_allowed_tools.some((t) => typeof t !== "string"))
   ) {
-    throw new ConfigError(
-      `invalid config at ${p.configPath} — "extra_allowed_tools" must be an array of strings`,
-    );
+    return `invalid config at ${where} — "extra_allowed_tools" must be an array of strings`;
   }
+  return null;
+}
+
+export async function loadConfig(p: Paths = paths()): Promise<Config> {
+  migrateLegacyDirs(p);
+  const file = Bun.file(p.configPath);
+  if (!(await file.exists())) {
+    // Nothing written here: a first run on a terminal gets the wizard offered
+    // before anything lands on disk, and its callers seed when it doesn't.
+    throw new ConfigError(`no config at ${p.configPath}`, true);
+  }
+  let cfg: Config;
+  try {
+    cfg = (await file.json()) as Config;
+  } catch (e) {
+    throw new ConfigError(`invalid JSON in ${p.configPath}: ${e}`);
+  }
+  const problem = configProblem(cfg, p.configPath);
+  if (problem) throw new ConfigError(problem);
   return cfg;
 }
 
@@ -256,16 +259,17 @@ export function writeConfigText(path: string, text: string): void {
 // The config as it stands on disk, for a caller that already holds a startup
 // snapshot and needs the fresher one — the TUI re-seeds from here on every
 // remount, so a rule applied before a suspend is still applied after it. Any
-// failure (absent, half-written, not an object) keeps the snapshot: this runs
-// under a render, where there is nobody to report an error to.
+// failure keeps the snapshot: this runs under a render, where there is nobody
+// to report an error to. That has to include a field of the wrong type, not
+// just unparseable text — `extra_allowed_tools` set to a string parses fine and
+// then throws where effectiveAllowedTools spreads it, mid-frame.
 export function readConfigSync(path: string, fallback: Config): Config {
   try {
     const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
-    return typeof parsed === "object" &&
-      parsed !== null &&
-      !Array.isArray(parsed)
-      ? (parsed as Config)
-      : fallback;
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
+      return fallback;
+    const cfg = parsed as Config;
+    return configProblem(cfg, path) ? fallback : cfg;
   } catch {
     return fallback;
   }

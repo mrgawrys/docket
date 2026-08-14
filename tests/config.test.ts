@@ -386,6 +386,30 @@ test("readConfigSync falls back to the snapshot rather than throwing", () => {
   expect(readConfigSync(list, startup)).toBe(startup);
 });
 
+test("readConfigSync keeps the snapshot when a field has the wrong type", () => {
+  // these parse to an object, so the shape check alone waved them through and
+  // the spread in effectiveAllowedTools threw under a render — a string spread
+  // into one allowlist entry per character, a number threw outright
+  const dir = mkdtempSync(join(tmpdir(), "rv-cfg-"));
+  const startup = {
+    orgs: ["stale"],
+    repos: {},
+    extra_allowed_tools: ["Bash(ls:*)"],
+  };
+  const bad: Record<string, unknown>[] = [
+    { orgs: [], repos: {}, extra_allowed_tools: "Bash(ls:*)" },
+    { orgs: [], repos: {}, extra_allowed_tools: 42 },
+    { orgs: [], repos: {}, claude_env: ["A=1"] },
+  ];
+  bad.forEach((doc, i) => {
+    const file = join(dir, `bad-${i}.json`);
+    writeFileSync(file, JSON.stringify(doc));
+    const cfg = readConfigSync(file, startup);
+    expect(cfg).toBe(startup);
+    expect(() => effectiveAllowedTools(cfg)).not.toThrow();
+  });
+});
+
 test("writeConfigText writes through a symlink instead of replacing it", () => {
   // dotfiles setups point config.json at a file in their own repo; renaming a
   // temp file over the link would leave a regular file and orphan the repo copy
