@@ -40,7 +40,7 @@ CLAUDE.md names as the definition of doctor being wrong.
 ## 1. One step, two doors
 
 A single step — choose the review task, optionally derive its tools, return
-both keys — reachable two ways:
+the choice — reachable two ways:
 
 - **`docket prompt`**, a new subcommand, seeded with the current task. This is
   the door for anyone whose setup is already done, which is everyone whose
@@ -48,29 +48,46 @@ both keys — reachable two ways:
 - **Native wizard step 4**, before the config write. Existing steps shift:
   writing config becomes 5, checking the setup becomes 6.
 
-The step never writes a config. It returns a fragment:
+The step never writes a config. It returns a result that names what the user
+chose — "default" is an answer, not an omission:
 
 ```ts
-{ review_prompt?: string; extra_allowed_tools?: string[] }
+type StepResult =
+  | { task: "default" }
+  | { task: "custom"; review_prompt: string; extra_allowed_tools?: string[] }
+  | "aborted";
 ```
 
-The wizard folds the fragment into the object it is already building and keeps
-its single write; `docket prompt` merges it into the loaded config and writes
-that. Both keys are omitted entirely when the user takes the default — an
-omitted key beats a key restating the default, the rule the wizard already
-follows.
+A plain `{ review_prompt?: string }` fragment could not express the one thing
+`docket prompt` exists to do for someone with a custom task: clear it —
+merging an omitted key changes nothing, so picking the default would silently
+keep the custom task. Each door interprets the result instead:
 
-`docket prompt` loads config the way every other command does, so running it
-with no config offers the wizard first (`firstRunAction`) and the task step
-arrives as part of that. No special case.
+- The wizard, on `"default"`, writes neither key — an omitted key beats a key
+  restating the default, the rule it already follows. On `"custom"` it folds
+  both keys into the object it is building and keeps its single write.
+- `docket prompt`, on `"default"`, deletes `review_prompt` from the loaded
+  config; on `"custom"` it sets it. `extra_allowed_tools` is never deleted on
+  either path — hand-tuned entries are the user's (see §2).
+
+`docket prompt` loads config through `resolveConfig`, not `withCtx`: it never
+talks to GitHub, so a `gh_account` whose token has gone stale must not block
+editing the task (doctor already bypasses `withCtx` for the same reason).
+Running it with no config offers the wizard as usual — and since the task step
+now lives inside the wizard, the command ends there rather than asking the
+same question twice. `resolveConfig` grows a flag saying a wizard ran.
 
 ## 2. What the user sees
 
-```
-Step 4 · Review task
+Rendered in the wizard's existing idiom (`ui.step` prints `4. Review task`,
+options are numbered lists) — the sketch below is illustrative, not a layout
+to chase:
 
-  [1] default — run /code-review on the PR
-  [2] custom  — write your own
+```
+4. Review task
+
+   1) default — run /code-review on the PR
+   2) custom  — write your own
 
 > 2
   (opens $EDITOR)
@@ -116,10 +133,19 @@ With `$EDITOR` unset, entry falls back to reading lines until a blank one. An
 empty result (editor quit without saving, or nothing typed) keeps the previous
 task and writes nothing.
 
-**Merge, never replace.** `docket prompt` unions derived entries with whatever
-`extra_allowed_tools` already holds, and shows only what is new. Hand-tuned
-entries survive, the same guarantee the wizard gives keys it does not own
-(`src/wizard/flow.ts:454`).
+Two mechanics the implementation must not skip: `$EDITOR` is a shell-ish value
+(`code --wait` is common), so it is word-split, not exec'd as one token; and
+the wizard's readline holds stdin through an async iterator
+(`src/wizard/flow.ts:111`), so it is paused around the editor, which inherits
+the terminal.
+
+**Merge, never replace.** The union of derived entries with whatever
+`extra_allowed_tools` already holds happens inside the step (`mergeTools`,
+seeded from the config the step was given), so both doors inherit it — a
+wizard run over an existing config (placeholders, or a confirmed overwrite)
+must not let a spread replace hand-set extras. Only what is new is shown.
+Hand-tuned entries survive, the same guarantee the wizard gives keys it does
+not own (`src/wizard/flow.ts:454`).
 
 **Declining is a supported answer.** `n` at the offer, or `[s]` at the
 proposal, proceeds and says where the fallout lands: the `⊘` chip, the `D`
@@ -127,8 +153,9 @@ view, `a` to append. The denials loop is the backstop; this step is a head
 start on it, never a precondition. Nothing downstream requires the allowlist
 to be right.
 
-**No `claude` on PATH → no offer.** The task is still written; doctor already
-fails on the missing binary.
+**No claude → no offer.** The check is whether `claudeBin(cfg)` resolves, not
+PATH literally — `CLAUDE_BIN` and `claude_bin` can point anywhere. The task is
+still written; doctor already fails on the missing binary.
 
 ## 3. The derivation call
 
@@ -152,21 +179,34 @@ one-line "couldn't work it out", the task written, no entries added.
 **What it is asked.** The task text, the baseline allowlist for contrast, and
 the instruction that carries the whole idea:
 
-> If the task names a slash command or skill, locate it under
-> `<claude config dir>/plugins` and read it — the tools it needs are in the
-> file, not in the task text. Every entry must be traceable to something you
+> If the task names a slash command or skill, locate it and read it — the
+> tools it needs are in the file, not in the task text. Look under
+> `<claude config dir>/plugins`, `~/.claude/skills`, and `.claude/skills` in
+> the clone paths listed below. Every entry must be traceable to something you
 > read; do not guess broadly.
+
+The prompt lists the configured clone paths (`cfg.repos`) so a project skill
+is findable, not just plugins — §4's doctor already treats bare `Skill(foo)`
+as a personal or project skill, and the deriver has to be able to trace the
+same things doctor tolerates.
 
 It answers with a fenced `json` block, `{"tools": [...], "notes": "..."}` — the
 convention `src/summary.ts` already parses out of review runs. `notes` is
 displayed with the proposal and not stored.
 
-**Posting tools are dropped.** The baseline is deliberately read-only and never
-posts to GitHub (`src/config.ts:53`). Derived entries matching a small
-blocklist — `gh pr comment`, `gh pr review`, `gh pr create`, `gh pr merge`,
-`gh api` with `-X`/`--method` — are removed before the proposal is shown, with
-a line saying how many and why. `docs/configuration.md` already says adding
-posting tools gives that guarantee up knowingly; knowingly means by hand.
+**The posting-tool blocklist is a tripwire, not a guarantee.** The baseline is
+deliberately read-only and never posts to GitHub (`src/config.ts:53`), and no
+entry-level check can promise that survives: allowlist entries are prefix
+patterns, so the flags a run uses are not in the entry text — `Bash(gh api:*)`
+contains no `-X` yet allows POSTs, and `gh api` posts on a bare `-f`/`-F`
+anyway. What docket can do is catch the obvious cases: derived entries
+matching a small blocklist — `gh pr comment`, `gh pr review`, `gh pr create`,
+`gh pr merge`, `gh api` with an embedded `-X`/`--method` — are removed before
+the proposal is shown, with a line saying how many and why. The real gate is
+the user reading the proposal before `[a]`, and the proposal screen says so.
+`docs/configuration.md` already says adding posting tools gives the read-only
+guarantee up knowingly; knowingly means by hand, and the deriver's only
+obligation is to never be the thing that gives it up silently.
 
 ## 4. Doctor verifies what the task names
 
@@ -207,12 +247,19 @@ src/reviewtask.ts          pure, no I/O
 
 src/wizard/reviewtask.ts   interactive
   runReviewTaskStep({ ui, cfg, editor?, derive? })
-    → { review_prompt?, extra_allowed_tools? } | "aborted"
+    → { task: "default" }
+    | { task: "custom", review_prompt, extra_allowed_tools? }
+    | "aborted"
 ```
 
 `editor` and `derive` are injected the way `flow.ts` already injects
 `getOrigin` and `runDoctor`, so the step is exercisable without an editor, a
-subprocess, or a filesystem. `src/main.ts` gains the `docket prompt` command
+subprocess, or a filesystem. The two failure modes are distinct in the
+signature because §6 treats them differently: `derive` absent means claude is
+unavailable (no offer is made); a `derive` that rejects is a derivation
+failure (the offer was made, and it degrades). In the wizard, `cfg` is the
+`existing` object read by `mayOverwrite` — nothing is written yet, so
+`claude_bin`, `claude_config_dir` and `claude_env` can only come from there. `src/main.ts` gains the `docket prompt` command
 and its `USAGE` line; `src/wizard/flow.ts` gains the step 4 call and the step
 renumbering.
 
@@ -230,7 +277,8 @@ keys it may now write.
 |---|---|
 | `$EDITOR` unset | line-by-line entry, blank line ends it |
 | editor exits non-zero, or file unchanged/empty | keep the current task, write nothing |
-| `claude` not on PATH | no derivation offer; task still written |
+| `docket prompt`: default picked over a custom task on disk | `review_prompt` removed, `extra_allowed_tools` untouched |
+| `claudeBin(cfg)` does not resolve | no derivation offer; task still written |
 | derivation times out (90s), exits non-zero, or answers unparseably | one line, no entries, task still written |
 | derivation proposes only posting tools | proposal shows empty plus the dropped count |
 | stdin ends mid-step (ctrl-D, piped input) | step returns `"aborted"`; the wizard handles it as it handles any aborted step, `docket prompt` exits 1 without writing |
@@ -274,9 +322,15 @@ Unit tests against `src/reviewtask.ts` — the pure seam:
   `Bash(gh pr view:*)` kept.
 
 Step tests against `runReviewTaskStep` with injected `ui`/`editor`/`derive`:
-default path returns neither key; custom + accept returns both; declining the
-offer returns the task alone; a derivation error returns the task alone;
-merging preserves hand-set entries.
+the default pick returns `{ task: "default" }`; custom + accept returns both
+keys; declining the offer returns the task alone; an absent `derive` makes no
+offer; a failing `derive` degrades to the task alone; merging preserves
+hand-set entries — through both doors, since the union lives in the step.
+
+`docket prompt` tests: picking the default with a custom task on disk removes
+`review_prompt` and leaves `extra_allowed_tools`; a stale `gh_account` does
+not block the command; with no config, the wizard runs and the step is not
+asked a second time.
 
 Doctor tests for §4: a `Skill(a:b)` entry with the plugin installed passes,
 without it fails, a bare `Skill(foo)` entry is skipped.
