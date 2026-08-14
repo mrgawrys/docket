@@ -250,8 +250,9 @@ function writeConfig(
 
 **Constraints:**
 
-- On `{ task: "default" }` the wizard writes **neither** key — an omitted key
-  beats a key restating the default. On `"custom"` it sets `review_prompt`
+- On `{ task: "default" }` the wizard writes **neither** key and deletes a
+  `review_prompt` inherited from `existing` — an omitted key beats a key
+  restating the default, and "default" is an answer, not an omission. On `"custom"` it sets `review_prompt`
   and, only when present, `extra_allowed_tools` (already merged by the step).
 - `"aborted"` from the step → the wizard returns its `"aborted"` outcome with
   the existing "input ended — nothing was written." message path.

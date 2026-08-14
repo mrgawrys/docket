@@ -161,9 +161,9 @@ Write `{{CONFIG_PATH}}`, creating `{{CONFIG_DIR}}` if it isn't there. Include
 }
 ```
 
-Leave out `poll_interval_minutes`, `claude_bin`, `openers`, and everything else.
-They all have sensible defaults, and an omitted key is clearer than a key
-restating the default. Write real JSON — no comments, no trailing commas — and
+Leave out `poll_interval_minutes`, `claude_bin`, `openers`, and everything
+else not named above. They all have sensible defaults, and an omitted key is
+clearer than a key restating the default. Write real JSON — no comments, no trailing commas — and
 show the user the finished file.
 
 If a config is already there, read it first and keep any keys you did not

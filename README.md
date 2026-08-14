@@ -50,8 +50,9 @@ You'll also need:
    map. It then asks which review task to run — the default `/code-review`,
    or a custom one written in your `$EDITOR`, with claude offering to work
    out the extra tools that task needs. It writes the config and ends on
-   doctor's ✓/✗ list, then the command you asked for carries on. When it comes up short — `gh` lists no orgs, the
-   scan finds nothing — it offers to hand the rest to claude instead.
+   doctor's ✓/✗ list, then the command you asked for carries on. When it
+   comes up short — `gh` lists no orgs, the scan finds nothing — it offers
+   to hand the rest to claude instead.
    Declining the offer leaves you steps 2 and 3, the by-hand route (which is
    also what `docket doctor` leaves you, and what the poller gets when nobody
    is there to ask).

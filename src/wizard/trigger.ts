@@ -189,4 +189,3 @@ export async function resolveConfig(
   }
   return { cfg: found };
 }
-
