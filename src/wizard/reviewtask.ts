@@ -23,7 +23,7 @@ import {
 } from "../reviewtask";
 import { InputEnded, type Ui, cleanEnv } from "./flow";
 
-export const DERIVE_TIMEOUT_MS = 90_000;
+const DERIVE_TIMEOUT_MS = 90_000;
 
 export interface ReviewTaskOptions {
   ui: Ui;
@@ -273,7 +273,8 @@ export function makeDerive(
       {
         env: { ...cleanEnv(process.env), ...claudeEnv(cfg) },
         stdout: "pipe",
-        stderr: "pipe",
+        // never read, and an undrained pipe can block a chatty child
+        stderr: "ignore",
       },
     );
     let timedOut = false;
