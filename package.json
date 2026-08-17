@@ -7,7 +7,8 @@
     "test": "bun test",
     "format": "biome format --write .",
     "format:check": "biome format .",
-    "build": "bun build --compile src/main.ts --outfile dist/docket"
+    "build": "bun build --compile src/main.ts --outfile dist/docket",
+    "reinstall": "bun run build && install -m 755 dist/docket \"$HOME/.local/bin/docket\""
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.5",
