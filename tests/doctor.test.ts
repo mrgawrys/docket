@@ -51,7 +51,7 @@ test("doctor: all checks green → exit 0, one ✓ per check", () => {
   });
   const r = sb.run(["doctor"]);
   expect(r.code).toBe(0);
-  expect(r.out.match(/✓/g)?.length).toBe(8);
+  expect(r.out.match(/✓/g)?.length).toBe(9);
   expect(r.out).not.toContain("✗");
   expect(r.out).toContain("code-review plugin");
 });
@@ -66,7 +66,7 @@ test("doctor: gh_account not set → that check is not run", () => {
   });
   const r = sb.run(["doctor"]);
   expect(r.code).toBe(0);
-  expect(r.out.match(/✓/g)?.length).toBe(7);
+  expect(r.out.match(/✓/g)?.length).toBe(8);
 });
 
 test("doctor: missing config → ✗ with a seeded config to edit, later checks skipped, exit 1", () => {
@@ -175,6 +175,21 @@ test("doctor: claude binary not runnable → ✗ mentions claude", () => {
   const r = sb.run(["doctor"], { CLAUDE_BIN: join(sb.tmp, "no-such-claude") });
   expect(r.code).toBe(1);
   expect(r.out).toMatch(/✗.*claude/);
+});
+
+test("doctor: claude logged out → ✗ with a login hint for that config dir", () => {
+  const sb = makeSandbox();
+  sb.gitInitDemo();
+  const home = claudeHome(sb, true);
+  sb.writeConfig({
+    orgs: ["testorg"],
+    repos: { "testorg/demo": sb.demoRepo },
+    claude_config_dir: home,
+  });
+  const r = sb.run(["doctor"], { CLAUDE_LOGGED_OUT: "1" });
+  expect(r.code).toBe(1);
+  expect(r.out).toContain(`✗ claude auth: not logged in (${home})`);
+  expect(r.out).toContain(`CLAUDE_CONFIG_DIR=${home} claude auth login`);
 });
 
 test("doctor: code-review plugin missing → ✗ with install one-liner", () => {

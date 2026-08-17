@@ -30,7 +30,9 @@ You'll also need:
 
 - macOS — scheduling uses launchd, notifications use osascript
 - `gh`, authenticated
-- the [`claude`](https://code.claude.com) CLI
+- the [`claude`](https://code.claude.com) CLI, logged in — in the account
+  [`claude_config_dir`](docs/configuration.md#claude_config_dir) points at, if
+  you set one
 - a local clone of every repo you want reviewed
 - the code-review plugin —
   `claude plugin install code-review@claude-plugins-official` — unless you

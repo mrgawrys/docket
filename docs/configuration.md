@@ -31,6 +31,10 @@ The claude binary to run. Default `claude`.
 Set to run every claude invocation with a specific `CLAUDE_CONFIG_DIR` —
 useful with multiple Claude accounts. Empty = default.
 
+Credentials live per config dir, so pointing docket at a second one means
+logging in there too: `CLAUDE_CONFIG_DIR=<dir> claude auth login`. `docket
+doctor` reports which dir it checked.
+
 ## claude_env
 
 Extra environment variables for every claude invocation, review runs and

@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { authDir, claudeAuth } from "./auth";
 import {
   ConfigError,
   type Paths,
@@ -137,6 +138,24 @@ export async function doctorCommand(
   const claude = claudeBin(cfg);
   if (runs([claude, "--version"], claudeEnv(cfg)).ok) {
     pass(`claude: ${claude} runs`);
+
+    // A runnable claude is credential-blind: without this, doctor stays green
+    // while every review fails on an expired session.
+    const auth = claudeAuth(cfg);
+    if ("unknown" in auth) {
+      fail(
+        `claude auth: could not determine (${auth.unknown})`,
+        "upgrade Claude Code — 'claude auth status' is how docket checks this",
+      );
+    } else if (!auth.ok) {
+      fail(
+        `claude auth: not logged in (${auth.dir})`,
+        `run: CLAUDE_CONFIG_DIR=${auth.dir} claude auth login`,
+      );
+    } else {
+      // naming the dir matters on a machine with more than one account
+      pass(`claude auth: logged in (${authDir(cfg)})`);
+    }
   } else {
     fail(
       `claude: ${claude} not runnable`,
