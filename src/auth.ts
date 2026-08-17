@@ -25,11 +25,18 @@ const defaultRun: AuthRun = (cmd, env) => {
   }
 };
 
-// Which account an answer is about. `||`, not `??`: the seeded config carries
-// claude_config_dir: "", the same way claudeEnv and doctor's plugin lookup
-// read it.
-export const authDir = (cfg: Config): string =>
-  cfg.claude_config_dir || join(process.env.HOME ?? "", ".claude");
+// Which account an answer is about — resolved the way the spawn resolves it.
+// claudeEnv pins CLAUDE_CONFIG_DIR only when the config sets it, so with the
+// key empty an ambient one is the dir actually probed; naming ~/.claude there
+// would report a different account than the one that answered. `||`, not `??`:
+// the seeded config carries claude_config_dir: "".
+export const authDir = (
+  cfg: Config,
+  env: NodeJS.ProcessEnv = process.env,
+): string =>
+  cfg.claude_config_dir ||
+  env.CLAUDE_CONFIG_DIR ||
+  join(env.HOME ?? "", ".claude");
 
 // Same binary and env startReview uses, so the probe cannot drift from what
 // the review actually runs. The exit code is useless here — `claude auth

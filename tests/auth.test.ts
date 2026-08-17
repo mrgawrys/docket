@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { claudeAuth, type AuthRun } from "../src/auth";
+import { authDir, claudeAuth, type AuthRun } from "../src/auth";
 import type { Config } from "../src/config";
 
 const cfg = (extra: Partial<Config> = {}): Config =>
@@ -23,13 +23,26 @@ test("claudeAuth: loggedIn false → logged out, naming the config dir", () => {
   expect(r).toEqual({ ok: false, dir: "/tmp/work-account" });
 });
 
-test("claudeAuth: an empty claude_config_dir falls back to ~/.claude", () => {
-  const r = claudeAuth(
-    cfg({ claude_config_dir: "" }),
-    says('{"loggedIn":false}'),
+test("authDir: an empty claude_config_dir falls back to ~/.claude", () => {
+  expect(authDir(cfg({ claude_config_dir: "" }), { HOME: "/home/me" })).toBe(
+    "/home/me/.claude",
   );
-  expect(r).toMatchObject({ ok: false });
-  expect((r as { dir: string }).dir).toEndWith("/.claude");
+});
+
+// The message names the account that answered, not a different one: with the
+// config key empty the spawn inherits the ambient dir, so the report must too.
+test("authDir: an ambient CLAUDE_CONFIG_DIR wins over the ~/.claude default", () => {
+  expect(
+    authDir(cfg(), { HOME: "/home/me", CLAUDE_CONFIG_DIR: "/home/me/.alt" }),
+  ).toBe("/home/me/.alt");
+});
+
+test("authDir: the config key still outranks an ambient one", () => {
+  expect(
+    authDir(cfg({ claude_config_dir: "/pinned" }), {
+      CLAUDE_CONFIG_DIR: "/home/me/.alt",
+    }),
+  ).toBe("/pinned");
 });
 
 test("claudeAuth: non-JSON output → unknown, not logged out", () => {
