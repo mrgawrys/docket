@@ -26,6 +26,13 @@ repo directly; the next release overwrites it. Runbook and token details in
 `packaging/README.md`. `package.json`'s version is read by nothing; the tag
 is the only version that matters.
 
+**Work that reaches `main` is not shipped until a tag is pushed.** A brew
+install keeps handing out the previous binary until then, so a fix that only
+landed on `main` is a fix nobody has. Tag as the last step of landing the
+work: patch for fixes, minor for anything a user meets — a new doctor check,
+a config key, changed output. Say the version out loud and get an ack before
+pushing the tag; the release is public and a tag is awkward to take back.
+
 ## Dependency changes must update doctor + README
 
 `docket doctor` (src/doctor.ts) is the contract for what a working setup
