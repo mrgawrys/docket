@@ -116,7 +116,8 @@ export async function offerFirstRun(
   if (choice === "2") return claude();
 
   const outcome = await runNative({ paths: p, env, input, output });
-  if (outcome !== "came-up-short") return outcome;
+  if (outcome !== "came-up-short" && outcome !== "came-up-short-wrote")
+    return outcome;
   // Spec: the claude wizard is also the fallback when the native flow comes up
   // short — an empty org list, a scan that found nothing.
   say();
@@ -141,7 +142,10 @@ export interface ResolveDeps {
   report?: (message: string) => void;
 }
 
-export type Resolved = { cfg: Config } | { code: number };
+// wizardRan is true only when the offer-wizard path wrote a config: setup
+// just asked every question, so a command whose question it already asked —
+// `docket prompt` — must not ask it again.
+export type Resolved = { cfg: Config; wizardRan?: boolean } | { code: number };
 
 // The config a command runs with, or the exit code it leaves with.
 export async function resolveConfig(
@@ -169,8 +173,19 @@ export async function resolveConfig(
     // What the wizard did is on disk, not in its return value, so read it back
     // rather than trust it — and from here the run does exactly what it would
     // have done with nobody there to ask.
-    await offer(p, found instanceof ConfigError ? "no-config" : "placeholders");
-    return resolveConfig(p, false, deps);
+    const outcome = await offer(
+      p,
+      found instanceof ConfigError ? "no-config" : "placeholders",
+    );
+    const resolved = await resolveConfig(p, false, deps);
+    // The review-task answer is on disk only when the wizard wrote a config —
+    // completed, or short on repos after the write. A declined or aborted
+    // offer, or a write that failed, never persisted it, so `docket prompt`
+    // must still ask.
+    return "cfg" in resolved &&
+      (outcome === "completed" || outcome === "came-up-short-wrote")
+      ? { ...resolved, wizardRan: true }
+      : resolved;
   }
   if (found instanceof ConfigError) {
     report(action === "seed-and-fail" ? await seed(p) : found.message);

@@ -8,6 +8,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import {
+  type Config,
   type Paths,
   ghBin,
   placeholderEntries,
@@ -16,6 +17,13 @@ import {
 } from "../config";
 import { doctorCommand } from "../doctor";
 import { ghAccountToken } from "../github";
+import type { StepResult } from "../reviewtask";
+import {
+  type ReviewTaskOptions,
+  makeDerive,
+  makeEditor,
+  runReviewTaskStep,
+} from "./reviewtask";
 import {
   SCAN_MAX_DEPTH,
   completePath,
@@ -29,8 +37,14 @@ import {
 // What the first-run trigger acts on. "came-up-short" is the load-bearing
 // one: the wizard ran, but the native path could not produce something worth
 // polling — no orgs, or no clones it could map — which is where the caller
-// offers the claude-guided wizard instead.
-export type WizardOutcome = "completed" | "aborted" | "came-up-short";
+// offers the claude-guided wizard instead. "came-up-short-wrote" is the same
+// shortfall after the config was already written: the review-task answer is
+// on disk, so `docket prompt` must not ask it again.
+export type WizardOutcome =
+  | "completed"
+  | "aborted"
+  | "came-up-short"
+  | "came-up-short-wrote";
 
 export interface WizardOptions {
   paths?: Paths;
@@ -40,13 +54,16 @@ export interface WizardOptions {
   // Real callers ask git for a checkout's origin; tests answer directly.
   getOrigin?: (dir: string) => string | null;
   runDoctor?: (p: Paths) => Promise<number>;
+  // The review-task step, injected like getOrigin so flow tests don't have
+  // to drive its dialogue (that's tests/wizard-reviewtask.test.ts's job).
+  reviewTask?: (o: ReviewTaskOptions) => Promise<StepResult>;
 }
 
 const ROOT_SUGGESTIONS = ["Development", "Work", "Projects", "code"];
 
 // Thrown when stdin ends mid-question, so a piped or closed stdin ends the
 // wizard with a message instead of hanging on a read that will never answer.
-class InputEnded extends Error {}
+export class InputEnded extends Error {}
 
 // ------------------------------------------------------------- subprocess --
 
@@ -85,17 +102,23 @@ function run(cmd: string[], env: NodeJS.ProcessEnv): RunResult {
 
 // ---------------------------------------------------------------- terminal --
 
-interface Ui {
+export interface Ui {
   say(s?: string): void;
   step(n: number, title: string): void;
   ask(question: string, fallback?: string): Promise<string>;
   multiSelect(items: string[], prompt: string): Promise<number[]>;
+  // Pauses readline around a child that inherits the terminal ($EDITOR) —
+  // two readers on one stdin would both eat the user's keystrokes.
+  suspend<T>(fn: () => T): T;
   bold(s: string): string;
   dim(s: string): string;
+  // User-entered and derived content, so it reads apart from the step's own
+  // questions and labels — bold alone is near-invisible on white terminals.
+  accent(s: string): string;
   close(): void;
 }
 
-function makeUi(
+export function makeUi(
   input: NodeJS.ReadableStream,
   output: NodeJS.WritableStream,
   home: string,
@@ -114,6 +137,7 @@ function makeUi(
     tty ? `\x1b[${code}m${s}\x1b[0m` : s;
   const bold = paint("1");
   const dim = paint("2");
+  const accent = paint("36");
   const say = (s = "") => {
     output.write(`${s}\n`);
   };
@@ -147,8 +171,17 @@ function makeUi(
     },
     ask,
     multiSelect,
+    suspend: (fn) => {
+      rl.pause();
+      try {
+        return fn();
+      } finally {
+        rl.resume();
+      }
+    },
     bold,
     dim,
+    accent,
     close: () => rl.close(),
   };
 }
@@ -449,8 +482,9 @@ function writeConfig(
   repos: Record<string, string>,
   login: string,
   account: string | undefined,
+  task: Exclude<StepResult, "aborted">,
 ): boolean {
-  ui.step(4, "Writing config");
+  ui.step(5, "Writing config");
   // Everything the wizard doesn't own survives — openers, extra_allowed_tools
   // and friends are the user's, whether they seeded them or wrote them.
   const cfg: Record<string, unknown> = { ...existing, orgs, repos };
@@ -458,6 +492,16 @@ function writeConfig(
   // A pin the wizard didn't set, naming an account it isn't using, resolves to
   // no token later; the empty one the starter config ships is harmless.
   else if (cfg.gh_account && cfg.gh_account !== login) delete cfg.gh_account;
+  // "default" writes neither key — an omitted key beats a key restating the
+  // default, so a custom task inherited from `existing` is cleared, while
+  // extra_allowed_tools is never deleted: hand-set entries are the user's.
+  if (task.task === "default") delete cfg.review_prompt;
+  else {
+    cfg.review_prompt = task.review_prompt;
+    // already merged by the step; absent means "add nothing", not "empty"
+    if (task.extra_allowed_tools)
+      cfg.extra_allowed_tools = task.extra_allowed_tools;
+  }
   const text = `${JSON.stringify(cfg, null, 2)}\n`;
   try {
     mkdirSync(p.configDir, { recursive: true });
@@ -499,6 +543,7 @@ export async function runNativeWizard(
       return r.ok && r.out ? r.out : null;
     });
   const runDoctor = opts.runDoctor ?? doctorCommand;
+  const reviewTask = opts.reviewTask ?? runReviewTaskStep;
   const ui = makeUi(
     opts.input ?? process.stdin,
     opts.output ?? process.stdout,
@@ -528,6 +573,19 @@ export async function runNativeWizard(
       return "came-up-short";
     }
     const { repos, shortfall } = await chooseRepos(ui, orgs, home, getOrigin);
+    ui.step(4, "Review task");
+    // claude_bin/claude_config_dir/claude_env can only come from `existing` —
+    // nothing is written yet — but the repos are the ones just chosen, so a
+    // fresh run's derivation prompt lists the step-3 clone paths.
+    const stepCfg = { ...(existing ?? {}), repos } as unknown as Config;
+    const task = await reviewTask({
+      ui,
+      cfg: stepCfg,
+      editor: makeEditor(ui, env),
+      derive: makeDerive(stepCfg),
+    });
+    // the step's aborted is a closed stdin: same outcome, same message path
+    if (task === "aborted") throw new InputEnded("stdin closed");
     // Written even with no repos mapped: that config is genuinely useful (the
     // poller works, unmapped repos skip at review time) and doctor says so.
     const ok = writeConfig(
@@ -538,10 +596,11 @@ export async function runNativeWizard(
       repos,
       account.login,
       account.account,
+      task,
     );
     if (!ok) return "came-up-short";
     wrote = true;
-    return shortfall ? "came-up-short" : "completed";
+    return shortfall ? "came-up-short-wrote" : "completed";
   };
 
   let outcome: WizardOutcome;
@@ -558,7 +617,7 @@ export async function runNativeWizard(
   }
 
   if (wrote) {
-    ui.step(5, "Checking the setup");
+    ui.step(6, "Checking the setup");
     const code = await runDoctor(p);
     ui.say();
     ui.say(

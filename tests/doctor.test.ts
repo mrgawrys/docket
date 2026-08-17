@@ -268,6 +268,65 @@ test("doctor: malformed extra_allowed_tools fails the config check", () => {
   expect(r.out).toContain("extra_allowed_tools");
 });
 
+// A registry with the code-review plugin plus any extra plugin keys.
+function claudeHomeWith(sb: Sandbox, ...extra: string[]): string {
+  const home = join(sb.tmp, "cchome-extra");
+  mkdirSync(join(home, "plugins"), { recursive: true });
+  const plugins: Record<string, unknown> = {
+    "code-review@claude-plugins-official": [{ scope: "user" }],
+  };
+  for (const k of extra) plugins[k] = [{ scope: "user" }];
+  writeFileSync(
+    join(home, "plugins", "installed_plugins.json"),
+    JSON.stringify({ version: 2, plugins }),
+  );
+  return home;
+}
+
+test("doctor: a Skill(plugin:name) entry with the plugin installed is a ✓", () => {
+  const sb = makeSandbox();
+  sb.gitInitDemo();
+  sb.writeConfig({
+    orgs: ["testorg"],
+    repos: { "testorg/demo": sb.demoRepo },
+    claude_config_dir: claudeHomeWith(sb, "dev-skills@acme-marketplace"),
+    extra_allowed_tools: ["Skill(dev-skills:blast-radius)", "Bash(node:*)"],
+  });
+  const r = sb.run(["doctor"]);
+  expect(r.code).toBe(0);
+  expect(r.out).toContain("✓ plugin for Skill(dev-skills:blast-radius)");
+});
+
+test("doctor: a Skill(plugin:name) entry without the plugin fails naming it", () => {
+  const sb = makeSandbox();
+  sb.gitInitDemo();
+  sb.writeConfig({
+    orgs: ["testorg"],
+    repos: { "testorg/demo": sb.demoRepo },
+    claude_config_dir: claudeHomeWith(sb),
+    extra_allowed_tools: ["Skill(dev-skills:blast-radius)"],
+  });
+  const r = sb.run(["doctor"]);
+  expect(r.code).toBe(1);
+  expect(r.out).toContain("'dev-skills' not found");
+  // docket cannot know the marketplace, so the hint asks for it
+  expect(r.out).toContain("claude plugin install dev-skills@<marketplace>");
+});
+
+test("doctor: a bare Skill(foo) entry is skipped — no line either way", () => {
+  const sb = makeSandbox();
+  sb.gitInitDemo();
+  sb.writeConfig({
+    orgs: ["testorg"],
+    repos: { "testorg/demo": sb.demoRepo },
+    claude_config_dir: claudeHomeWith(sb),
+    extra_allowed_tools: ["Skill(my-local-skill)"],
+  });
+  const r = sb.run(["doctor"]);
+  expect(r.code).toBe(0);
+  expect(r.out).not.toContain("plugin for Skill(my-local-skill)");
+});
+
 test("doctor: custom review_prompt without /code-review → plugin not required", () => {
   const sb = makeSandbox();
   sb.gitInitDemo();

@@ -47,9 +47,12 @@ You'll also need:
    quick route asks which GitHub account (of the ones `gh` is logged in as),
    whose PRs to watch — your orgs, and your own login for personal repos —
    and where your clones live, scanning three levels down for repos it can
-   map. It writes the config and ends on doctor's ✓/✗ list, then the command
-   you asked for carries on. When it comes up short — `gh` lists no orgs, the
-   scan finds nothing — it offers to hand the rest to claude instead.
+   map. It then asks which review task to run — the default `/code-review`,
+   or a custom one written in your `$EDITOR`, with claude offering to work
+   out the extra tools that task needs. It writes the config and ends on
+   doctor's ✓/✗ list, then the command you asked for carries on. When it
+   comes up short — `gh` lists no orgs, the scan finds nothing — it offers
+   to hand the rest to claude instead.
    Declining the offer leaves you steps 2 and 3, the by-hand route (which is
    also what `docket doctor` leaves you, and what the poller gets when nobody
    is there to ask).
@@ -117,6 +120,7 @@ The rest of the CLI:
 | `docket sync` | reconcile with GitHub now: merged/closed PRs are dismissed, PRs you already reviewed show your verdict |
 | `docket dismiss ORG/REPO#N` | mark an entry done without reviewing it |
 | `docket doctor` | check the whole setup and print fixes |
+| `docket prompt` | set the review task, and derive the tools it needs |
 | `docket on` / `off` / `status` | manage the launchd poller |
 | `docket log [N]` | tail the poller log |
 
@@ -180,7 +184,8 @@ Everything lives in `~/.config/docket/config.json`. Beyond `orgs` and
 `repos`, the keys you're most likely to want:
 
 - `review_prompt` — swap the default `/code-review` run for any review task
-  you can phrase as a prompt
+  you can phrase as a prompt; `docket prompt` sets it for you, together with
+  the `extra_allowed_tools` the task needs
 - `openers` — which shell and diff tool the queue's `s` and `d` keys launch
 - `gh_account` — pin polling to one `gh` account, so `gh auth switch` can't
   silently blind the poller

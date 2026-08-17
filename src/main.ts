@@ -26,6 +26,7 @@ import { logCommand, statusCommand, watchCommand } from "./status";
 import { reconcile } from "./sync";
 import { runTui } from "./tui/app";
 import { childOwnsTerminal } from "./tui/suspend";
+import { promptCommand } from "./wizard/prompt";
 import { resolveConfig } from "./wizard/trigger";
 
 const USAGE = `docket — pre-run Claude Code reviews for PRs awaiting you
@@ -41,6 +42,7 @@ Usage:
   docket retry <key>        re-run a failed review
   docket dismiss <key>      mark done + remove the PR worktree
   docket doctor             check setup: config, clones, gh, claude, code-review plugin
+  docket prompt             set the review task (and the tools it needs)
   docket status             poller state, live poll, state counts
   docket log [n]            last n log lines (default 20)
   docket watch [pr]         follow the log live; with a PR (org/repo#N or
@@ -286,6 +288,7 @@ const dismiss: Command = (args) =>
   });
 
 const doctor: Command = () => doctorCommand();
+const prompt: Command = () => promptCommand();
 const status: Command = () => withCtx((ctx) => statusCommand(ctx));
 const log: Command = (args) => {
   const n = Number(args[0] ?? 20);
@@ -312,6 +315,7 @@ const commands: Record<string, Command> = {
   poll,
   dismiss,
   doctor,
+  prompt,
   status,
   log,
   watch,

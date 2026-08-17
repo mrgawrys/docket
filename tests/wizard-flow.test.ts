@@ -17,7 +17,9 @@ import {
   paths as resolvePaths,
   placeholderEntries,
 } from "../src/config";
+import type { StepResult } from "../src/reviewtask";
 import { type WizardOutcome, runNativeWizard } from "../src/wizard/flow";
+import type { ReviewTaskOptions } from "../src/wizard/reviewtask";
 import { type Sandbox, makeSandbox } from "./harness";
 
 const TWO_ACCOUNTS = [
@@ -59,6 +61,8 @@ interface Driven {
   doctorRuns: number;
   configAtDoctor: string | null;
   configPath: string;
+  // what the flow handed the review-task step, when it reached it
+  stepOptions: ReviewTaskOptions | undefined;
   // whatever the wizard wrote — read loosely, like harness.state()
   config(): Record<string, any>;
 }
@@ -68,6 +72,9 @@ async function drive(
   script: string[],
   extraEnv: Record<string, string> = {},
   override?: Paths,
+  // the step's dialogue is tests/wizard-reviewtask.test.ts's job; flow tests
+  // inject its result and check what the wizard does with it
+  stepResult: StepResult = { task: "default" },
 ): Promise<Driven> {
   const input = new PassThrough();
   for (const line of script) input.write(`${line}\n`);
@@ -82,6 +89,7 @@ async function drive(
   const p = override ?? resolvePaths(sb.env);
   let doctorRuns = 0;
   let configAtDoctor: string | null = null;
+  let stepOptions: ReviewTaskOptions | undefined;
   const outcome = await runNativeWizard({
     paths: p,
     env: { ...process.env, ...sb.env, ...extraEnv },
@@ -92,6 +100,10 @@ async function drive(
       configAtDoctor = readFileSync(p.configPath, "utf8");
       return 0;
     },
+    reviewTask: async (o) => {
+      stepOptions = o;
+      return stepResult;
+    },
   });
   return {
     outcome,
@@ -99,6 +111,7 @@ async function drive(
     doctorRuns,
     configAtDoctor,
     configPath: p.configPath,
+    stepOptions,
     config: () => JSON.parse(readFileSync(p.configPath, "utf8")),
   };
 }
@@ -270,7 +283,7 @@ test("orgs with no repos mapped is still written — the poller works without th
     GH_AUTH_STATUS_TEXT: ONE_ACCOUNT,
     GH_ORG_LIST: "acme",
   });
-  expect(r.outcome).toBe("came-up-short");
+  expect(r.outcome).toBe("came-up-short-wrote");
   expect(existsSync(r.configPath)).toBe(true);
   expect(r.config()).toEqual({ orgs: ["acme"], repos: {} });
 });
@@ -284,7 +297,7 @@ test("a projects root that does not exist skips the scan instead of failing", as
     GH_ORG_LIST: "acme",
   });
   expect(r.out).toContain("/no/such/root does not exist");
-  expect(r.outcome).toBe("came-up-short");
+  expect(r.outcome).toBe("came-up-short-wrote");
   expect(r.config()).toEqual({ orgs: ["acme"], repos: {} });
 });
 
@@ -490,6 +503,107 @@ test("an account pin the wizard is not using does not survive the write", async 
   });
   expect(r.outcome).toBe("completed");
   expect("gh_account" in r.config()).toBe(false);
+});
+
+test("a default step result writes neither review key and clears an inherited custom task", async () => {
+  const sb = makeSandbox();
+  sb.writeConfig({
+    orgs: ["your-github-org"], // placeholder, so no overwrite prompt
+    repos: {},
+    review_prompt: "Old custom task.",
+    extra_allowed_tools: ["Bash(rg:*)"],
+  });
+  const home = homeWithClones();
+  const r = await drive(sb, ["2", "1", "", ""], {
+    HOME: home,
+    GH_AUTH_STATUS_TEXT: ONE_ACCOUNT,
+    GH_ORG_LIST: "acme",
+  });
+  expect(r.outcome).toBe("completed");
+  expect("review_prompt" in r.config()).toBe(false);
+  // extra_allowed_tools is never deleted, whatever the task choice
+  expect(r.config().extra_allowed_tools).toEqual(["Bash(rg:*)"]);
+});
+
+test("a custom step result writes both keys, and the step saw the existing extras", async () => {
+  const sb = makeSandbox();
+  sb.writeConfig({
+    orgs: ["your-github-org"],
+    repos: {},
+    extra_allowed_tools: ["Bash(rg:*)"],
+  });
+  const home = homeWithClones();
+  const r = await drive(
+    sb,
+    ["2", "1", "", ""],
+    { HOME: home, GH_AUTH_STATUS_TEXT: ONE_ACCOUNT, GH_ORG_LIST: "acme" },
+    undefined,
+    {
+      task: "custom",
+      review_prompt: "Run the blast-radius skill.",
+      extra_allowed_tools: ["Bash(rg:*)", "Bash(node:*)"],
+    },
+  );
+  expect(r.outcome).toBe("completed");
+  expect(r.config().review_prompt).toBe("Run the blast-radius skill.");
+  // the step returns the full merged list, and that is what lands
+  expect(r.config().extra_allowed_tools).toEqual([
+    "Bash(rg:*)",
+    "Bash(node:*)",
+  ]);
+  // the union lives in the step, so the flow must hand it what is on disk —
+  // except the repos, which are the ones just chosen in step 3, so the
+  // derivation prompt lists real clone paths on a fresh run
+  expect(r.stepOptions?.cfg.extra_allowed_tools).toEqual(["Bash(rg:*)"]);
+  expect(r.stepOptions?.cfg.repos).toEqual(r.config().repos);
+});
+
+test("a custom result without extras leaves the existing extras untouched", async () => {
+  const sb = makeSandbox();
+  sb.writeConfig({
+    orgs: ["your-github-org"],
+    repos: {},
+    extra_allowed_tools: ["Bash(rg:*)"],
+  });
+  const home = homeWithClones();
+  const r = await drive(
+    sb,
+    ["2", "1", "", ""],
+    { HOME: home, GH_AUTH_STATUS_TEXT: ONE_ACCOUNT, GH_ORG_LIST: "acme" },
+    undefined,
+    { task: "custom", review_prompt: "My task." },
+  );
+  expect(r.config().review_prompt).toBe("My task.");
+  expect(r.config().extra_allowed_tools).toEqual(["Bash(rg:*)"]);
+});
+
+test("an aborted step aborts the wizard through the input-ended path, writing nothing", async () => {
+  const sb = fresh();
+  const home = homeWithClones();
+  const r = await drive(
+    sb,
+    ["2", "1", "", ""],
+    { HOME: home, GH_AUTH_STATUS_TEXT: ONE_ACCOUNT, GH_ORG_LIST: "acme" },
+    undefined,
+    "aborted",
+  );
+  expect(r.outcome).toBe("aborted");
+  expect(r.out).toContain("input ended");
+  expect(existsSync(r.configPath)).toBe(false);
+  expect(r.doctorRuns).toBe(0);
+});
+
+test("the steps around the review task are renumbered", async () => {
+  const sb = fresh();
+  const home = homeWithClones();
+  const r = await drive(sb, ["2", "1", "", ""], {
+    HOME: home,
+    GH_AUTH_STATUS_TEXT: ONE_ACCOUNT,
+    GH_ORG_LIST: "acme",
+  });
+  expect(r.out).toContain("4. Review task");
+  expect(r.out).toContain("5. Writing config");
+  expect(r.out).toContain("6. Checking the setup");
 });
 
 test("a config the wizard cannot write is reported, not thrown at the user", async () => {

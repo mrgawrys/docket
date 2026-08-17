@@ -78,7 +78,11 @@ const staged = (states: Array<Config | ConfigError>) => {
   };
 };
 
-const deps = (f: Fakes, states: Array<Config | ConfigError>, offer = true) => ({
+const deps = (
+  f: Fakes,
+  states: Array<Config | ConfigError>,
+  offer: WizardOutcome | "declined" = "completed",
+) => ({
   load: staged(states),
   seed: async () => {
     f.seeds++;
@@ -86,12 +90,12 @@ const deps = (f: Fakes, states: Array<Config | ConfigError>, offer = true) => ({
   },
   offer: async () => {
     f.offers++;
-    return (offer ? "completed" : "declined") as WizardOutcome | "declined";
+    return offer;
   },
   report: (msg: string) => f.errors.push(msg),
 });
 
-test("a wizard that writes a config continues into the command with it", async () => {
+test("a wizard that writes a config continues into the command with it, flagged", async () => {
   const f = fakes();
   const r = await resolveConfig(
     freshPaths(),
@@ -99,8 +103,32 @@ test("a wizard that writes a config continues into the command with it", async (
     deps(f, [missing(), VALID]),
   );
   expect(f.offers).toBe(1);
-  expect(r).toEqual({ cfg: VALID });
+  expect(r).toEqual({ cfg: VALID, wizardRan: true });
   expect(f.seeds).toBe(0);
+});
+
+test("a wizard short on repos but written still counts as asked", async () => {
+  const f = fakes();
+  const r = await resolveConfig(
+    freshPaths(),
+    true,
+    deps(f, [missing(), VALID], "came-up-short-wrote"),
+  );
+  // the task answer went to disk with the config, so `docket prompt` right
+  // after a thin wizard must not ask the same question again
+  expect(r).toEqual({ cfg: VALID, wizardRan: true });
+});
+
+test("a wizard that came up short without writing leaves the question open", async () => {
+  const f = fakes();
+  const r = await resolveConfig(
+    freshPaths(),
+    true,
+    deps(f, [STARTER, STARTER], "came-up-short"),
+  );
+  // a config on disk is not enough — the placeholder survived a declined
+  // overwrite, but step 4's answer was never persisted
+  expect(r).toEqual({ cfg: STARTER });
 });
 
 test("declining with no config does exactly what a headless run does", async () => {
@@ -108,16 +136,22 @@ test("declining with no config does exactly what a headless run does", async () 
   const r = await resolveConfig(
     freshPaths(),
     true,
-    deps(f, [missing()], false),
+    deps(f, [missing()], "declined"),
   );
   expect(r).toEqual({ code: 1 });
   expect(f.seeds).toBe(1);
   expect(f.errors).toEqual(["seeded message"]);
 });
 
-test("declining a placeholder config runs the command with it as it is", async () => {
+test("declining a placeholder config runs the command with it as it is, unflagged", async () => {
   const f = fakes();
-  const r = await resolveConfig(freshPaths(), true, deps(f, [STARTER], false));
+  const r = await resolveConfig(
+    freshPaths(),
+    true,
+    deps(f, [STARTER], "declined"),
+  );
+  // no wizardRan: the task question was never asked, so `docket prompt`
+  // must still run its step rather than silently exiting
   expect(r).toEqual({ cfg: STARTER });
   expect(f.seeds).toBe(0);
 });
@@ -217,6 +251,12 @@ test("a native wizard that comes up short offers the claude one as the fallback"
   const r = await offer(["1", "y"], { native: "came-up-short" });
   expect(r.ran).toEqual(["native", "claude"]);
   expect(r.outcome).toBe("completed");
+});
+
+test("the wrote-short fallback is offered too, and declining keeps the outcome", async () => {
+  const r = await offer(["1", "n"], { native: "came-up-short-wrote" });
+  expect(r.ran).toEqual(["native"]);
+  expect(r.outcome).toBe("came-up-short-wrote");
 });
 
 test("the came-up-short fallback can be turned down", async () => {
