@@ -28,7 +28,9 @@ export function buildResume(
     return { error: "still being reviewed — w watches it live, K kills it" };
   }
   if (!entry.session_id || !entry.local_path) {
-    return { error: `no session (${entry.status}) — r (re)runs the review` };
+    return {
+      error: `no session (${entry.status}) — r retries, docket doctor checks your setup`,
+    };
   }
   return {
     // claude stores sessions under a slug of the directory it ran in, so a
