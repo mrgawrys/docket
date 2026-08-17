@@ -12,7 +12,7 @@ const MAIN = join(import.meta.dir, "..", "src", "main.ts");
 
 // Same shims as tests/tests.sh, knobs included: GH_PR_STATUS_JSON,
 // GH_PR_VIEW_FAIL, GH_AUTH_STATUS_TEXT, GH_ORG_LIST, GH_ORG_LIST_FAIL,
-// CLAUDE_FAIL, CLAUDE_EMIT_DENIAL. The gh shim logs every invocation (with
+// CLAUDE_FAIL, CLAUDE_EMIT_DENIAL, CLAUDE_LOGGED_OUT. The gh shim logs every invocation (with
 // the GH_TOKEN it saw) to GH_CALLS; the claude shim records its calls, the
 // prompt, CLAUDE_CONFIG_DIR, and the state of testorg/demo#7 at call time.
 const GH_SHIM = `#!/usr/bin/env bash
@@ -75,6 +75,15 @@ JSON
 
 const CLAUDE_SHIM = `#!/usr/bin/env bash
 if [ "$1" = --version ]; then echo "claude 0.0-test"; exit 0; fi
+# the auth probe is not a review run — it must not land in CLAUDE_CALLS
+if [ "$1" = auth ] && [ "$2" = status ]; then
+  if [ "\${CLAUDE_LOGGED_OUT:-0}" = 1 ]; then
+    echo '{"loggedIn":false,"authMethod":"none","apiProvider":"firstParty"}'
+  else
+    echo '{"loggedIn":true,"authMethod":"claude.ai","apiProvider":"firstParty"}'
+  fi
+  exit 0
+fi
 echo run >>"\${CLAUDE_CALLS:?}"
 [ "$1" = -p ] && printf '%s' "$2" >"\${PROMPT_CAPTURE:?}"
 prev=""
