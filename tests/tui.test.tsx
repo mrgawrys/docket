@@ -29,7 +29,12 @@ const resolved = resolveOpeners(
 // `real` makes dismiss do what the command does — mark the entry done, which
 // drops it from the queue. A stub that only records the call cannot catch a
 // cursor that moves when the row under it disappears.
-function mount(state: State, real = false, configText = JSON.stringify(cfg)) {
+function mount(
+  state: State,
+  real = false,
+  configText = JSON.stringify(cfg),
+  authWarning?: string,
+) {
   const dir = mkdtempSync(join(tmpdir(), "docket-tui-"));
   writeFileSync(join(dir, "state.json"), JSON.stringify(state));
   writeFileSync(join(dir, "config.json"), configText);
@@ -69,6 +74,7 @@ function mount(state: State, real = false, configText = JSON.stringify(cfg)) {
       actions={actions}
       resolved={resolved}
       request={(req) => requests.push(req)}
+      authWarning={authWarning}
     />,
   );
   return { ...r, calls, requests, paths: p };
@@ -429,5 +435,26 @@ test("an empty queue keeps the TUI open so poll can populate it", async () => {
   await Bun.sleep(20);
   expect(ui.calls).toEqual(["poll"]);
   expect(ui.lastFrame()).toContain("No pending reviews"); // still mounted
+  ui.unmount();
+});
+
+// The case this exists for: a logged-out poller writes no entries at all, so
+// an empty queue is indistinguishable from a quiet morning unless the warning
+// survives on screen. It must also not be shouted over by action feedback.
+test("a broken setup is announced even when the queue is empty", async () => {
+  const ui = mount({}, false, JSON.stringify(cfg), "claude is not logged in");
+  await Bun.sleep(20);
+  expect(ui.lastFrame()).toContain("claude is not logged in");
+
+  ui.stdin.write("p"); // action feedback takes the line...
+  await Bun.sleep(20);
+  expect(ui.calls).toEqual(["poll"]);
+  ui.unmount();
+});
+
+test("no warning line when the setup is fine", async () => {
+  const ui = mount({});
+  await Bun.sleep(20);
+  expect(ui.lastFrame()).not.toContain("not logged in");
   ui.unmount();
 });

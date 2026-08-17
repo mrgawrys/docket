@@ -3,6 +3,7 @@ import { readFileSync, watch } from "node:fs";
 import { dirname } from "node:path";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { readAssessment } from "../assessment";
+import { claudeAuth } from "../auth";
 import {
   readConfigSync,
   runLogPath,
@@ -54,6 +55,10 @@ export interface AppProps {
   initialKey?: string;
   onSelect?: (key: string) => void;
   notice?: string;
+  // Broken setup, not a broken review: it belongs to no row, and a logged-out
+  // poller writes no entries at all — so without this the queue looks exactly
+  // like a morning with no new PRs.
+  authWarning?: string;
 }
 
 function Bar({
@@ -86,6 +91,7 @@ export function App({
   initialKey,
   onSelect,
   notice,
+  authWarning,
 }: AppProps) {
   const { exit } = useApp();
   const size = useWindowSize();
@@ -200,7 +206,11 @@ export function App({
     );
   }, [unavailable]);
 
-  const footer = status ?? notice;
+  // Last in line: action feedback is what the user just asked for, so it takes
+  // the line while it lasts. The warning is still there when it clears.
+  const footer = status ?? notice ?? authWarning;
+  const footerColor =
+    notice !== undefined && footer === notice ? "red" : "yellow";
   const queueHeight = Math.max(
     1,
     Math.min(rows.length || 1, Math.min(10, height - 8)),
@@ -434,7 +444,7 @@ export function App({
         </>
       )}
       {footer ? (
-        <Text color={status ? "yellow" : "red"} wrap="truncate-end">
+        <Text color={footerColor} wrap="truncate-end">
           {footer}
         </Text>
       ) : null}
@@ -450,6 +460,14 @@ export function runTui(ctx: Ctx, actions: TuiActions): Promise<number> {
   // that runs bare `docket` still gets the queue instead of a stack trace.
   if (!process.stdin.isTTY) return Promise.resolve(printPending(ctx));
   const resolved = resolveOpeners(ctx.cfg);
+  // Probed once, like the openers — it costs a subprocess, and the answer
+  // cannot change while the queue is on screen. `unknown` stays quiet, the
+  // same way the poller carries on rather than blocking on a broken probe.
+  const auth = claudeAuth(ctx.cfg);
+  const authWarning =
+    "ok" in auth && !auth.ok
+      ? `claude is not logged in (${auth.dir}) — run: docket doctor`
+      : undefined;
   let selected: string | undefined;
   return suspendLoop((request, notice) =>
     render(
@@ -460,6 +478,7 @@ export function runTui(ctx: Ctx, actions: TuiActions): Promise<number> {
         resolved={resolved}
         request={request}
         notice={notice}
+        authWarning={authWarning}
         initialKey={selected}
         onSelect={(key) => {
           selected = key;
