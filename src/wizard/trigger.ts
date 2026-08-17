@@ -116,7 +116,8 @@ export async function offerFirstRun(
   if (choice === "2") return claude();
 
   const outcome = await runNative({ paths: p, env, input, output });
-  if (outcome !== "came-up-short") return outcome;
+  if (outcome !== "came-up-short" && outcome !== "came-up-short-wrote")
+    return outcome;
   // Spec: the claude wizard is also the fallback when the native flow comes up
   // short — an empty org list, a scan that found nothing.
   say();
@@ -141,7 +142,7 @@ export interface ResolveDeps {
   report?: (message: string) => void;
 }
 
-// wizardRan is true only when the offer-wizard path completed a wizard: setup
+// wizardRan is true only when the offer-wizard path wrote a config: setup
 // just asked every question, so a command whose question it already asked —
 // `docket prompt` — must not ask it again.
 export type Resolved = { cfg: Config; wizardRan?: boolean } | { code: number };
@@ -177,9 +178,12 @@ export async function resolveConfig(
       found instanceof ConfigError ? "no-config" : "placeholders",
     );
     const resolved = await resolveConfig(p, false, deps);
-    // Only a completed wizard asked the review-task question; a declined or
-    // aborted offer never reached it, so `docket prompt` must still ask.
-    return "cfg" in resolved && outcome === "completed"
+    // The review-task answer is on disk only when the wizard wrote a config —
+    // completed, or short on repos after the write. A declined or aborted
+    // offer, or a write that failed, never persisted it, so `docket prompt`
+    // must still ask.
+    return "cfg" in resolved &&
+      (outcome === "completed" || outcome === "came-up-short-wrote")
       ? { ...resolved, wizardRan: true }
       : resolved;
   }

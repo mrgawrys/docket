@@ -283,7 +283,7 @@ test("orgs with no repos mapped is still written — the poller works without th
     GH_AUTH_STATUS_TEXT: ONE_ACCOUNT,
     GH_ORG_LIST: "acme",
   });
-  expect(r.outcome).toBe("came-up-short");
+  expect(r.outcome).toBe("came-up-short-wrote");
   expect(existsSync(r.configPath)).toBe(true);
   expect(r.config()).toEqual({ orgs: ["acme"], repos: {} });
 });
@@ -297,7 +297,7 @@ test("a projects root that does not exist skips the scan instead of failing", as
     GH_ORG_LIST: "acme",
   });
   expect(r.out).toContain("/no/such/root does not exist");
-  expect(r.outcome).toBe("came-up-short");
+  expect(r.outcome).toBe("came-up-short-wrote");
   expect(r.config()).toEqual({ orgs: ["acme"], repos: {} });
 });
 

@@ -37,8 +37,14 @@ import {
 // What the first-run trigger acts on. "came-up-short" is the load-bearing
 // one: the wizard ran, but the native path could not produce something worth
 // polling — no orgs, or no clones it could map — which is where the caller
-// offers the claude-guided wizard instead.
-export type WizardOutcome = "completed" | "aborted" | "came-up-short";
+// offers the claude-guided wizard instead. "came-up-short-wrote" is the same
+// shortfall after the config was already written: the review-task answer is
+// on disk, so `docket prompt` must not ask it again.
+export type WizardOutcome =
+  | "completed"
+  | "aborted"
+  | "came-up-short"
+  | "came-up-short-wrote";
 
 export interface WizardOptions {
   paths?: Paths;
@@ -594,7 +600,7 @@ export async function runNativeWizard(
     );
     if (!ok) return "came-up-short";
     wrote = true;
-    return shortfall ? "came-up-short" : "completed";
+    return shortfall ? "came-up-short-wrote" : "completed";
   };
 
   let outcome: WizardOutcome;

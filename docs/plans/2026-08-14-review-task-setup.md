@@ -307,8 +307,11 @@ export type Resolved =
 **Constraints:**
 
 - `wizardRan: true` is set exactly when `resolveConfig` took the
-  `offer-wizard` branch and the recursive call produced a config. Existing
-  callers (`withCtx`) ignore the flag — no behavior change for them.
+  `offer-wizard` branch and the wizard wrote a config (outcome `"completed"`
+  or `"came-up-short-wrote"` — a thin wizard still asked and persisted the
+  task answer; a config merely present on disk is not enough, since a
+  declined overwrite leaves the placeholder there with step 4 unpersisted).
+  Existing callers (`withCtx`) ignore the flag — no behavior change for them.
 - `prompt` on `wizardRan` exits 0 immediately: the task step already happened
   inside the wizard; asking twice is the bug this flag exists to prevent.
 - The step is seeded with `effectiveReviewPrompt(cfg)` as the current task.
