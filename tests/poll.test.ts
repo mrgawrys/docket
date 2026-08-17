@@ -139,6 +139,16 @@ test("poll reconciles too: merged -> done, worktree removed, no re-review (scena
   expect(lastLogLine(sb)).toContain("1 synced");
 });
 
+test("poll: claude logged out → abort before any review, no state entries", () => {
+  const sb = makeSandbox();
+  const r = sb.run(["poll"], { CLAUDE_LOGGED_OUT: "1" });
+  expect(r.code).toBe(0);
+  // no entry means the PR is still waiting once auth is back, not burned
+  expect(Object.keys(sb.state())).toHaveLength(0);
+  expect(sb.claudeCalls()).toBe(0);
+  expect(lastLogLine(sb)).toContain("poll aborted: claude is not logged in");
+});
+
 test("skipVia: skips only when every requested team I belong to is ignored", () => {
   const ignored = ["acme/ignored-team"];
   const member = ["acme/ignored-team", "acme/dev"];

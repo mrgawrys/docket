@@ -1,3 +1,4 @@
+import { claudeAuth } from "./auth";
 import {
   ghUser,
   myTeams,
@@ -5,6 +6,7 @@ import {
   searchReviewRequests,
   type ReviewRequesters,
 } from "./github";
+import { notify } from "./notify";
 import { startReview, type Ctx } from "./reviewer";
 import { loadState } from "./state";
 import { reconcile } from "./sync";
@@ -27,6 +29,25 @@ export function skipVia(
 
 export async function pollCycle(ctx: Ctx, dry: boolean): Promise<void> {
   if (!dry) reconcile(ctx);
+
+  // Every review started while logged out fails and writes a state entry, and
+  // a known key is never re-reviewed — so an auth outage silently burns the
+  // whole queue. Returning first leaves those PRs to resurface next cycle.
+  const auth = claudeAuth(ctx.cfg);
+  if ("unknown" in auth) {
+    ctx.log(`auth check inconclusive (${auth.unknown}) — polling anyway`);
+  } else if (!auth.ok) {
+    ctx.log(
+      `poll aborted: claude is not logged in (${auth.dir}) — run: docket doctor`,
+    );
+    await notify(
+      ctx.cfg,
+      "docket: claude is not logged in",
+      "run docket doctor",
+    );
+    return;
+  }
+
   ctx.log(`polling ${ctx.cfg.orgs.join(", ")} for review requests`);
 
   const ignored = ctx.cfg.ignored_teams ?? [];
