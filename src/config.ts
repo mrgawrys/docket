@@ -55,8 +55,13 @@ export const effectiveReviewPrompt = (cfg: Config): string =>
 // post to GitHub; the user opens the ready session and posts themselves.
 // `gh api repos/*/commits/*/pulls` is the one scoped exception: a read-only
 // commit→PR lookup reviewers reach for, with no POST meaning on that path.
+// The bare shell read verbs (ls…wc) are here because agents reach for them
+// even with Read/Grep/Glob available, and denying them buys no safety.
+// EnterWorktree/ExitWorktree: the run is told to work in a worktree, and
+// newer claude versions manage that through these tools rather than raw
+// `git worktree` calls.
 export const ALLOWED_TOOLS =
-  "Read,Grep,Glob,Task,Agent,TodoWrite,Skill(code-review),Skill(code-review:code-review),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*),Bash(gh pr list:*),Bash(gh api user:*),Bash(gh api repos/*/commits/*/pulls:*),Bash(gh search:*),Bash(gh issue view:*),Bash(gh issue list:*),Bash(git log:*),Bash(git show:*),Bash(git diff:*),Bash(git blame:*),Bash(git rev-parse:*),Bash(git fetch:*),Bash(git worktree:*),Bash(git checkout:*),Bash(git branch:*),Bash(cd:*),Bash(echo:*)";
+  "Read,Grep,Glob,Task,Agent,TodoWrite,EnterWorktree,ExitWorktree,Skill(code-review),Skill(code-review:code-review),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*),Bash(gh pr list:*),Bash(gh api user:*),Bash(gh api repos/*/commits/*/pulls:*),Bash(gh search:*),Bash(gh issue view:*),Bash(gh issue list:*),Bash(git log:*),Bash(git show:*),Bash(git diff:*),Bash(git blame:*),Bash(git rev-parse:*),Bash(git fetch:*),Bash(git worktree:*),Bash(git checkout:*),Bash(git branch:*),Bash(cd:*),Bash(echo:*),Bash(ls:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(grep:*)";
 
 // The --allowedTools value a review runs with: the read-only baseline plus any
 // configured extras. Extras are spliced in verbatim (claude's own grammar) —
