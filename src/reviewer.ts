@@ -11,9 +11,9 @@ import {
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import {
+  ALLOWED_TOOLS,
   claudeBin,
   claudeEnv,
-  effectiveAllowedTools,
   effectiveReviewPrompt,
   ghBin,
   runLogPath,
@@ -249,6 +249,13 @@ export async function startReview(
     updated_at: timestamp(),
   }));
 
+  return spawnRunner(ctx, key);
+}
+
+// Detach a `docket exec <key>` runner for an entry already marked reviewing.
+// Shared by review starts and the receive trigger — the run core is the same.
+export function spawnRunner(ctx: Ctx, key: string): StartResult {
+  const { statePath } = ctx.paths;
   const argv = selfArgs("exec", key);
   const fd = openSync(ctx.paths.logPath, "a");
   const child = spawn(argv[0]!, argv.slice(1), {
@@ -269,12 +276,39 @@ export async function startReview(
   updateEntry(statePath, key, (e) =>
     e && e.status === "reviewing" ? { ...e, pid } : e!,
   );
-  ctx.log(`STARTED ${key} — background /code-review runner pid ${pid}`);
+  ctx.log(`STARTED ${key} — background runner pid ${pid}`);
   ctx.counters.started++;
   return "started";
 }
 
-// The body of one review — runs inside the detached `docket exec` process.
+// Everything that differs between a review run and a receive run; the spawn,
+// tee, tail-parse, notify, and status writes are shared.
+export type RunPlan = {
+  prompt: string;
+  allowedTools: string[];
+  cwd: string;
+  // review: discover the worktree the agent created after the run; mine:
+  // docket resolved the checkout itself, there is nothing to discover.
+  discoverWorktrees: boolean;
+  // notification + log prefix
+  label: "review" | "receive";
+};
+
+export function runPlan(ctx: Ctx, key: string, entry: Entry): RunPlan {
+  const { repo, number } = splitKey(key);
+  if (entryKind(key) === "mine") {
+    throw new Error("receive runs not yet wired");
+  }
+  return {
+    prompt: reviewPrompt(number, repo, ctx.cfg, entry.note),
+    allowedTools: [ALLOWED_TOOLS, ...(ctx.cfg.extra_allowed_tools ?? [])],
+    cwd: entry.local_path ?? ctx.cfg.repos[repo] ?? "",
+    discoverWorktrees: true,
+    label: "review",
+  };
+}
+
+// The body of one run — runs inside the detached `docket exec` process.
 export async function execReview(ctx: Ctx, key: string): Promise<number> {
   const { statePath } = ctx.paths;
   const entry = loadState(statePath)[key];
@@ -295,6 +329,7 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
     return 1;
   }
 
+  const plan = runPlan(ctx, key, entry);
   patchEntry(statePath, key, {
     status: "reviewing",
     local_path: localPath,
@@ -302,12 +337,16 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
   });
   ctx.current.key = key;
   ctx.log(
-    `REVIEW ${key} in ${localPath} — headless /code-review running, this takes a few minutes`,
+    `${plan.label.toUpperCase()} ${key} in ${plan.cwd} — headless run, this takes a few minutes`,
   );
 
   // Snapshot before the agent runs so we can tell which worktree it creates.
-  const sha = prHeadSha(ctx, localPath, number);
-  const worktreesBefore = listWorktrees(localPath).map((w) => w.path);
+  const sha = plan.discoverWorktrees
+    ? prHeadSha(ctx, localPath, number)
+    : undefined;
+  const worktreesBefore = plan.discoverWorktrees
+    ? listWorktrees(localPath).map((w) => w.path)
+    : [];
 
   // gh.env carries GH_TOKEN when gh_account is pinned — claude runs gh itself
   const env = { ...ctx.gh.env, ...claudeEnv(ctx.cfg) };
@@ -317,16 +356,16 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
     [
       claudeBin(ctx.cfg),
       "-p",
-      reviewPrompt(number, repo, ctx.cfg, entry.note),
+      plan.prompt,
       "--output-format",
       "stream-json",
       "--verbose",
       "--permission-mode",
       "dontAsk",
       "--allowedTools",
-      effectiveAllowedTools(ctx.cfg),
+      plan.allowedTools.join(","),
     ],
-    { cwd: localPath, env, stdout: "pipe", stderr: "pipe" },
+    { cwd: plan.cwd, env, stdout: "pipe", stderr: "pipe" },
   );
   // Exposed so a SIGINT/SIGTERM handler can kill the child promptly — spawnSync
   // would otherwise block the JS thread until claude exits on its own.
@@ -346,11 +385,9 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
   // Discover the worktree the agent made (any location) and record it so
   // cleanupEntry can remove it later. Persisted after the status write below,
   // which rewrites the entry wholesale.
-  const worktrees = pickReviewWorktrees(
-    worktreesBefore,
-    listWorktrees(localPath),
-    sha,
-  );
+  const worktrees = plan.discoverWorktrees
+    ? pickReviewWorktrees(worktreesBefore, listWorktrees(localPath), sha)
+    : [];
 
   // Best-effort: a denial is worth surfacing, but never at the cost of the
   // status write below, which must land whatever this does.
@@ -372,6 +409,8 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
   }
 
   const url = entry.url ?? "";
+  // A capitalized label for the notification title: "Review" | "Receive".
+  const Label = plan.label[0]!.toUpperCase() + plan.label.slice(1);
   if (sessionId) {
     updateEntry(statePath, key, () => ({
       status: "ready",
@@ -382,7 +421,7 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
       updated_at: timestamp(),
     }));
     ctx.log(`READY ${key} session=${sessionId} — run \`docket\` to open it`);
-    await notify(ctx.cfg, `Review ready: ${key}`, title);
+    await notify(ctx.cfg, `${Label} ready: ${key}`, title);
     ctx.counters.reviewed++;
   } else {
     updateEntry(statePath, key, () => ({
@@ -396,7 +435,7 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
     ctx.log(
       `FAILED ${key} — retry with: docket retry ${key}, or check your setup: docket doctor`,
     );
-    await notify(ctx.cfg, `Review FAILED: ${key}`, title);
+    await notify(ctx.cfg, `${Label} FAILED: ${key}`, title);
     ctx.counters.failed++;
   }
   // Both are discovered facts about the finished run, and the status writes
