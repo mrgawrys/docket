@@ -27,6 +27,7 @@ import { notify } from "./notify";
 import { selfArgs } from "./proc";
 import { parseRunEvent, tailLines } from "./runlog";
 import {
+  entryKind,
   isLiveReview,
   loadState,
   patchEntry,
@@ -181,7 +182,13 @@ export function cleanupEntry(
   if (!clone || !existsSync(clone)) return [];
 
   const recorded = entry?.worktrees ?? [];
-  const targets = recorded.length ? recorded : legacyWorktrees(clone, number);
+  // The pr-<number> fallback exists for review entries written before paths
+  // were recorded. A mine entry's checkout may be the user's own worktree —
+  // only what worktrees[] records (docket-created) may ever be deleted.
+  const targets =
+    recorded.length || entryKind(key) === "mine"
+      ? recorded
+      : legacyWorktrees(clone, number);
   const stuck = targets.filter(
     (wt) => !removeWorktree(ctx, clone, wt, key, logPrefix),
   );

@@ -49,6 +49,9 @@ export interface Entry {
   // clone, the user's worktree, or docket's own. Openers, enter, and the
   // receive runner's cwd all read it.
   checkout_path?: string;
+  // Mine entries: who left the newest actionable review. The panel shows it,
+  // and the TUI never fetches — so sync records it here.
+  reviewer?: string;
   note?: string;
   // Absolute paths of git worktrees this review created, discovered after the
   // run wherever the agent put them; cleanupEntry removes exactly these.

@@ -177,7 +177,7 @@ const pollLocked = (ctx: Ctx, dry: boolean): Promise<number> =>
 const syncLocked = (ctx: Ctx): Promise<number> =>
   runLocked(ctx, async () => {
     resetCounters(ctx);
-    reconcile(ctx);
+    await reconcile(ctx);
     ctx.log(`sync complete: ${ctx.counters.synced} updated`);
     return 0;
   });

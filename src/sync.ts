@@ -1,10 +1,15 @@
-import { ghUser, prView } from "./github";
+import { ghUser, prMineInfo, prView, type PrMineInfo } from "./github";
+import { feedbackNotification, notify } from "./notify";
 import { cleanupEntry, type Ctx } from "./reviewer";
 import {
+  bareKey,
+  entryKind,
   loadState,
   markDone,
   markReviewed,
+  patchEntry,
   splitKey,
+  type Entry,
   type Verdict,
 } from "./state";
 
@@ -45,7 +50,135 @@ export function decideSync(info: PrSyncInfo, me: string): SyncDecision {
   };
 }
 
-export function reconcile(ctx: Ctx): void {
+export type MineSyncDecision =
+  | { kind: "done" }
+  | {
+      kind: "feedback";
+      at: string;
+      verdict: "approved" | "changes-requested" | "commented";
+      // Who left the newest actionable review — the panel shows it, and the
+      // TUI never fetches, so sync records it on the entry.
+      reviewer: string;
+    }
+  | { kind: "none" };
+
+// Verdict severity for "the worst actionable state wins".
+const VERDICT_RANK: Record<Verdict, number> = {
+  "changes-requested": 2,
+  commented: 1,
+  approved: 0,
+};
+
+// Actionable feedback on the user's PR: a review by someone else, newer than
+// the entry's cursor, that is not a bare comment-less approval.
+export function decideMineSync(
+  info: PrMineInfo,
+  me: string,
+  entry: Entry,
+): MineSyncDecision {
+  if (info.state === "MERGED" || info.state === "CLOSED")
+    return { kind: "done" };
+  const cursor = entry.review_at ?? "";
+  const actionable = info.reviews.filter(
+    (r) =>
+      r.author !== me &&
+      r.submittedAt > cursor &&
+      (r.state === "CHANGES_REQUESTED" ||
+        r.state === "COMMENTED" ||
+        (r.state === "APPROVED" && r.body.trim() !== "")),
+  );
+  if (actionable.length === 0) return { kind: "none" };
+  const worst = actionable.reduce((a, b) =>
+    VERDICT_RANK[toVerdict(b.state)] > VERDICT_RANK[toVerdict(a.state)] ? b : a,
+  );
+  const newest = actionable.reduce((a, b) =>
+    b.submittedAt > a.submittedAt ? b : a,
+  );
+  return {
+    kind: "feedback",
+    at: newest.submittedAt,
+    verdict: toVerdict(worst.state),
+    reviewer: newest.author,
+  };
+}
+
+const toVerdict = (state: string): Verdict =>
+  state.toLowerCase().replaceAll("_", "-") as Verdict;
+
+export type Feedback = Extract<MineSyncDecision, { kind: "feedback" }>;
+
+// What happens when actionable feedback lands. Replaced by the receive
+// trigger flow in receive.ts wiring; until then the verdict recorded by
+// reconcile is the whole reaction, so this only has to exist as the seam.
+export type TriggerReceive = (
+  ctx: Ctx,
+  key: string,
+  entry: Entry,
+  fb: Feedback,
+) => Promise<void>;
+
+async function syncMine(
+  ctx: Ctx,
+  key: string,
+  entry: Entry,
+  me: string,
+  trigger: TriggerReceive,
+): Promise<void> {
+  const { statePath } = ctx.paths;
+  const { repo, number } = splitKey(key);
+  const info = prMineInfo(ctx.gh, repo, number);
+  if (!info) {
+    ctx.log(`SYNC ${key}: gh pr view failed, leaving entry as-is`);
+    return;
+  }
+  const d = decideMineSync(info, me, entry);
+  if (d.kind === "done") {
+    const reason = info.state === "MERGED" ? "merged" : "closed";
+    markDone(statePath, key, reason);
+    cleanupEntry(ctx, key, "SYNC");
+    ctx.log(`SYNC ${key}: PR ${reason} — marked done`);
+    ctx.counters.synced++;
+    return;
+  }
+
+  // Drafts flip to ready-for-review, and a force-recreated PR can change its
+  // head branch — refresh both from what gh just said.
+  const flags = (entry.flags ?? []).filter((f) => f !== "draft");
+  if (info.isDraft) flags.push("draft");
+  const changed =
+    flags.join(" ") !== (entry.flags ?? []).join(" ") ||
+    (info.headRefName !== "" && info.headRefName !== entry.branch);
+  if (changed) {
+    patchEntry(statePath, key, {
+      flags,
+      ...(info.headRefName ? { branch: info.headRefName } : {}),
+    });
+    entry = loadState(statePath)[key] ?? entry;
+  }
+
+  if (d.kind !== "feedback") return;
+  // Advance the cursor and record their verdict before acting: the same
+  // review must never re-trigger, even if the trigger path crashes.
+  patchEntry(statePath, key, {
+    status: d.verdict,
+    review_at: d.at,
+    reviewer: d.reviewer,
+  });
+  ctx.log(`SYNC ${key}: ${d.reviewer} left feedback (${d.verdict})`);
+  ctx.counters.synced++;
+  const n = feedbackNotification(bareKey(key), d.verdict, d.reviewer);
+  await notify(ctx.cfg, n.title, n.body);
+  await trigger(ctx, key, loadState(statePath)[key] ?? entry, d);
+}
+
+// The Task 5 receive flow replaces this body; until then the verdict written
+// by syncMine stands and nothing runs.
+export const triggerReceiveStub: TriggerReceive = async () => {};
+
+export async function reconcile(
+  ctx: Ctx,
+  trigger: TriggerReceive = triggerReceiveStub,
+): Promise<void> {
   const { statePath } = ctx.paths;
   const active = Object.entries(loadState(statePath)).filter(
     ([, e]) => e.status !== "done" && e.status !== "reviewing",
@@ -59,6 +192,10 @@ export function reconcile(ctx: Ctx): void {
   }
 
   for (const [key, entry] of active) {
+    if (entryKind(key) === "mine") {
+      await syncMine(ctx, key, entry, me, trigger);
+      continue;
+    }
     const { repo, number } = splitKey(key);
     const info = prView<PrSyncInfo>(
       ctx.gh,
