@@ -17,15 +17,17 @@ import { scenarios, seedScenario } from "./scenarios";
 const SETTLE_MS = 50;
 
 const unknownScenario = (name: string): string =>
-  `unknown scenario: ${name}\nvalid: ${Object.keys(scenarios).join(", ")}, all`;
+  `unknown scenario: ${name}\nvalid: ${Object.keys(scenarios).join(", ")}`;
 
 // The initial frame, then one frame per key in `keys`. Each keystroke is one
 // character written to the fake stdin — no enter support: enter suspends into
 // a spawned process, which headless mode must not do.
+// `calls` is the log of stub-action invocations a keystroke triggered — QA
+// evidence for what actually fired, kept separate from the rendered frames.
 export async function renderFrames(
   name: string,
   keys = "",
-): Promise<string[]> {
+): Promise<{ frames: string[]; calls: string[] }> {
   const scenario = scenarios[name];
   if (!scenario) throw new Error(unknownScenario(name));
   if (scenario.interactiveOnly) {
@@ -39,7 +41,9 @@ export async function renderFrames(
     DOCKET_STATE_DIR: dirs.stateDir,
   } as NodeJS.ProcessEnv);
   // The config as seeded on disk — repo paths already resolved under root.
-  const cfg = readConfigSync(p.configPath, scenario.config ?? { orgs: [], repos: {} });
+  // Interactive-only scenarios (no seeded config) are rejected above, so this
+  // fallback never fires; a bare default is honest about that.
+  const cfg = readConfigSync(p.configPath, { orgs: [], repos: {} });
 
   // The auth probe (and anything a key spawns) must see the shims, never the
   // machine's real gh/claude; restored so the smoke test leaks nothing.
@@ -104,7 +108,7 @@ export async function renderFrames(
       frames.push(ui.lastFrame() ?? "");
     }
     ui.unmount();
-    return frames;
+    return { frames, calls };
   } finally {
     for (const [k, v] of saved) {
       if (v === undefined) delete process.env[k];
@@ -132,16 +136,18 @@ if (import.meta.main) {
       for (const [n, s] of Object.entries(scenarios)) {
         if (s.interactiveOnly) continue;
         console.log(`\n═══ ${n} — ${s.description} ═══\n`);
-        const [frame] = await renderFrames(n);
-        console.log(frame);
+        const { frames, calls } = await renderFrames(n);
+        console.log(frames[0]);
+        if (calls.length) console.log(`\nactions: ${calls.join(", ")}`);
       }
     } else {
-      const frames = await renderFrames(name, keys);
+      const { frames, calls } = await renderFrames(name, keys);
       console.log(frames[0]);
       frames.slice(1).forEach((frame, i) => {
         console.log(`\n── after "${keys[i]}" ──\n`);
         console.log(frame);
       });
+      if (calls.length) console.log(`\nactions: ${calls.join(", ")}`);
     }
   } catch (e) {
     console.error((e as Error).message);

@@ -8,7 +8,7 @@ import { scenarios } from "../dev/scenarios";
 for (const [name, scenario] of Object.entries(scenarios)) {
   if (scenario.interactiveOnly) continue;
   test(`frames: ${name} renders`, async () => {
-    const frames = await renderFrames(name);
+    const { frames } = await renderFrames(name);
     expect((frames[0] ?? "").trim()).not.toBe("");
   });
 }
