@@ -4,6 +4,8 @@
   "type": "module",
   "scripts": {
     "dev": "bun src/main.ts",
+    "demo": "bun dev/demo.ts",
+    "frames": "bun dev/frames.tsx",
     "test": "bun test",
     "format": "biome format --write .",
     "format:check": "biome format .",
