@@ -214,6 +214,8 @@ GitHub. Details, including the entry lifecycle and where state lives, are in
 
 - `bun test` — run the test suite (fully mocked: no network, no tokens)
 - `bun run dev` — run the CLI from source, e.g. `bun run dev status`
+- `bun run demo <scenario>` — launch the TUI over seeded mock data (`--list` shows the scenarios)
+- `bun run frames <scenario>` — print headless TUI frames (`all` sweeps every scenario)
 - `bun run build` — compile the `docket` binary into `dist/`
 - `bun run format` — format with Biome (`format:check` is enforced in CI)
 

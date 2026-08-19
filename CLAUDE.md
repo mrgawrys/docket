@@ -45,6 +45,17 @@ entry in `ALLOWED_TOOLS`, a config key — must in the same change:
 
 If doctor can pass while a fresh install still fails, doctor is wrong.
 
+## Testing the TUI by hand and by AI
+
+`bun run demo <scenario>` (`--list` shows the catalog) launches the real
+TUI over seeded mock data in a kept scratch dir — the way to click around
+after any UI change. The AI's fast QA pass is `bun run frames all` plus
+`bun run frames <scenario> --keys "jjD"` for the touched interaction:
+headless frames of the same scenarios. For interactive QA prefer
+`bun run demo` in a tmux pane (`send-keys` to drive, `capture-pane` to
+read); frames is the fallback when tmux is unavailable. Frames are
+evidence to eyeball, never material for committed assertions.
+
 ## TUI tests stay thin
 
 The logic behind the TUI lives in pure modules (`src/openers.ts`,
