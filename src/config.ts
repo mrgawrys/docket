@@ -300,7 +300,7 @@ export const claudeEnv = (cfg: Config): Record<string, string> => ({
 });
 
 export const runLogPath = (p: Paths, key: string): string =>
-  join(p.stateDir, "runs", key.replace(/[/#]/g, "-") + ".jsonl");
+  join(p.stateDir, "runs", key.replace(/[/#:]/g, "-") + ".jsonl");
 
 export const notifyEnabled = (
   cfg: Config,
