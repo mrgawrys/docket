@@ -39,7 +39,6 @@ const fullState: State = {
     title: "Add rate limiting to the public API",
     url: "https://example.test/api/pull/412",
     local_path: "repos/api",
-    worktrees: ["repos/api/.worktrees/pr-412"],
     summary: {
       headline: "Token bucket resets on every deploy — limits are advisory",
       issues: 3,
@@ -72,7 +71,6 @@ const fullState: State = {
     title: "Migrate sessions table to ULID keys",
     url: "https://example.test/api/pull/415",
     local_path: "repos/api",
-    worktrees: ["repos/api/.worktrees/pr-415"],
     summary: {
       headline: "Backfill runs in one transaction — locks the table",
       issues: 1,
@@ -216,7 +214,9 @@ export const scenarios: Record<string, Scenario> = {
     description: "the full queue with claude logged out — footer warning visible",
     config: fullConfig,
     state: fullState,
-    env: { CLAUDE_LOGGED_OUT: "1" },
+    // A fixed dir, not the developer's real one — the footer names it, so a
+    // real path would make the frame machine-specific.
+    env: { CLAUDE_LOGGED_OUT: "1", CLAUDE_CONFIG_DIR: "/tmp/docket-demo-claude" },
     hint: "the footer warns that claude is not logged in",
   },
   wizard: {
