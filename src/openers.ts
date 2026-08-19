@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import type { Config, Opener, Openers } from "./config";
-import { splitKey, type Entry } from "./state";
+import { entryKind, splitKey, type Entry } from "./state";
 
 // First entry whose binary is on PATH wins. `git diff` is the floor of the diff
 // chain: git is already required, so the chain can never come up empty.
@@ -135,13 +135,27 @@ export function resolveWorktree(
   return { path };
 }
 
+// The working copy a verb should open for this entry: the review's recorded
+// worktree, or a mine entry's resolved checkout.
+export function resolveEntryWorktree(
+  key: string,
+  entry: Entry,
+  exists: (p: string) => boolean = existsSync,
+): Worktree {
+  if (entryKind(key) !== "mine") return resolveWorktree(entry, exists);
+  const path = entry.checkout_path;
+  if (!path) return { missing: `no checkout yet (${entry.status})` };
+  if (!exists(path)) return { missing: `checkout is gone: ${path}` };
+  return { path };
+}
+
 export function openerContext(
   key: string,
   entry: Entry,
   deps: { exists?: (p: string) => boolean; git?: GitRunner } = {},
 ): OpenerContext {
   const { repo, number } = splitKey(key);
-  const worktree = resolveWorktree(entry, deps.exists);
+  const worktree = resolveEntryWorktree(key, entry, deps.exists);
   const git = deps.git ?? runGit;
   const base = "path" in worktree ? mergeBase(git, worktree.path) : null;
   return {

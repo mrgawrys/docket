@@ -7,16 +7,39 @@ export interface Binding {
   verb?: string;
 }
 
-export type KeymapView = "queue" | "denials";
+export type KeymapView = "queue" | "mine" | "denials";
 
 export const QUEUE_KEYS: Binding[] = [
   { keys: "j/k ↑/↓", label: "move" },
+  { keys: "tab", label: "my PRs" },
   { keys: "enter", label: "claude", verb: "claude" },
   { keys: "s", label: "shell", verb: "shell" },
   { keys: "d", label: "diff", verb: "diff" },
   { keys: "D", label: "denials", verb: "denials" },
   { keys: "w", label: "watch live" },
   { keys: "r", label: "retry" },
+  { keys: "n", label: "review a PR by hand" },
+  { keys: "x", label: "dismiss" },
+  { keys: "K", label: "kill" },
+  { keys: "p", label: "poll" },
+  { keys: "S", label: "sync" },
+  { keys: "?", label: "help" },
+  { keys: "q", label: "quit" },
+];
+
+// The mine view: the user's own PRs. Same movement, receive instead of retry
+// as the run verb, and every working verb aimed at the PR branch's checkout.
+export const MINE_KEYS: Binding[] = [
+  { keys: "j/k ↑/↓", label: "move" },
+  { keys: "tab", label: "queue" },
+  { keys: "enter", label: "claude", verb: "claude" },
+  { keys: "s", label: "shell", verb: "shell" },
+  { keys: "d", label: "diff", verb: "diff" },
+  { keys: "R", label: "receive now", verb: "receive" },
+  { keys: "D", label: "denials", verb: "denials" },
+  { keys: "w", label: "watch live" },
+  { keys: "r", label: "retry" },
+  { keys: "n", label: "receive a PR by hand" },
   { keys: "x", label: "dismiss" },
   { keys: "K", label: "kill" },
   { keys: "p", label: "poll" },
@@ -40,12 +63,14 @@ export const DENIAL_KEYS: Binding[] = [
 
 const KEYMAPS: Record<KeymapView, Binding[]> = {
   queue: QUEUE_KEYS,
+  mine: MINE_KEYS,
   denials: DENIAL_KEYS,
 };
 
 // The one-line footer: the per-entry verbs plus the way out.
 const FOOTER: Record<KeymapView, string[]> = {
-  queue: ["enter", "s", "d", "D", "w", "x", "?"],
+  queue: ["tab", "enter", "s", "d", "D", "w", "x", "?"],
+  mine: ["tab", "enter", "s", "d", "R", "D", "x", "?"],
   denials: ["j/k ↑/↓", "esc D", "?", "q"],
 };
 
@@ -106,6 +131,11 @@ export function Help({ unavailable }: { unavailable: Record<string, string> }) {
   return (
     <Box flexDirection="column" paddingX={1}>
       <Keys title="queue" bindings={QUEUE_KEYS} unavailable={unavailable} />
+      <Keys
+        title="my PRs view"
+        bindings={MINE_KEYS}
+        unavailable={unavailable}
+      />
       <Keys
         title="denials view"
         bindings={DENIAL_KEYS}

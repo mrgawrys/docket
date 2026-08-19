@@ -2,6 +2,7 @@ import type { Assessment } from "./assessment";
 import type { Config } from "./config";
 import type { DenialGroup } from "./denials";
 import { denialTeaser, TEASER_HEIGHT } from "./denialview";
+import type { EntryKind } from "./state";
 import type { Summary } from "./summary";
 
 // Wrap here rather than letting the terminal do it: the panel is bounded, and a
@@ -62,6 +63,9 @@ export interface PanelInput {
   // of the detail rather than waiting behind a key nobody knows about.
   denials?: DenialGroup[];
   cfg?: Config;
+  // Which world the entry belongs to — the teaser judges denials against the
+  // matching allowlist.
+  kind?: EntryKind;
   // Passed to the teaser: whether enter on this row resolves the denials.
   enterResolves?: boolean;
   width: number;
@@ -74,6 +78,7 @@ export function panelLines({
   notes,
   denials,
   cfg,
+  kind,
   enterResolves,
   width,
   height = PANEL_HEIGHT,
@@ -87,6 +92,7 @@ export function panelLines({
     const teaser = denialTeaser({
       groups: denials,
       cfg,
+      kind,
       enterResolves,
       width,
       height: Math.min(TEASER_HEIGHT, height - out.length - 2),

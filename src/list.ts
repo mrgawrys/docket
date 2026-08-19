@@ -3,6 +3,7 @@ import {
   claudeBin,
   claudeEnv,
   effectiveAllowedTools,
+  effectiveReceiveAllowedTools,
   runLogPath,
   type Config,
   type Paths,
@@ -13,32 +14,81 @@ import { cleanupEntry, type Ctx } from "./reviewer";
 import {
   isLiveReview,
   loadState,
+  normalizeKey,
   pendingEntries,
   setStatus,
+  splitKey,
   type Entry,
+  type EntryKind,
 } from "./state";
+import type { SuspendRequest } from "./tui/suspend";
 
 export function buildResume(
   entry: Entry,
   cfg: Config,
+  kind: EntryKind = "review",
 ):
   | { argv: string[]; cwd: string; env: Record<string, string> }
   | { error: string } {
   if (entry.status === "reviewing") {
     return { error: "still being reviewed — w watches it live, K kills it" };
   }
-  if (!entry.session_id || !entry.local_path) {
+  // claude stores sessions under a slug of the directory it ran in: a review
+  // ran in the clone, a receive run in the PR's checkout — resume in the same.
+  const cwd = kind === "mine" ? entry.checkout_path : entry.local_path;
+  if (!entry.session_id || !cwd) {
     return {
       error: `no session (${entry.status}) — r retries, docket doctor checks your setup`,
     };
   }
   return {
-    // claude stores sessions under a slug of the directory it ran in, so a
-    // resume must run in the clone the review ran in, never in the worktree
     argv: [claudeBin(cfg), "--resume", entry.session_id],
-    cwd: entry.local_path,
+    cwd,
     env: claudeEnv(cfg),
   };
+}
+
+// The mine-view fallback when there is no session to resume but the PR's
+// branch has a checkout: a bare interactive claude, started where the work is.
+export function buildFreshChat(
+  entry: Entry,
+  cfg: Config,
+): SuspendRequest | { error: string } {
+  if (!entry.checkout_path || !existsSync(entry.checkout_path)) {
+    return { error: `no checkout yet (${entry.status}) — R resolves one` };
+  }
+  return {
+    argv: [claudeBin(cfg)],
+    cwd: entry.checkout_path,
+    env: claudeEnv(cfg),
+    banner: `claude in ${entry.checkout_path}`,
+    interactive: true,
+  };
+}
+
+// The footer input behind `n`: a pasted PR URL or ORG/REPO#N, optionally
+// followed by a note. Pure, so bad input becomes a footer message, not a key
+// that silently does nothing.
+export function parsePrInput(
+  input: string,
+  cfg: Config,
+): { key: string; note?: string } | { error: string } {
+  const trimmed = input.trim();
+  if (!trimmed) return { error: "paste a PR URL or ORG/REPO#N" };
+  const space = trimmed.search(/\s/);
+  const ref = space === -1 ? trimmed : trimmed.slice(0, space);
+  const note = space === -1 ? undefined : trimmed.slice(space + 1).trim();
+  let key: string;
+  try {
+    key = normalizeKey(ref);
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+  const { repo } = splitKey(key);
+  if (!(repo in cfg.repos)) {
+    return { error: `${repo} is not mapped in "repos" — add its clone path` };
+  }
+  return { key, ...(note ? { note } : {}) };
 }
 
 // Shared with the TUI's `unavailable` check, so the reason greyed in the
@@ -56,6 +106,7 @@ export function buildHandoff(
   paths: Paths,
   key: string,
   groups: DenialGroup[],
+  kind: EntryKind = "review",
 ):
   | { argv: string[]; cwd: string; env: Record<string, string> }
   | { error: string } {
@@ -74,11 +125,17 @@ export function buildHandoff(
     groups: groups.map((g) => ({
       ...g,
       writeShaped: isWriteShaped(g.suggestion) || g.writeShaped,
-      alreadyAllowed: isAllowed(g.suggestion, cfg),
+      alreadyAllowed: isAllowed(g.suggestion, cfg, kind),
     })),
     configPath: paths.configPath,
-    extraAllowedTools: cfg.extra_allowed_tools ?? [],
-    effectiveAllowedTools: effectiveAllowedTools(cfg),
+    extraAllowedTools:
+      (kind === "mine"
+        ? cfg.extra_receive_allowed_tools
+        : cfg.extra_allowed_tools) ?? [],
+    effectiveAllowedTools:
+      kind === "mine"
+        ? effectiveReceiveAllowedTools(cfg).join(",")
+        : effectiveAllowedTools(cfg),
     runLogPath: logPath,
     runLogExists: existsSync(logPath),
   });
@@ -123,12 +180,23 @@ export function killEntry(
 }
 
 // Bare `docket` without a terminal: the TUI cannot mount, so print what it
-// would have shown.
+// would have shown — both sections, in the TUI's order.
 export function printPending(ctx: Ctx): number {
-  const rows = pendingEntries(loadState(ctx.paths.statePath));
-  if (!rows.length) console.log("no pending reviews");
-  for (const [key, e] of rows) {
-    console.log([key, e.status, e.title ?? ""].join("\t").trimEnd());
+  const state = loadState(ctx.paths.statePath);
+  const review = pendingEntries(state, "review");
+  const mine = pendingEntries(state, "mine");
+  if (!review.length && !mine.length) {
+    console.log("no pending reviews");
+    return 0;
   }
+  const section = (label: string, rows: [string, Entry][]) => {
+    if (!rows.length) return;
+    console.log(`${label}:`);
+    for (const [key, e] of rows) {
+      console.log([key, e.status, e.title ?? ""].join("\t").trimEnd());
+    }
+  };
+  section("queue", review);
+  section("mine", mine);
   return 0;
 }

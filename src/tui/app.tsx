@@ -14,21 +14,31 @@ import {
 import { applySuggestion, type DenialGroup } from "../denials";
 import { addable, denialTitle, denialView, TEASER_HEIGHT } from "../denialview";
 import {
+  buildFreshChat,
   buildHandoff,
   buildResume,
   NO_CLONE_REASON,
+  parsePrInput,
   printPending,
 } from "../list";
 import {
   buildOpener,
   openerContext,
   resolveOpeners,
-  resolveWorktree,
+  resolveEntryWorktree,
   type ResolvedOpeners,
 } from "../openers";
 import { selfArgs } from "../proc";
 import type { Ctx } from "../reviewer";
-import { type Entry, loadState, pendingEntries } from "../state";
+import {
+  entryKind,
+  isLiveReview,
+  loadState,
+  pendingEntries,
+  splitKey,
+  type Entry,
+  type EntryKind,
+} from "../state";
 import { PANEL_HEIGHT, panelLines } from "../panel";
 import { Help, Legend } from "./legend";
 import { Panel } from "./panel";
@@ -37,6 +47,10 @@ import { suspendLoop, type SuspendRequest } from "./suspend";
 
 export interface TuiActions {
   retry(key: string): Promise<number>;
+  // The two `n` submits: force-review a PR, or receive feedback on one of the
+  // user's own (the latter also behind R). Keys may arrive bare or prefixed.
+  review(key: string, note?: string): Promise<number>;
+  receive(key: string, note?: string): Promise<number>;
   poll(): Promise<number>;
   sync(): Promise<number>;
   // Both return what to tell the user: their own output goes to the console,
@@ -98,20 +112,40 @@ export function App({
   const width = size.columns || 80;
   const height = size.rows || 24;
 
-  const load = useCallback(
+  // Which of the two entry worlds is on screen. A mine initialKey (the cursor
+  // riding across a suspend) means the suspend happened in the mine view.
+  const [list, setList] = useState<"queue" | "mine">(
+    initialKey && entryKind(initialKey) === "mine" ? "mine" : "queue",
+  );
+  const kind: EntryKind = list === "mine" ? "mine" : "review";
+  // Rows are derived, not held: switching views must swap the rows in the
+  // same render, or the old world's rows flash under the new view's legend.
+  const [generation, setGeneration] = useState(0);
+  const reload = useCallback(() => setGeneration((g) => g + 1), []);
+  const rows = useMemo(
     (): Row[] =>
-      pendingEntries(loadState(paths.statePath)).map(([key, entry]) => ({
+      pendingEntries(loadState(paths.statePath), kind).map(([key, entry]) => ({
         key,
         entry,
       })),
-    [paths.statePath],
+    // generation is the invalidation signal for the state file's content
+    [paths.statePath, kind, generation],
   );
-  const [rows, setRows] = useState<Row[]>(load);
-  const [cursorKey, setCursorKey] = useState<string | undefined>(initialKey);
-  const [view, setView] = useState<"queue" | "help" | "denials">("queue");
+  // Per-view cursors, so tabbing away and back lands where the user left.
+  const [cursorKeys, setCursorKeys] = useState<
+    Partial<Record<"queue" | "mine", string>>
+  >(initialKey ? { [list]: initialKey } : {});
+  const cursorKey = cursorKeys[list];
+  const setCursorKey = useCallback(
+    (key: string | undefined) => setCursorKeys((c) => ({ ...c, [list]: key })),
+    [list],
+  );
+  const [view, setView] = useState<"list" | "help" | "denials">("list");
   // Help is a detour, not a destination: esc goes back where it was opened.
-  const [helpFrom, setHelpFrom] = useState<"queue" | "denials">("queue");
+  const [helpFrom, setHelpFrom] = useState<"list" | "denials">("list");
   const [status, setStatus] = useState<string | undefined>();
+  // The `n` footer input; undefined = closed.
+  const [prInput, setPrInput] = useState<string | undefined>();
   // The PR the denials view is reading, pinned when D opened it. Its verbs act
   // on this key and never on the queue cursor, which a finishing poll can move.
   const [denialKey, setDenialKey] = useState<string | undefined>();
@@ -128,13 +162,13 @@ export function App({
   useEffect(() => {
     try {
       const w = watch(dirname(paths.statePath), (_ev, file) => {
-        if (file === "state.json") setRows(load());
+        if (file === "state.json") reload();
       });
       return () => w.close();
     } catch {
       return; // no watch is survivable: every action reloads anyway
     }
-  }, [paths.statePath, load]);
+  }, [paths.statePath, reload]);
 
   // A row can vanish under the cursor: x and K drop it, and so does a poll
   // that marks it done while the watcher reloads. Hold the position when the
@@ -149,17 +183,24 @@ export function App({
     if (!current) return;
     setCursorKey(current.key); // re-anchor after the row it named disappeared
     onSelect?.(current.key);
-  }, [current, onSelect]);
+  }, [current, onSelect, setCursorKey]);
   const summary = current?.entry.summary;
   // Only read when the panel would actually fall back to it: with a headline
   // recorded on the entry, the run log has nothing left to tell this view.
-  const assessment = useMemo(
-    () =>
-      current && !summary?.headline
-        ? readAssessment(runLogPath(paths, current.key))
-        : ({ kind: "none", reason: "" } as const),
-    [current, summary, paths],
-  );
+  // A mine entry with no run yet shows what sync recorded instead: their
+  // verdict and who left it.
+  const assessment = useMemo(() => {
+    if (!current || summary?.headline)
+      return { kind: "none", reason: "" } as const;
+    const a = readAssessment(runLogPath(paths, current.key));
+    if (a.kind === "none" && kind === "mine" && current.entry.reviewer) {
+      return {
+        kind: "text",
+        text: `${current.entry.status} by ${current.entry.reviewer} — feedback awaiting you`,
+      } as const;
+    }
+    return a;
+  }, [current, summary, paths, kind]);
 
   // A failed run has no session to resume, which is exactly where the denials
   // are: enter was dead on the one row that most needed it. There it resolves
@@ -167,22 +208,41 @@ export function App({
   const enterResolves = useMemo(() => {
     if (!current?.entry.denials?.length || !current.entry.local_path)
       return false;
-    return "error" in buildResume(current.entry, cfg);
-  }, [current, cfg]);
+    return "error" in buildResume(current.entry, cfg, kind);
+  }, [current, cfg, kind]);
 
   // Computed per row, never per keypress: a verb the machine cannot run is
   // greyed in the legend with its reason in the preview, not a dead key.
   const unavailable = useMemo(() => {
     const u: Record<string, string> = {};
     if (!current) return u;
-    const resume = buildResume(current.entry, cfg);
+    const resume = buildResume(current.entry, cfg, kind);
     // Not greyed when enter resolves: it still opens claude, just on the
-    // denials rather than on a session that was never written.
-    if ("error" in resume && !enterResolves) u.claude = resume.error;
-    const wt = resolveWorktree(current.entry);
+    // denials rather than on a session that was never written. In the mine
+    // view a fresh chat in the checkout is the second fallback.
+    if ("error" in resume && !enterResolves) {
+      if (kind !== "mine") {
+        u.claude = resume.error;
+      } else {
+        const fresh = buildFreshChat(current.entry, cfg);
+        if ("error" in fresh) u.claude = fresh.error;
+      }
+    }
+    const wt = resolveEntryWorktree(current.key, current.entry);
     for (const verb of ["shell", "diff"]) {
       if (!resolved[verb]) u[verb] = `no ${verb} opener found on PATH`;
       else if ("missing" in wt) u[verb] = wt.missing;
+    }
+    if (kind === "mine") {
+      // Only the statically known reasons grey R: a dirty/ahead checkout is
+      // found out by the trigger flow (probing git per row per render is too
+      // heavy) and lands in the panel as skipped + reason.
+      const { repo } = splitKey(current.key);
+      if (!current.entry.local_path && !(repo in liveCfg.repos)) {
+        u.receive = NO_CLONE_REASON;
+      } else if (isLiveReview(current.entry)) {
+        u.receive = "a run is already in flight — w watches it";
+      }
     }
     if (!current.entry.denials?.length) u.denials = "no denials recorded";
     if (!current.entry.local_path) {
@@ -191,7 +251,7 @@ export function App({
       u.handoff = "no denials recorded";
     }
     return u;
-  }, [current, cfg, resolved, enterResolves]);
+  }, [current, cfg, resolved, enterResolves, kind, liveCfg]);
 
   const notes = useMemo(() => {
     const byReason = new Map<string, string[]>();
@@ -207,8 +267,10 @@ export function App({
   }, [unavailable]);
 
   // Last in line: action feedback is what the user just asked for, so it takes
-  // the line while it lasts. The warning is still there when it clears.
-  const footer = status ?? notice ?? authWarning;
+  // the line while it lasts. The warning is still there when it clears. An
+  // open `n` input takes the same row, so it counts as a footer for layout.
+  const footer =
+    prInput !== undefined ? "input" : (status ?? notice ?? authWarning);
   const footerColor =
     notice !== undefined && footer === notice ? "red" : "yellow";
   const queueHeight = Math.max(
@@ -236,6 +298,7 @@ export function App({
         notes,
         denials,
         cfg: liveCfg,
+        kind,
         enterResolves,
         width: width - 2,
         height: panelHeight,
@@ -246,6 +309,7 @@ export function App({
       notes,
       denials,
       liveCfg,
+      kind,
       enterResolves,
       width,
       panelHeight,
@@ -253,8 +317,10 @@ export function App({
   );
 
   // The view reads the PR D was pressed on, not whatever the queue cursor has
-  // drifted to since — retrying the wrong row bills a second review.
+  // drifted to since — retrying the wrong row bills a second review. Its kind
+  // rides with the key, so the rules aim at the right allowlist.
   const denialRow = rows.find((r) => r.key === denialKey);
+  const denialKind: EntryKind = denialKey ? entryKind(denialKey) : kind;
   const viewGroups = denialRow?.entry.denials ?? [];
   // The denials view takes the whole region below the bars: legend, the two
   // bars and the row the frame must leave spare (see panelHeight).
@@ -262,12 +328,13 @@ export function App({
     () =>
       denialView({
         groups: viewGroups,
+        kind: denialKind,
         cfg: liveCfg,
         scroll,
         width: width - 2,
         height: Math.max(1, height - 4 - (footer ? 1 : 0)),
       }),
-    [viewGroups, liveCfg, scroll, width, height, footer],
+    [viewGroups, denialKind, liveCfg, scroll, width, height, footer],
   );
 
   const move = (delta: number) => {
@@ -281,12 +348,12 @@ export function App({
     fn()
       .then(() => setStatus(undefined))
       .catch((e: unknown) => setStatus(`${label} failed: ${e}`))
-      .finally(() => setRows(load()));
+      .finally(reload);
   };
 
   // Reached from the queue and from the denials view, on the same terms.
   const handOff = (key: string, entry: Entry, groups: DenialGroup[]) => {
-    const r = buildHandoff(entry, liveCfg, paths, key, groups);
+    const r = buildHandoff(entry, liveCfg, paths, key, groups, entryKind(key));
     if ("error" in r) return setStatus(`hand off: ${r.error}`);
     request({
       ...r,
@@ -312,14 +379,36 @@ export function App({
     });
   };
 
+  // The `n` submit: parse, then hand to the view's verb — review a PR from
+  // the queue, receive feedback on one of the user's own from the mine view.
+  const submitPr = (text: string) => {
+    setPrInput(undefined);
+    const r = parsePrInput(text, liveCfg);
+    if ("error" in r) return setStatus(r.error);
+    if (list === "mine") {
+      setCursorKey(entryKind(r.key) === "mine" ? r.key : `mine:${r.key}`);
+      return run(`receiving ${r.key}`, () => actions.receive(r.key, r.note));
+    }
+    setCursorKey(r.key);
+    run(`reviewing ${r.key}`, () => actions.review(r.key, r.note));
+  };
+
   useInput((input, key) => {
+    if (prInput !== undefined) {
+      // The footer input owns the keyboard while it is open.
+      if (key.escape) return setPrInput(undefined);
+      if (key.return) return submitPr(prInput);
+      if (key.backspace || key.delete) return setPrInput(prInput.slice(0, -1));
+      if (input && !key.ctrl && !key.meta) return setPrInput(prInput + input);
+      return;
+    }
     if (input === "q") return exit(); // quits from any view, help included
     if (view === "help") {
       if (input === "?" || key.escape) setView(helpFrom);
       return;
     }
     if (view === "denials") {
-      if (input === "D" || key.escape) return setView("queue");
+      if (input === "D" || key.escape) return setView("list");
       if (input === "?") {
         setHelpFrom("denials");
         return setView("help");
@@ -331,11 +420,12 @@ export function App({
       if (input === "a") {
         // One write for N rules: the selector decides which, so what the action
         // line promised and what reaches the config are the same set.
-        const { add } = addable(viewGroups, liveCfg);
+        const { add } = addable(viewGroups, liveCfg, denialKind);
         if (!add.length) return setStatus("nothing to add");
         try {
           let text = readFileSync(paths.configPath, "utf8");
-          for (const g of add) text = applySuggestion(text, g.suggestion);
+          for (const g of add)
+            text = applySuggestion(text, g.suggestion, denialKind);
           writeConfigText(paths.configPath, text);
           setLiveCfg(JSON.parse(text) as Config);
           setStatus(`added ${add.length} rule${add.length === 1 ? "" : "s"}`);
@@ -355,9 +445,11 @@ export function App({
       return;
     }
     if (input === "?") {
-      setHelpFrom("queue");
+      setHelpFrom("list");
       return setView("help");
     }
+    if (key.tab) return setList(list === "queue" ? "mine" : "queue");
+    if (input === "n") return setPrInput("");
     if (input === "j" || key.downArrow) return move(1);
     if (input === "k" || key.upArrow) return move(-1);
     if (input === "p") return run("polling", actions.poll);
@@ -368,8 +460,17 @@ export function App({
       // one, and otherwise the denials of a run that failed before it made one.
       if (enterResolves)
         return handOff(current.key, current.entry, current.entry.denials ?? []);
-      const r = buildResume(current.entry, cfg);
-      if ("error" in r) return setStatus(`${current.key} ${r.error}`);
+      const r = buildResume(current.entry, cfg, kind);
+      if ("error" in r) {
+        // Mine view: no session yet, but the checkout is there — a fresh chat
+        // in it beats a dead key.
+        if (kind === "mine") {
+          const fresh = buildFreshChat(current.entry, cfg);
+          if (!("error" in fresh)) return request(fresh);
+          return setStatus(`${current.key} ${fresh.error}`);
+        }
+        return setStatus(`${current.key} ${r.error}`);
+      }
       request({
         argv: r.argv,
         cwd: r.cwd,
@@ -377,6 +478,12 @@ export function App({
         banner: `resuming ${current.key}`,
       });
       return;
+    }
+    if (input === "R" && kind === "mine") {
+      if (unavailable.receive)
+        return setStatus(`${current.key}: ${unavailable.receive}`);
+      const target = current.key;
+      return run(`receiving ${target}`, () => actions.receive(target));
     }
     if (input === "D") {
       if (!denials?.length) return setStatus(`${current.key}: no denials`);
@@ -402,11 +509,11 @@ export function App({
     }
     if (input === "x") {
       setStatus(actions.dismiss(current.key));
-      return setRows(load());
+      return reload();
     }
     if (input === "K") {
       setStatus(actions.kill(current.key));
-      return setRows(load());
+      return reload();
     }
   });
 
@@ -415,11 +522,11 @@ export function App({
       {/* the legend leads: fixed at the top, it cannot be moved around by
           however much assessment the row below it happens to have */}
       <Legend
-        view={view === "denials" ? "denials" : "queue"}
+        view={view === "denials" ? "denials" : list}
         unavailable={unavailable}
       />
       <Bar
-        label="docket"
+        label={list === "mine" ? "docket · my PRs" : "docket"}
         right={rows.length ? `${cursor + 1}/${rows.length}` : "empty"}
         width={width}
       />
@@ -443,7 +550,14 @@ export function App({
           <Panel lines={panel} />
         </>
       )}
-      {footer ? (
+      {prInput !== undefined ? (
+        <Text color="cyan" wrap="truncate-end">
+          {list === "mine" ? "receive" : "review"} PR ▸ {prInput}█{" "}
+          <Text dimColor>
+            (URL or ORG/REPO#N, then a note · enter runs, esc cancels)
+          </Text>
+        </Text>
+      ) : footer ? (
         <Text color={footerColor} wrap="truncate-end">
           {footer}
         </Text>

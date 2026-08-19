@@ -15,6 +15,7 @@ import {
 } from "./reviewer";
 import { offCommand, onCommand } from "./scheduler";
 import {
+  bareKey,
   ensureState,
   entryKind,
   loadState,
@@ -244,36 +245,41 @@ const help: Command = async () => {
   return 0;
 };
 
+// Force-review a PR by key — `docket review` and the TUI's `n` (queue view).
+const reviewKey = (
+  ctx: Ctx,
+  key: string,
+  note: string | undefined,
+): Promise<number> =>
+  runUnlocked(ctx, async () => {
+    const { repo, number } = splitKey(key);
+    const info = prView<{ title?: string; url?: string }>(
+      ctx.gh,
+      repo,
+      number,
+      "title,url",
+    );
+    if (!info) {
+      console.error(`cannot fetch ${key} from GitHub (does the PR exist?)`);
+      return 1;
+    }
+    const result = await startReview(
+      ctx,
+      key,
+      repo,
+      info.title ?? "",
+      info.url ?? "",
+      note,
+    );
+    return startedMsg(key, result);
+  });
+
 const review: Command = (args) =>
-  withCtx((ctx) =>
-    runUnlocked(ctx, async () => {
-      const key = keyArg(
-        args[0],
-        "usage: docket review ORG/REPO#NUM|URL [note]",
-      );
-      if (!key) return 1;
-      const { repo, number } = splitKey(key);
-      const info = prView<{ title?: string; url?: string }>(
-        ctx.gh,
-        repo,
-        number,
-        "title,url",
-      );
-      if (!info) {
-        console.error(`cannot fetch ${key} from GitHub (does the PR exist?)`);
-        return 1;
-      }
-      const result = await startReview(
-        ctx,
-        key,
-        repo,
-        info.title ?? "",
-        info.url ?? "",
-        args[1],
-      );
-      return startedMsg(key, result);
-    }),
-  );
+  withCtx((ctx) => {
+    const key = keyArg(args[0], "usage: docket review ORG/REPO#NUM|URL [note]");
+    if (!key) return Promise.resolve(1);
+    return reviewKey(ctx, bareKey(key), args[1]);
+  });
 
 const retry: Command = (args) =>
   withCtx(async (ctx) => {
@@ -382,6 +388,13 @@ async function main(): Promise<number> {
     return withCtx((ctx) =>
       runTui(ctx, {
         retry: (key) => retryKey(ctx, key),
+        review: (key, note) => reviewKey(ctx, bareKey(key), note),
+        receive: (key, note) =>
+          receiveKey(
+            ctx,
+            entryKind(key) === "mine" ? key : `mine:${key}`,
+            note,
+          ),
         poll: () => pollLocked(ctx, false),
         sync: () => syncLocked(ctx),
         dismiss: (key) => dismissKey(ctx, key),

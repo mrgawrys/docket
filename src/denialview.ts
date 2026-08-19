@@ -1,6 +1,7 @@
 import type { Config } from "./config";
 import { isAllowed, isWriteShaped, type DenialGroup } from "./denials";
 import { wrapText, type PanelLine } from "./panel";
+import type { EntryKind } from "./state";
 import type { Chip } from "./summary";
 
 // How a run's denials read in the queue and in the denials view. Everything
@@ -36,11 +37,15 @@ export interface Addable {
 // cannot disagree. Both checks the per-group keystroke used to make survive:
 // the flag frozen when the run ended, and the live classifier, so a rule the
 // blocklist has since grown still gets turned away.
-export function addable(groups: DenialGroup[], cfg: Config): Addable {
+export function addable(
+  groups: DenialGroup[],
+  cfg: Config,
+  kind: EntryKind = "review",
+): Addable {
   const out: Addable = { add: [], writeShaped: [], present: [] };
   for (const g of groups) {
     if (g.writeShaped || isWriteShaped(g.suggestion)) out.writeShaped.push(g);
-    else if (isAllowed(g.suggestion, cfg)) out.present.push(g);
+    else if (isAllowed(g.suggestion, cfg, kind)) out.present.push(g);
     else out.add.push(g);
   }
   return out;
@@ -49,16 +54,26 @@ export function addable(groups: DenialGroup[], cfg: Config): Addable {
 // Added since the run ended — in practice, by `a` a moment ago. Derived rather
 // than remembered: a set held in the view resets on every suspend, while the
 // config the run was judged against does not change under it.
-export const addedNow = (groups: DenialGroup[], cfg: Config): DenialGroup[] =>
-  groups.filter((g) => !g.alreadyAllowed && isAllowed(g.suggestion, cfg));
+export const addedNow = (
+  groups: DenialGroup[],
+  cfg: Config,
+  kind: EntryKind = "review",
+): DenialGroup[] =>
+  groups.filter((g) => !g.alreadyAllowed && isAllowed(g.suggestion, cfg, kind));
 
 function marker(
   g: DenialGroup,
   cfg: Config,
+  kind: EntryKind,
 ): { text: string; color?: string } | undefined {
-  if (g.writeShaped || isWriteShaped(g.suggestion))
-    return { text: "⚠ write-shaped", color: "yellow" };
-  if (!isAllowed(g.suggestion, cfg)) return undefined;
+  if (g.writeShaped || isWriteShaped(g.suggestion)) {
+    // On a receive run a denied write-shaped call is the no-push/no-GitHub
+    // guarantee doing its job, not a rule waiting to be added.
+    return kind === "mine"
+      ? { text: "✓ blocked by design", color: "green" }
+      : { text: "⚠ write-shaped", color: "yellow" };
+  }
+  if (!isAllowed(g.suggestion, cfg, kind)) return undefined;
   return g.alreadyAllowed
     ? { text: "✓ already in your config" }
     : { text: "✓ added just now", color: "green" };
@@ -68,11 +83,12 @@ function marker(
 function groupRow(
   g: DenialGroup,
   cfg: Config,
+  kind: EntryKind,
   indent: string,
   pad: number,
   width: number,
 ): PanelLine[] {
-  const m = marker(g, cfg);
+  const m = marker(g, cfg, kind);
   const text = `${indent}${g.suggestion.padEnd(pad)}  ×${g.count}${
     m ? `    ${m.text}` : ""
   }`;
@@ -89,6 +105,7 @@ const TEASER_GROUPS = 3;
 export interface TeaserInput {
   groups: DenialGroup[];
   cfg: Config;
+  kind?: EntryKind;
   width: number;
   height?: number;
   // Whether enter on this row resolves the denials rather than resuming a
@@ -101,6 +118,7 @@ export interface TeaserInput {
 export function denialTeaser({
   groups,
   cfg,
+  kind = "review",
   width,
   height = TEASER_HEIGHT,
   enterResolves = false,
@@ -126,7 +144,7 @@ export function denialTeaser({
   const pad = widest(shown);
   return [
     ...wrapText(head, width).map((text) => ({ text })),
-    ...shown.flatMap((g) => groupRow(g, cfg, "  ", pad, width)),
+    ...shown.flatMap((g) => groupRow(g, cfg, kind, "  ", pad, width)),
     ...wrapText(tail, width).map((text) => ({
       text,
       color: enterResolves ? "cyan" : undefined,
@@ -136,9 +154,12 @@ export function denialTeaser({
 }
 
 // Why `a` left rules behind — "4 write-shaped, 1 already there".
-function skipped(a: Addable, long: boolean): string {
+function skipped(a: Addable, long: boolean, kind: EntryKind): string {
   const parts: string[] = [];
-  if (a.writeShaped.length) parts.push(`${a.writeShaped.length} write-shaped`);
+  if (a.writeShaped.length)
+    parts.push(
+      `${a.writeShaped.length} ${kind === "mine" ? "blocked by design" : "write-shaped"}`,
+    );
   if (a.present.length)
     parts.push(
       `${a.present.length} already ${long ? "in your config" : "there"}`,
@@ -151,10 +172,11 @@ function skipped(a: Addable, long: boolean): string {
 function actionLines(
   groups: DenialGroup[],
   cfg: Config,
+  kind: EntryKind,
   width: number,
 ): PanelLine[] {
-  const a = addable(groups, cfg);
-  const added = addedNow(groups, cfg);
+  const a = addable(groups, cfg, kind);
+  const added = addedNow(groups, cfg, kind);
   // A space, not an empty string: ink gives a zero-length Text no row, and the
   // action block needs the gap to read as a foot rather than another group.
   const out: PanelLine[] = [{ text: " " }];
@@ -172,7 +194,7 @@ function actionLines(
   } else {
     push("⏎  hand all of this to claude");
   }
-  const rest = skipped(a, false);
+  const rest = skipped(a, false, kind);
   if (a.add.length) {
     const count = plural(a.add.length, "safe rule");
     const why = rest
@@ -183,7 +205,7 @@ function actionLines(
     // Say why rather than accept a key that then declines. Once an add has
     // landed the line above already accounts for the set — repeating it as a
     // refusal would read as if something had gone wrong.
-    push(`a  nothing to add — ${skipped(a, true)}`, { dim: true });
+    push(`a  nothing to add — ${skipped(a, true, kind)}`, { dim: true });
   }
   push("esc back to the queue · j/k scroll", { dim: true });
   return out;
@@ -191,6 +213,7 @@ function actionLines(
 
 export interface DenialViewInput {
   groups: DenialGroup[];
+  kind?: EntryKind;
   // Re-checked against here rather than trusting `alreadyAllowed`: the flag was
   // frozen when the run finished, and an apply since then has made it a lie.
   cfg: Config;
@@ -210,6 +233,7 @@ export interface DenialView {
 // the groups scroll — the verbs are the one thing that must never scroll away.
 export function denialView({
   groups,
+  kind = "review",
   cfg,
   scroll,
   width,
@@ -223,12 +247,12 @@ export function denialView({
   const pad = widest(groups);
   const body: PanelLine[] = [];
   for (const g of groups) {
-    body.push(...groupRow(g, cfg, "", pad, width));
+    body.push(...groupRow(g, cfg, kind, "", pad, width));
     for (const example of g.examples)
       for (const text of wrapText(`    ${example}`, width))
         body.push({ text, dim: true });
   }
-  const action = actionLines(groups, cfg, width);
+  const action = actionLines(groups, cfg, kind, width);
   const room = height ? Math.max(1, height - action.length) : body.length;
   const maxScroll = Math.max(0, body.length - room);
   const top = Math.min(Math.max(0, scroll), maxScroll);

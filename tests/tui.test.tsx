@@ -49,6 +49,14 @@ function mount(
       calls.push(`retry:${k}`);
       return 0;
     },
+    review: async (k, note) => {
+      calls.push(`review:${k}${note ? `:${note}` : ""}`);
+      return 0;
+    },
+    receive: async (k, note) => {
+      calls.push(`receive:${k}${note ? `:${note}` : ""}`);
+      return 0;
+    },
     poll: async () => {
       calls.push("poll");
       return 0;

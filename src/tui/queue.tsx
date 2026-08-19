@@ -9,6 +9,7 @@ export interface Row {
 }
 
 const STATUS_COLOR: Partial<Record<Status, string>> = {
+  open: "blue",
   ready: "green",
   reviewing: "cyan",
   failed: "red",

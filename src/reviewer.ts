@@ -402,7 +402,11 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
   // status write below, which must land whatever this does.
   let denials: DenialGroup[] | undefined;
   try {
-    const groups = denialGroups(readFileSync(runLog, "utf8"), ctx.cfg);
+    const groups = denialGroups(
+      readFileSync(runLog, "utf8"),
+      ctx.cfg,
+      entryKind(key),
+    );
     if (groups.length) denials = groups;
   } catch {}
 
