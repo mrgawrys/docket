@@ -114,6 +114,7 @@ for a in "$@"; do
   prev="$a"
 done
 printf '%s' "\${CLAUDE_CONFIG_DIR:-}" >"\${CFGDIR_CAPTURE:?}"
+printf '%s' "$PWD" >"\${CWD_CAPTURE:?}"
 printf '%s' "\${CLAUDE_BASH_WATCHDOG_SECONDS:-}" >"\${WATCHDOG_CAPTURE:?}"
 printf '%s' "\${GH_TOKEN:-}" >"\${GHTOKEN_CAPTURE:?}"
 bun -e 'const fs=require("fs");let s={};try{s=JSON.parse(fs.readFileSync(process.env.DOCKET_STATE_DIR+"/state.json","utf8"))}catch{};console.log((s["testorg/demo#7"]||{}).status||"absent")' >"\${STATUS_AT_CALL:?}"
@@ -159,6 +160,7 @@ export interface Sandbox {
   promptCapture(): string;
   allowedCapture(): string;
   cfgdirCapture(): string;
+  cwdCapture(): string;
   watchdogCapture(): string;
   ghTokenCapture(): string;
   ghCalls(): string[];
@@ -206,6 +208,7 @@ export function makeSandbox(): Sandbox {
     PROMPT_CAPTURE: capture("prompt-capture"),
     ALLOWED_CAPTURE: capture("allowed-capture"),
     CFGDIR_CAPTURE: capture("cfgdir-capture"),
+    CWD_CAPTURE: capture("cwd-capture"),
     WATCHDOG_CAPTURE: capture("watchdog-capture"),
     GHTOKEN_CAPTURE: capture("ghtoken-capture"),
     STATUS_AT_CALL: capture("status-at-call"),
@@ -278,6 +281,7 @@ export function makeSandbox(): Sandbox {
     promptCapture: () => readFileSync(env.PROMPT_CAPTURE!, "utf8"),
     allowedCapture: () => readFileSync(env.ALLOWED_CAPTURE!, "utf8"),
     cfgdirCapture: () => readFileSync(env.CFGDIR_CAPTURE!, "utf8"),
+    cwdCapture: () => readFileSync(env.CWD_CAPTURE!, "utf8"),
     watchdogCapture: () => readFileSync(env.WATCHDOG_CAPTURE!, "utf8"),
     ghTokenCapture: () => readFileSync(env.GHTOKEN_CAPTURE!, "utf8"),
     ghCalls: () =>

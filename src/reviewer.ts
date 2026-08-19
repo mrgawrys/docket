@@ -14,12 +14,14 @@ import {
   ALLOWED_TOOLS,
   claudeBin,
   claudeEnv,
+  effectiveReceiveAllowedTools,
   effectiveReviewPrompt,
   ghBin,
   runLogPath,
   type Config,
   type Paths,
 } from "./config";
+import { prepareCheckout, receivePrompt } from "./receive";
 import { denialGroups, type DenialGroup } from "./denials";
 import type { GhCtx } from "./github";
 import type { Logger } from "./log";
@@ -37,25 +39,12 @@ import {
   updateEntry,
   type Entry,
 } from "./state";
-import { splitSummary, type Summary } from "./summary";
+import { SUMMARY_INSTRUCTION, splitSummary, type Summary } from "./summary";
 import {
   parseWorktrees,
   pickReviewWorktrees,
   type WorktreeInfo,
 } from "./worktree";
-
-// What the queue shows for every entry. Fixed rather than configurable so the
-// queue keeps a triage signal whatever `review_prompt` asks for; a prompt that
-// cannot answer a field omits it (see splitSummary).
-export const SUMMARY_INSTRUCTION =
-  `Finally, end your last message with a fenced json block — a triage summary ` +
-  `for the review queue — and write nothing after it:\n\n` +
-  "```json\n" +
-  `{"headline": "one line, at most 80 characters, the first thing the ` +
-  `reviewer should know", "issues": <how many you would flag — omit the key ` +
-  `entirely if finding issues was not your task>, "risk": "low" | "medium" | ` +
-  `"high" — omit the key if you did not assess risk}\n` +
-  "```";
 
 // Fixed worktree hygiene wraps a configurable task body. The preamble (work in
 // an isolated worktree, never touch the main copy) and the suffix (keep it
@@ -297,7 +286,13 @@ export type RunPlan = {
 export function runPlan(ctx: Ctx, key: string, entry: Entry): RunPlan {
   const { repo, number } = splitKey(key);
   if (entryKind(key) === "mine") {
-    throw new Error("receive runs not yet wired");
+    return {
+      prompt: receivePrompt(ctx.cfg, key, entry, entry.note),
+      allowedTools: effectiveReceiveAllowedTools(ctx.cfg),
+      cwd: entry.checkout_path ?? "",
+      discoverWorktrees: false,
+      label: "receive",
+    };
   }
   return {
     prompt: reviewPrompt(number, repo, ctx.cfg, entry.note),
@@ -311,7 +306,7 @@ export function runPlan(ctx: Ctx, key: string, entry: Entry): RunPlan {
 // The body of one run — runs inside the detached `docket exec` process.
 export async function execReview(ctx: Ctx, key: string): Promise<number> {
   const { statePath } = ctx.paths;
-  const entry = loadState(statePath)[key];
+  let entry = loadState(statePath)[key];
   if (!entry) {
     console.error(`unknown key: ${key} — start it with: docket review ${key}`);
     return 1;
@@ -327,6 +322,20 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
   if (!localPath || !existsSync(localPath)) {
     await skipNoClone(ctx, key, {});
     return 1;
+  }
+
+  if (entryKind(key) === "mine") {
+    // TOCTOU guard: the checkout can change between the trigger's resolve and
+    // this spawn — a now-blocked checkout downgrades the run to skipped.
+    const prep = prepareCheckout(ctx, key, entry);
+    if (!prep.ok) {
+      ctx.log(`SKIP ${key}: ${prep.reason}`);
+      patchEntry(statePath, key, { status: "skipped", error: prep.reason });
+      await notify(ctx.cfg, "docket: receive blocked", prep.reason);
+      ctx.counters.skipped++;
+      return 1;
+    }
+    entry = loadState(statePath)[key] ?? entry; // fresh checkout_path
   }
 
   const plan = runPlan(ctx, key, entry);
@@ -411,8 +420,18 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
   const url = entry.url ?? "";
   // A capitalized label for the notification title: "Review" | "Receive".
   const Label = plan.label[0]!.toUpperCase() + plan.label.slice(1);
+  // Review entries are rewritten wholesale, as they always were. Mine entries
+  // carry fields the run must not lose (branch, checkout_path, review_at,
+  // reviewer, worktrees, flags) — for them, keep everything but the run's own
+  // leftovers.
+  const carry = (e: Entry | undefined): Partial<Entry> => {
+    if (entryKind(key) !== "mine" || !e) return {};
+    const { error: _error, pid: _pid, session_id: _sid, ...rest } = e;
+    return rest;
+  };
   if (sessionId) {
-    updateEntry(statePath, key, () => ({
+    updateEntry(statePath, key, (e) => ({
+      ...carry(e),
       status: "ready",
       session_id: sessionId,
       title,
@@ -424,7 +443,8 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
     await notify(ctx.cfg, `${Label} ready: ${key}`, title);
     ctx.counters.reviewed++;
   } else {
-    updateEntry(statePath, key, () => ({
+    updateEntry(statePath, key, (e) => ({
+      ...carry(e),
       status: "failed",
       title,
       url,

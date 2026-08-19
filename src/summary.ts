@@ -2,6 +2,19 @@
 // queue renders this; the prose behind it is only a fallback.
 export type Risk = "low" | "medium" | "high";
 
+// What every run is asked to end with. Fixed rather than configurable so the
+// queue keeps a triage signal whatever the task body asks for; a prompt that
+// cannot answer a field omits it (see splitSummary).
+export const SUMMARY_INSTRUCTION =
+  `Finally, end your last message with a fenced json block — a triage summary ` +
+  `for the review queue — and write nothing after it:\n\n` +
+  "```json\n" +
+  `{"headline": "one line, at most 80 characters, the first thing the ` +
+  `reviewer should know", "issues": <how many you would flag — omit the key ` +
+  `entirely if finding issues was not your task>, "risk": "low" | "medium" | ` +
+  `"high" — omit the key if you did not assess risk}\n` +
+  "```";
+
 // Every field is optional on purpose: `review_prompt` is configurable, so a
 // prompt that never hunts for issues must still be able to answer honestly
 // rather than inventing a count.

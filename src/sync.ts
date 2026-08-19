@@ -1,7 +1,14 @@
 import { ghUser, prMineInfo, prView, type PrMineInfo } from "./github";
 import { feedbackNotification, notify } from "./notify";
-import { cleanupEntry, type Ctx } from "./reviewer";
+import { prepareCheckout, shouldAutoRun } from "./receive";
 import {
+  cleanupEntry,
+  spawnRunner,
+  type Ctx,
+  type StartResult,
+} from "./reviewer";
+import {
+  isLiveReview,
   bareKey,
   entryKind,
   loadState,
@@ -107,15 +114,53 @@ const toVerdict = (state: string): Verdict =>
 
 export type Feedback = Extract<MineSyncDecision, { kind: "feedback" }>;
 
-// What happens when actionable feedback lands. Replaced by the receive
-// trigger flow in receive.ts wiring; until then the verdict recorded by
-// reconcile is the whole reaction, so this only has to exist as the seam.
+// What happens when actionable feedback lands, after syncMine has recorded
+// the verdict and advanced the cursor. Injectable so tests can pin it.
 export type TriggerReceive = (
   ctx: Ctx,
   key: string,
   entry: Entry,
   fb: Feedback,
 ) => Promise<void>;
+
+// The automatic path: opt-in, never on drafts. When the gate says no, the
+// verdict syncMine already wrote is the whole reaction.
+export const triggerReceive: TriggerReceive = async (ctx, key, entry) => {
+  const gate = shouldAutoRun(ctx.cfg, entry);
+  if (!gate.ok) {
+    ctx.log(`SYNC ${key}: not auto-running (${gate.reason})`);
+    return;
+  }
+  await startReceive(ctx, key, entry);
+};
+
+// Resolve the checkout and hand the key to a detached receive runner — the
+// shared body of the automatic trigger, `docket receive`, and the R verb.
+export async function startReceive(
+  ctx: Ctx,
+  key: string,
+  entry: Entry,
+  note?: string,
+): Promise<StartResult> {
+  const { statePath } = ctx.paths;
+  if (isLiveReview(entry)) {
+    ctx.log(
+      `SKIP ${key}: a receive run is already in flight (pid ${entry.pid})`,
+    );
+    return "already-running";
+  }
+  if (note !== undefined) patchEntry(statePath, key, { note });
+  const prep = prepareCheckout(ctx, key, entry);
+  if (!prep.ok) {
+    ctx.log(`SKIP ${key}: ${prep.reason}`);
+    patchEntry(statePath, key, { status: "skipped", error: prep.reason });
+    await notify(ctx.cfg, "docket: receive blocked", prep.reason);
+    ctx.counters.skipped++;
+    return "skipped";
+  }
+  patchEntry(statePath, key, { status: "reviewing" });
+  return spawnRunner(ctx, key);
+}
 
 async function syncMine(
   ctx: Ctx,
@@ -171,13 +216,9 @@ async function syncMine(
   await trigger(ctx, key, loadState(statePath)[key] ?? entry, d);
 }
 
-// The Task 5 receive flow replaces this body; until then the verdict written
-// by syncMine stands and nothing runs.
-export const triggerReceiveStub: TriggerReceive = async () => {};
-
 export async function reconcile(
   ctx: Ctx,
-  trigger: TriggerReceive = triggerReceiveStub,
+  trigger: TriggerReceive = triggerReceive,
 ): Promise<void> {
   const { statePath } = ctx.paths;
   const active = Object.entries(loadState(statePath)).filter(

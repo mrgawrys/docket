@@ -38,6 +38,11 @@ export interface Config {
   notifications?: boolean;
   review_prompt?: string;
   extra_allowed_tools?: string[];
+  // The receive side: act on reviews the user's own PRs get. Auto-runs are
+  // opt-in; the manual verb (docket receive, R) works regardless.
+  receive_enabled?: boolean;
+  receive_prompt?: string;
+  extra_receive_allowed_tools?: string[];
 }
 
 // The review task handed to claude, minus the fixed worktree hygiene that wraps
@@ -68,6 +73,34 @@ export const ALLOWED_TOOLS =
 // what a custom review_prompt needs, the user allows here.
 export const effectiveAllowedTools = (cfg: Config): string =>
   [ALLOWED_TOOLS, ...(cfg.extra_allowed_tools ?? [])].join(",");
+
+// What a receive run may do on top of the review baseline: edit files and
+// commit locally in the PR's checkout, and run the receive skill. Deliberately
+// absent, forever: `git push` and every GitHub-write verb — the user reviews
+// the addressed feedback and pushes themselves.
+export const RECEIVE_ALLOWED_TOOLS: string[] = [
+  ...ALLOWED_TOOLS.split(","),
+  "Skill(receive-code-review)",
+  "Skill(receive-code-review:receive-code-review)",
+  "Edit",
+  "Write",
+  "MultiEdit",
+  "Bash(git add:*)",
+  "Bash(git commit:*)",
+];
+
+export const effectiveReceiveAllowedTools = (cfg: Config): string[] => [
+  ...RECEIVE_ALLOWED_TOOLS,
+  ...(cfg.extra_receive_allowed_tools ?? []),
+];
+
+// The receive task body, minus the fixed checkout hygiene that wraps it
+// (see receivePrompt). {number}/{repo} are substituted at run time.
+export const DEFAULT_RECEIVE_PROMPT =
+  "Address the review feedback by running /receive-code-review {number}.";
+
+export const effectiveReceivePrompt = (cfg: Config): string =>
+  cfg.receive_prompt?.trim() ? cfg.receive_prompt : DEFAULT_RECEIVE_PROMPT;
 
 export interface Paths {
   configDir: string;
@@ -223,6 +256,25 @@ export function configProblem(cfg: Config, where: string): string | null {
       cfg.extra_allowed_tools.some((t) => typeof t !== "string"))
   ) {
     return `invalid config at ${where} — "extra_allowed_tools" must be an array of strings`;
+  }
+  if (
+    cfg.extra_receive_allowed_tools !== undefined &&
+    (!Array.isArray(cfg.extra_receive_allowed_tools) ||
+      cfg.extra_receive_allowed_tools.some((t) => typeof t !== "string"))
+  ) {
+    return `invalid config at ${where} — "extra_receive_allowed_tools" must be an array of strings`;
+  }
+  if (
+    cfg.receive_enabled !== undefined &&
+    typeof cfg.receive_enabled !== "boolean"
+  ) {
+    return `invalid config at ${where} — "receive_enabled" must be true or false`;
+  }
+  if (
+    cfg.receive_prompt !== undefined &&
+    typeof cfg.receive_prompt !== "string"
+  ) {
+    return `invalid config at ${where} — "receive_prompt" must be a string`;
   }
   return null;
 }

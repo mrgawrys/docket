@@ -16,14 +16,17 @@ import {
 import { offCommand, onCommand } from "./scheduler";
 import {
   ensureState,
+  entryKind,
   loadState,
   normalizeKey,
   reconcileOrphans,
   setStatus,
   splitKey,
+  timestamp,
+  updateEntry,
 } from "./state";
 import { logCommand, statusCommand, watchCommand } from "./status";
-import { reconcile } from "./sync";
+import { reconcile, startReceive } from "./sync";
 import { runTui } from "./tui/app";
 import { childOwnsTerminal } from "./tui/suspend";
 import { promptCommand } from "./wizard/prompt";
@@ -39,6 +42,9 @@ Usage:
                             in parallel as detached background processes
   docket sync               reconcile state with GitHub
   docket review <pr> [note] force-review a PR (org/repo#N or a GitHub PR URL)
+  docket receive <pr> [note] act on review feedback on your own PR (runs
+                            /receive-code-review in the PR's checkout;
+                            edits + local commits only, never pushes)
   docket retry <key>        re-run a failed review
   docket dismiss <key>      mark done + remove the PR worktree
   docket doctor             check setup: config, clones, gh, claude, code-review plugin
@@ -189,6 +195,9 @@ const retryKey = (ctx: Ctx, key: string, note?: string): Promise<number> =>
       console.error(`unknown key: ${key}`);
       return 1;
     }
+    if (entryKind(key) === "mine") {
+      return startedMsg(key, await startReceive(ctx, key, entry, note));
+    }
     const { repo } = splitKey(key);
     const result = await startReview(
       ctx,
@@ -199,6 +208,35 @@ const retryKey = (ctx: Ctx, key: string, note?: string): Promise<number> =>
       note,
     );
     return startedMsg(key, result);
+  });
+
+// Start a receive run for one of the user's own PRs — the mirror of `docket
+// review`. The key is stored under the mine: prefix whatever shape came in.
+const receiveKey = (
+  ctx: Ctx,
+  key: string,
+  note: string | undefined,
+): Promise<number> =>
+  runUnlocked(ctx, async () => {
+    const { repo, number } = splitKey(key);
+    const info = prView<{ title?: string; url?: string }>(
+      ctx.gh,
+      repo,
+      number,
+      "title,url",
+    );
+    if (!info) {
+      console.error(`cannot fetch ${key} from GitHub (does the PR exist?)`);
+      return 1;
+    }
+    updateEntry(ctx.paths.statePath, key, (e) => ({
+      ...(e ?? { status: "open" as const }),
+      title: info.title ?? e?.title ?? "",
+      url: info.url ?? e?.url ?? "",
+      updated_at: timestamp(),
+    }));
+    const entry = loadState(ctx.paths.statePath)[key]!;
+    return startedMsg(key, await startReceive(ctx, key, entry, note));
   });
 
 const help: Command = async () => {
@@ -242,6 +280,20 @@ const retry: Command = (args) =>
     const key = keyArg(args[0], "usage: docket retry ORG/REPO#NUM [note]");
     if (!key) return 1;
     return retryKey(ctx, key, args[1]);
+  });
+
+const receive: Command = (args) =>
+  withCtx(async (ctx) => {
+    const key = keyArg(
+      args[0],
+      "usage: docket receive ORG/REPO#NUM|URL [note]",
+    );
+    if (!key) return 1;
+    return receiveKey(
+      ctx,
+      entryKind(key) === "mine" ? key : `mine:${key}`,
+      args[1],
+    );
   });
 
 // internal: the detached runner `startReview` spawns — one foreground review
@@ -309,6 +361,7 @@ const off: Command = async () => offCommand();
 const commands: Record<string, Command> = {
   help,
   review,
+  receive,
   retry,
   exec,
   sync,

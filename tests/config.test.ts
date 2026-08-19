@@ -304,6 +304,32 @@ test("loadConfig: extra_allowed_tools must be an array of strings", async () => 
   ]);
 });
 
+test("loadConfig: the receive keys are validated", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "rv-cfg-"));
+  const p = paths({
+    DOCKET_CONFIG_DIR: dir,
+    DOCKET_STATE_DIR: dir,
+  } as NodeJS.ProcessEnv);
+  const base = { orgs: ["o"], repos: { "o/r": "/tmp" } };
+  const write = (extra: object) =>
+    writeFileSync(
+      join(dir, "config.json"),
+      JSON.stringify({ ...base, ...extra }),
+    );
+  write({ receive_enabled: "yes" });
+  await expect(loadConfig(p)).rejects.toThrow(/receive_enabled/);
+  write({ receive_prompt: 42 });
+  await expect(loadConfig(p)).rejects.toThrow(/receive_prompt/);
+  write({ extra_receive_allowed_tools: "Edit" });
+  await expect(loadConfig(p)).rejects.toThrow(/extra_receive_allowed_tools/);
+  write({
+    receive_enabled: true,
+    receive_prompt: "do it",
+    extra_receive_allowed_tools: ["Bash(bun test:*)"],
+  });
+  expect((await loadConfig(p)).receive_enabled).toBe(true);
+});
+
 test("loadConfig: claude_env must be an object of string values", async () => {
   const dir = mkdtempSync(join(tmpdir(), "rv-cfg-"));
   const p = paths({

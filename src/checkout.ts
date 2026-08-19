@@ -96,5 +96,7 @@ export function resolveCheckout(
     `origin/${branch}`,
   ]);
   if (!add.ok) return fail("git worktree add", add);
-  return { ok: true, path, owned: true };
+  // realpath, to match what `git worktree list` will report on the next call —
+  // otherwise the same checkout gets recorded twice under two spellings.
+  return { ok: true, path: real(path), owned: true };
 }
