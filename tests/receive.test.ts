@@ -458,11 +458,12 @@ test("a newly discovered PR does not re-address the feedback it arrived with", a
   expect(discovered.status).toBe("open");
   expect(discovered.review_at).toBeTruthy();
 
-  // poll 2 reconciles it: that review is behind the cursor, so nothing runs
+  // poll 2 reconciles it: that review is behind the cursor, so nothing runs —
+  // but the row still shows what the reviewer said
   expect(sb.claudeCalls()).toBe(0);
   expect(sb.run(["poll"], env).code).toBe(0);
   expect(sb.claudeCalls()).toBe(0);
-  expect(sb.state()["mine:testorg/demo#7"].status).toBe("open");
+  expect(sb.state()["mine:testorg/demo#7"].status).toBe("changes-requested");
 });
 
 test("a note applies to the run it was given for, not to every run after it", async () => {

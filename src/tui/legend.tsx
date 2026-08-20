@@ -7,7 +7,7 @@ export interface Binding {
   verb?: string;
 }
 
-export type KeymapView = "queue" | "mine" | "denials";
+export type KeymapView = "queue" | "mine" | "denials" | "log";
 
 export const QUEUE_KEYS: Binding[] = [
   { keys: "j/k ↑/↓", label: "move" },
@@ -21,8 +21,9 @@ export const QUEUE_KEYS: Binding[] = [
   { keys: "n", label: "review a PR by hand" },
   { keys: "x", label: "dismiss" },
   { keys: "K", label: "kill" },
-  { keys: "p", label: "poll" },
-  { keys: "S", label: "sync" },
+  { keys: "p", label: "poll (opens the log)" },
+  { keys: "S", label: "sync (opens the log)" },
+  { keys: "l", label: "log" },
   { keys: "?", label: "more" },
   { keys: "q", label: "quit" },
 ];
@@ -42,8 +43,9 @@ export const MINE_KEYS: Binding[] = [
   { keys: "n", label: "receive a PR by hand" },
   { keys: "x", label: "dismiss" },
   { keys: "K", label: "kill" },
-  { keys: "p", label: "poll" },
-  { keys: "S", label: "sync" },
+  { keys: "p", label: "poll (opens the log)" },
+  { keys: "S", label: "sync (opens the log)" },
+  { keys: "l", label: "log" },
   { keys: "?", label: "more" },
   { keys: "q", label: "quit" },
 ];
@@ -61,10 +63,20 @@ export const DENIAL_KEYS: Binding[] = [
   { keys: "q", label: "quit" },
 ];
 
+// The log pane: this session's log lines, and the output of a poll or sync
+// running as a child. Leaving it leaves the job running.
+export const LOG_KEYS: Binding[] = [
+  { keys: "j/k ↑/↓", label: "scroll" },
+  { keys: "esc l", label: "back to the queue (the job keeps running)" },
+  { keys: "?", label: "help" },
+  { keys: "q", label: "quit" },
+];
+
 const KEYMAPS: Record<KeymapView, Binding[]> = {
   queue: QUEUE_KEYS,
   mine: MINE_KEYS,
   denials: DENIAL_KEYS,
+  log: LOG_KEYS,
 };
 
 // The one-line footer: the verbs that differ between the two lists, plus the
@@ -74,6 +86,7 @@ const FOOTER: Record<KeymapView, string[]> = {
   queue: ["enter", "s", "d", "D", "w", "n", "?"],
   mine: ["enter", "s", "d", "R", "D", "n", "?"],
   denials: ["j/k ↑/↓", "esc D", "?", "q"],
+  log: ["j/k ↑/↓", "esc l", "?", "q"],
 };
 
 export function Legend({
@@ -144,6 +157,7 @@ export function Help({ unavailable }: { unavailable: Record<string, string> }) {
         bindings={DENIAL_KEYS}
         unavailable={unavailable}
       />
+      <Keys title="log pane" bindings={LOG_KEYS} unavailable={unavailable} />
       <Text dimColor>? or esc closes this</Text>
     </Box>
   );
