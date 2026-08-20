@@ -63,8 +63,8 @@ export type MineSyncDecision =
       kind: "feedback";
       at: string;
       verdict: "approved" | "changes-requested" | "commented";
-      // Who left the newest actionable review — the panel shows it, and the
-      // TUI never fetches, so sync records it on the entry.
+      // Who left the review the verdict came from — the panel shows it, and
+      // the TUI never fetches, so sync records it on the entry.
       reviewer: string;
     }
   | { kind: "none" };
@@ -95,9 +95,14 @@ export function decideMineSync(
         (r.state === "APPROVED" && r.body.trim() !== "")),
   );
   if (actionable.length === 0) return { kind: "none" };
-  const worst = actionable.reduce((a, b) =>
-    VERDICT_RANK[toVerdict(b.state)] > VERDICT_RANK[toVerdict(a.state)] ? b : a,
-  );
+  // Verdict and reviewer both come from the worst review (newest of the worst
+  // on ties), so "X requested changes" is always something X actually did. The
+  // cursor still advances past the newest review, whoever left it.
+  const worst = actionable.reduce((a, b) => {
+    const diff =
+      VERDICT_RANK[toVerdict(b.state)] - VERDICT_RANK[toVerdict(a.state)];
+    return diff > 0 || (diff === 0 && b.submittedAt > a.submittedAt) ? b : a;
+  });
   const newest = actionable.reduce((a, b) =>
     b.submittedAt > a.submittedAt ? b : a,
   );
@@ -105,14 +110,12 @@ export function decideMineSync(
     kind: "feedback",
     at: newest.submittedAt,
     verdict: toVerdict(worst.state),
-    reviewer: newest.author,
+    reviewer: worst.author,
   };
 }
 
 const toVerdict = (state: string): Verdict =>
   state.toLowerCase().replaceAll("_", "-") as Verdict;
-
-export type Feedback = Extract<MineSyncDecision, { kind: "feedback" }>;
 
 // What happens when actionable feedback lands, after syncMine has recorded
 // the verdict and advanced the cursor. Injectable so tests can pin it.
@@ -120,7 +123,6 @@ export type TriggerReceive = (
   ctx: Ctx,
   key: string,
   entry: Entry,
-  fb: Feedback,
 ) => Promise<void>;
 
 // The automatic path: opt-in, never on drafts. When the gate says no, the
@@ -213,7 +215,7 @@ async function syncMine(
   ctx.counters.synced++;
   const n = feedbackNotification(bareKey(key), d.verdict, d.reviewer);
   await notify(ctx.cfg, n.title, n.body);
-  await trigger(ctx, key, loadState(statePath)[key] ?? entry, d);
+  await trigger(ctx, key, loadState(statePath)[key] ?? entry);
 }
 
 export async function reconcile(

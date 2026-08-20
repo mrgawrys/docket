@@ -222,7 +222,9 @@ test("decideMineSync: only reviews after the cursor count", () => {
   ).toMatchObject({ kind: "feedback" });
 });
 
-test("decideMineSync: worst verdict wins, cursor advances to the newest", () => {
+test("decideMineSync: verdict and reviewer agree — both from the worst review", () => {
+  // carol requested changes, dave approved with a nit afterwards: the entry
+  // must say "changes-requested by carol", never "by dave" — dave approved.
   const older = rev({
     state: "CHANGES_REQUESTED",
     author: "carol",
@@ -237,8 +239,27 @@ test("decideMineSync: worst verdict wins, cursor advances to the newest", () => 
   expect(decideMineSync(mineInfo([newer, older]), "me", mineEntry())).toEqual({
     kind: "feedback",
     verdict: "changes-requested",
-    at: "2026-02-02T00:00:00Z",
-    reviewer: "dave",
+    at: "2026-02-02T00:00:00Z", // the cursor still passes dave's review
+    reviewer: "carol",
+  });
+});
+
+test("decideMineSync: equal verdicts — the newest of the worst is the reviewer", () => {
+  const carol = rev({
+    state: "CHANGES_REQUESTED",
+    author: "carol",
+    submittedAt: "2026-02-01T00:00:00Z",
+  });
+  const erin = rev({
+    state: "CHANGES_REQUESTED",
+    author: "erin",
+    submittedAt: "2026-02-03T00:00:00Z",
+  });
+  expect(decideMineSync(mineInfo([carol, erin]), "me", mineEntry())).toEqual({
+    kind: "feedback",
+    verdict: "changes-requested",
+    at: "2026-02-03T00:00:00Z",
+    reviewer: "erin",
   });
 });
 
