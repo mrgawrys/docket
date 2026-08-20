@@ -63,6 +63,10 @@ function discoverMine(ctx: Ctx, dry: boolean, known: State): void {
         title: c.title,
         url: c.url,
         local_path: ctx.cfg.repos[c.repo],
+        // Baseline the feedback cursor at discovery. Without it every review
+        // the PR ever got reads as new, and the next reconcile would address
+        // months-old feedback that is already in the branch.
+        review_at: timestamp(),
         ...(info?.headRefName ? { branch: info.headRefName } : {}),
         ...(c.isDraft ? { flags: ["draft"] } : {}),
         updated_at: timestamp(),

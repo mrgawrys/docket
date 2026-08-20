@@ -423,3 +423,37 @@ test("dismissing a mine entry frees its branch for the next receive", async () =
   expect(again.code).toBe(0);
   await sb.waitEntry("mine:testorg/demo#7", (x) => x.status === "ready");
 });
+
+test("a newly discovered PR does not re-address the feedback it arrived with", async () => {
+  const sb = makeSandbox();
+  const { mineJson } = prScenario(sb, { receive_enabled: true });
+  const search = JSON.stringify([
+    {
+      number: 7,
+      title: "My PR",
+      url: "https://example.test/pr/7",
+      isDraft: false,
+      repository: { nameWithOwner: "testorg/demo" },
+    },
+  ]);
+
+  // GH_SEARCH_JSON empty: no review requests, so every claude call below is
+  // the receive side's
+  const env = {
+    GH_MINE_SEARCH_JSON: search,
+    GH_PR_MINE_JSON: mineJson,
+    GH_SEARCH_JSON: "[]",
+  };
+
+  // poll 1 discovers it — the PR already carries a review from 2026-07-19
+  expect(sb.run(["poll"], env).code).toBe(0);
+  const discovered = sb.state()["mine:testorg/demo#7"];
+  expect(discovered.status).toBe("open");
+  expect(discovered.review_at).toBeTruthy();
+
+  // poll 2 reconciles it: that review is behind the cursor, so nothing runs
+  expect(sb.claudeCalls()).toBe(0);
+  expect(sb.run(["poll"], env).code).toBe(0);
+  expect(sb.claudeCalls()).toBe(0);
+  expect(sb.state()["mine:testorg/demo#7"].status).toBe("open");
+});
