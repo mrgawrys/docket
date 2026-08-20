@@ -165,10 +165,10 @@ function keyArg(raw: string | undefined, usage: string): string | null {
 const startedMsg = (key: string, result: StartResult): number => {
   if (result === "started") {
     console.log(
-      `${key}: review started in the background — you'll get a notification; follow with: docket watch`,
+      `${key}: run started in the background — you'll get a notification; follow with: docket watch`,
     );
   } else if (result === "already-running") {
-    console.log(`${key}: a review is already running`);
+    console.log(`${key}: a run is already in flight`);
   }
   return result === "spawn-failed" ? 1 : 0;
 };
@@ -237,7 +237,14 @@ const receiveKey = (
       updated_at: timestamp(),
     }));
     const entry = loadState(ctx.paths.statePath)[key]!;
-    return startedMsg(key, await startReceive(ctx, key, entry, note));
+    const result = await startReceive(ctx, key, entry, note);
+    if (result === "skipped") {
+      // the reason (blocked checkout, unmapped repo) was just written
+      const e = loadState(ctx.paths.statePath)[key];
+      console.error(`${key}: not started — ${e?.error ?? "skipped"}`);
+      return 1;
+    }
+    return startedMsg(key, result);
   });
 
 const help: Command = async () => {

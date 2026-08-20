@@ -246,6 +246,14 @@ test("docket receive runs regardless of receive_enabled, keys under mine:", asyn
   );
   // a URL normalizes into the same key shape
   expect(sb.run(["receive", "total garbage"]).code).not.toBe(0);
+
+  // a now-dirty checkout refuses with the reason on stderr, not silence
+  writeFileSync(join(e.checkout_path, "f.txt"), "dirty\n");
+  const blocked = sb.run(["receive", "testorg/demo#7"], {
+    GH_PR_MINE_JSON: mineJson,
+  });
+  expect(blocked.code).toBe(1);
+  expect(blocked.err).toContain("checkout dirty");
 });
 
 test("exec re-checks the checkout before spawning claude (TOCTOU downgrade)", () => {
