@@ -239,8 +239,7 @@ const receiveKey = (
   note: string | undefined,
 ): Promise<number> =>
   runUnlocked(ctx, async () => {
-    const key =
-      entryKind(rawKey) === "mine" ? rawKey : `mine:${rawKey}`;
+    const key = entryKind(rawKey) === "mine" ? rawKey : `mine:${rawKey}`;
     const { repo, number } = splitKey(key);
     // Refuse before anything is written: a typo'd repo must not leave a
     // permanent skipped row in the mine view. An already-tracked entry may
@@ -266,7 +265,11 @@ const receiveKey = (
       updated_at: timestamp(),
     }));
     const entry = loadState(ctx.paths.statePath)[key]!;
-    return receiveStartedMsg(ctx, key, await startReceive(ctx, key, entry, note));
+    return receiveStartedMsg(
+      ctx,
+      key,
+      await startReceive(ctx, key, entry, note),
+    );
   });
 
 const help: Command = async () => {

@@ -273,7 +273,9 @@ async function receiveDialogue(
   }
 
   ui.say("   1) default — read the reviews, make the changes, commit locally");
-  ui.say("   2) custom  — write your own (where a receive skill invocation goes)");
+  ui.say(
+    "   2) custom  — write your own (where a receive skill invocation goes)",
+  );
   let choice: string;
   for (;;) {
     choice = await ui.ask("   which? [1-2] ", "1");

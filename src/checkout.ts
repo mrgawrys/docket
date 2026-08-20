@@ -83,7 +83,9 @@ export function resolveCheckout(
   // A local branch that is checked out nowhere is still the user's work —
   // `worktree add -b` would refuse anyway, but with raw git output; say it
   // in plain words instead.
-  if (git(clone, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]).ok) {
+  if (
+    git(clone, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]).ok
+  ) {
     return {
       ok: false,
       reason: `branch ${branch} exists locally but isn't checked out`,
