@@ -19,7 +19,11 @@ import {
 } from "../src/config";
 import type { StepResult } from "../src/reviewtask";
 import { type WizardOutcome, runNativeWizard } from "../src/wizard/flow";
-import type { ReviewTaskOptions } from "../src/wizard/reviewtask";
+import type {
+  ReceiveStepOptions,
+  ReceiveStepResult,
+  ReviewTaskOptions,
+} from "../src/wizard/reviewtask";
 import { type Sandbox, makeSandbox } from "./harness";
 
 const TWO_ACCOUNTS = [
@@ -63,6 +67,7 @@ interface Driven {
   configPath: string;
   // what the flow handed the review-task step, when it reached it
   stepOptions: ReviewTaskOptions | undefined;
+  receiveOptions: ReceiveStepOptions | undefined;
   // whatever the wizard wrote — read loosely, like harness.state()
   config(): Record<string, any>;
 }
@@ -75,6 +80,7 @@ async function drive(
   // the step's dialogue is tests/wizard-reviewtask.test.ts's job; flow tests
   // inject its result and check what the wizard does with it
   stepResult: StepResult = { task: "default" },
+  receiveResult: ReceiveStepResult = { receive_enabled: false },
 ): Promise<Driven> {
   const input = new PassThrough();
   for (const line of script) input.write(`${line}\n`);
@@ -90,6 +96,7 @@ async function drive(
   let doctorRuns = 0;
   let configAtDoctor: string | null = null;
   let stepOptions: ReviewTaskOptions | undefined;
+  let receiveOptions: ReceiveStepOptions | undefined;
   const outcome = await runNativeWizard({
     paths: p,
     env: { ...process.env, ...sb.env, ...extraEnv },
@@ -104,6 +111,10 @@ async function drive(
       stepOptions = o;
       return stepResult;
     },
+    receiveTask: async (o) => {
+      receiveOptions = o;
+      return receiveResult;
+    },
   });
   return {
     outcome,
@@ -112,6 +123,7 @@ async function drive(
     configAtDoctor,
     configPath: p.configPath,
     stepOptions,
+    receiveOptions,
     config: () => JSON.parse(readFileSync(p.configPath, "utf8")),
   };
 }
@@ -602,8 +614,60 @@ test("the steps around the review task are renumbered", async () => {
     GH_ORG_LIST: "acme",
   });
   expect(r.out).toContain("4. Review task");
-  expect(r.out).toContain("5. Writing config");
-  expect(r.out).toContain("6. Checking the setup");
+  expect(r.out).toContain("5. Reviews you receive");
+  expect(r.out).toContain("6. Writing config");
+  expect(r.out).toContain("7. Checking the setup");
+});
+
+test("the receive answer lands in the config; declining writes no key", async () => {
+  const sb = fresh();
+  const home = homeWithClones();
+  const args = {
+    HOME: home,
+    GH_AUTH_STATUS_TEXT: ONE_ACCOUNT,
+    GH_ORG_LIST: "acme",
+  };
+  // opted in with a custom task
+  let r = await drive(sb, ["2", "1", "", ""], args, undefined, undefined, {
+    receive_enabled: true,
+    receive_prompt: "Fix the feedback.",
+  });
+  expect(r.outcome).toBe("completed");
+  expect(r.config().receive_enabled).toBe(true);
+  expect(r.config().receive_prompt).toBe("Fix the feedback.");
+
+  // declined: no key restating the default (and a stale true is cleared)
+  r = await drive(sb, ["y", "2", "1", "", ""], args); // y answers the overwrite question
+  expect(r.outcome).toBe("completed");
+  expect("receive_enabled" in r.config()).toBe(false);
+});
+
+test("a hand-written receive_prompt survives the wizard untouched", async () => {
+  const sb = fresh();
+  const home = homeWithClones();
+  writeFileSync(
+    join(sb.configDir, "config.json"),
+    JSON.stringify({
+      orgs: [],
+      repos: {},
+      receive_prompt: "My hand-written receive task.",
+    }),
+  );
+  const r = await drive(
+    sb,
+    ["2", "1", "", ""],
+    { HOME: home, GH_AUTH_STATUS_TEXT: ONE_ACCOUNT, GH_ORG_LIST: "acme" },
+    undefined,
+    undefined,
+    { receive_enabled: true }, // the step never returns a prompt over an existing one
+  );
+  expect(r.outcome).toBe("completed");
+  expect(r.config().receive_prompt).toBe("My hand-written receive task.");
+  expect(r.config().receive_enabled).toBe(true);
+  // and the step was shown the existing prompt, so its dialogue could rail on it
+  expect(r.receiveOptions?.cfg.receive_prompt).toBe(
+    "My hand-written receive task.",
+  );
 });
 
 test("a config the wizard cannot write is reported, not thrown at the user", async () => {

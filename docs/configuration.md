@@ -112,6 +112,46 @@ dropped from its proposal before you see it. That filter is best-effort, not
 a guarantee — allowlist entries are prefix patterns, so reading the proposal
 before accepting is the real gate. Empty = baseline only.
 
+## receive_enabled
+
+Turn on automatic **receive runs**: when someone leaves actionable feedback
+on a PR you authored (a review that isn't a bare comment-less approval),
+docket pre-runs `/receive-code-review` headlessly in that PR's checkout, so a
+session with the feedback already addressed is waiting in the TUI's *my PRs*
+view (`tab`). Default `false`.
+
+The run may edit files and commit locally in the checkout — it never pushes
+and never writes to GitHub; you review its work and push yourself. Drafts are
+listed but never auto-run. The manual paths — `docket receive`, the mine
+view's `R` — work regardless of this key.
+
+If the PR's branch is already checked out somewhere in your clone, that
+checkout is used; a dirty checkout, or one ahead of the PR head, blocks the
+run (`skipped`, with the reason shown) rather than risking your work. Only
+when the branch exists nowhere locally does docket create its own worktree
+under `~/.local/state/docket/checkouts/` (removed on dismiss).
+
+## receive_prompt
+
+The receive task handed to claude. Omit (or leave blank) to run the default,
+`Address the review feedback by running /receive-code-review {number}.`
+Tokens `{number}` and `{repo}` are substituted, like `review_prompt`.
+
+The wrapper around the task is fixed and not configurable: work only in the
+PR's checkout, edits and local commits allowed, never push, never write to
+GitHub — plus the same triage-summary block every run ends with. A prompt
+that doesn't run `/receive-code-review` needs no receive plugin (doctor
+checks this). The wizard never overwrites an existing custom value here.
+
+## extra_receive_allowed_tools
+
+Entries appended to the **receive** run's allowlist, in the same grammar as
+`extra_allowed_tools`. The receive baseline is the review baseline plus
+`Edit`, `Write`, `MultiEdit`, `Bash(git add:*)` and `Bash(git commit:*)` — it
+deliberately contains no push and no GitHub-write verbs, and a denied
+`git push` in the mine view's denials is labeled as the guardrail working,
+not offered as a rule. Empty = baseline only.
+
 ## openers
 
 What the queue's `s` and `d` keys run, as a chain of candidate commands per

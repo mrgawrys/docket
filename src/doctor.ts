@@ -6,6 +6,7 @@ import {
   type Paths,
   claudeBin,
   claudeEnv,
+  effectiveReceivePrompt,
   effectiveReviewPrompt,
   ghBin,
   loadConfig,
@@ -234,19 +235,58 @@ export async function doctorCommand(
   // Every Skill(plugin:name) entry names a plugin that must be installed —
   // this is what makes a copied config self-verifying. Bare Skill(foo) is a
   // personal or project skill, not in the registry, so it is skipped.
-  for (const entry of cfg.extra_allowed_tools ?? []) {
-    const m = /^Skill\(([^:()]+):([^:()]+)\)$/.exec(entry);
-    if (!m) continue;
-    const plugin = m[1]!;
-    if (installed(plugin)) {
-      pass(`plugin for ${entry} installed`);
-    } else {
-      // docket cannot know which marketplace the plugin came from
+  const checkSkillEntries = (entries: string[]) => {
+    for (const entry of entries) {
+      const m = /^Skill\(([^:()]+):([^:()]+)\)$/.exec(entry);
+      if (!m) continue;
+      const plugin = m[1]!;
+      if (installed(plugin)) {
+        pass(`plugin for ${entry} installed`);
+      } else {
+        // docket cannot know which marketplace the plugin came from
+        fail(
+          `plugin for ${entry}: '${plugin}' not found in ${registryPath}`,
+          `install the '${plugin}' plugin: claude plugin install ${plugin}@<marketplace>`,
+        );
+      }
+    }
+  };
+  checkSkillEntries(cfg.extra_allowed_tools ?? []);
+
+  // The receive side is opt-in; its dependencies only bind once it is on.
+  if (cfg.receive_enabled) {
+    if (cfg.receive_prompt !== undefined && !cfg.receive_prompt.trim()) {
       fail(
-        `plugin for ${entry}: '${plugin}' not found in ${registryPath}`,
-        `install the '${plugin}' plugin: claude plugin install ${plugin}@<marketplace>`,
+        "receive_prompt is set but blank",
+        "remove the key or give it a value; the default /receive-code-review prompt runs meanwhile",
       );
     }
+    if (effectiveReceivePrompt(cfg).includes("/receive-code-review")) {
+      if (installed("receive-code-review")) {
+        pass("receive-code-review plugin installed");
+      } else {
+        fail(
+          `receive-code-review plugin: not found in ${registryPath}`,
+          "install the plugin/skill that provides /receive-code-review, or set a custom receive_prompt",
+        );
+      }
+    } else {
+      pass("receive-code-review plugin: not required (custom receive_prompt)");
+    }
+    const blank = (cfg.extra_receive_allowed_tools ?? []).some(
+      (t) => !t.trim(),
+    );
+    if (blank) {
+      fail(
+        "extra_receive_allowed_tools has a blank entry",
+        "remove it — every entry must be a tool rule like Bash(bun test:*)",
+      );
+    } else if (cfg.extra_receive_allowed_tools?.length) {
+      pass(
+        `extra receive allowed tools: ${cfg.extra_receive_allowed_tools.length} configured`,
+      );
+    }
+    checkSkillEntries(cfg.extra_receive_allowed_tools ?? []);
   }
 
   return failed === 0 ? 0 : 1;

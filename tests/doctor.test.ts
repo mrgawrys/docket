@@ -388,3 +388,73 @@ test("doctor: blank review_prompt → ✗ telling the user to remove or fill it"
   expect(r.code).toBe(1);
   expect(r.out).toMatch(/✗.*review_prompt/);
 });
+
+test("doctor: receive_enabled without the receive-code-review plugin fails; with it passes", () => {
+  const sb = makeSandbox();
+  sb.gitInitDemo();
+  const base = {
+    orgs: ["testorg"],
+    repos: { "testorg/demo": sb.demoRepo },
+    receive_enabled: true,
+  };
+  sb.writeConfig({ ...base, claude_config_dir: claudeHomeWith(sb) });
+  let r = sb.run(["doctor"]);
+  expect(r.code).toBe(1);
+  expect(r.out).toMatch(/✗.*receive-code-review plugin/);
+
+  sb.writeConfig({
+    ...base,
+    claude_config_dir: claudeHomeWith(sb, "receive-code-review@acme"),
+  });
+  r = sb.run(["doctor"]);
+  expect(r.code).toBe(0);
+  expect(r.out).toContain("✓ receive-code-review plugin installed");
+});
+
+test("doctor: receive checks only run when receive_enabled", () => {
+  const sb = makeSandbox();
+  sb.gitInitDemo();
+  // no receive-code-review plugin installed, but receive is off — all green
+  sb.writeConfig({
+    orgs: ["testorg"],
+    repos: { "testorg/demo": sb.demoRepo },
+    claude_config_dir: claudeHome(sb, true),
+  });
+  const r = sb.run(["doctor"]);
+  expect(r.code).toBe(0);
+  expect(r.out).not.toContain("receive-code-review");
+});
+
+test("doctor: custom receive_prompt without the slash command → plugin not required", () => {
+  const sb = makeSandbox();
+  sb.gitInitDemo();
+  sb.writeConfig({
+    orgs: ["testorg"],
+    repos: { "testorg/demo": sb.demoRepo },
+    claude_config_dir: claudeHome(sb, true),
+    receive_enabled: true,
+    receive_prompt: "Address the feedback and commit the fixes locally.",
+  });
+  const r = sb.run(["doctor"]);
+  expect(r.code).toBe(0);
+  expect(r.out).toContain(
+    "receive-code-review plugin: not required (custom receive_prompt)",
+  );
+});
+
+test("doctor: blank receive_prompt and receive Skill() entries are checked", () => {
+  const sb = makeSandbox();
+  sb.gitInitDemo();
+  sb.writeConfig({
+    orgs: ["testorg"],
+    repos: { "testorg/demo": sb.demoRepo },
+    claude_config_dir: claudeHomeWith(sb, "receive-code-review@acme"),
+    receive_enabled: true,
+    receive_prompt: "   ",
+    extra_receive_allowed_tools: ["Skill(dev-skills:fixer)"],
+  });
+  const r = sb.run(["doctor"]);
+  expect(r.code).toBe(1);
+  expect(r.out).toMatch(/✗.*receive_prompt is set but blank/);
+  expect(r.out).toContain("'dev-skills' not found");
+});

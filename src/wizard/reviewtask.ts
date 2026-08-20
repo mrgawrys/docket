@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   type Config,
+  DEFAULT_RECEIVE_PROMPT,
   DEFAULT_REVIEW_PROMPT,
   claudeBin,
   claudeEnv,
@@ -50,10 +51,13 @@ const stringArray = (v: unknown): string[] =>
     : [];
 
 // The task text, from $EDITOR or line-by-line; null = keep the current task.
-async function captureTask(o: ReviewTaskOptions): Promise<string | null> {
+async function captureTask(
+  o: Pick<ReviewTaskOptions, "ui" | "editor">,
+  seed: string,
+): Promise<string | null> {
   const { ui } = o;
   if (o.editor) {
-    const saved = o.editor(editorTemplate(currentTask(o.cfg)));
+    const saved = o.editor(editorTemplate(seed));
     if (saved === null) return null;
     return stripEditorComments(saved) || null;
   }
@@ -197,7 +201,7 @@ async function dialogue(o: ReviewTaskOptions): Promise<StepResult> {
   }
   if (choice === "1") return { task: "default" };
 
-  const task = await captureTask(o);
+  const task = await captureTask(o, currentTask(o.cfg));
   if (task === null) {
     // Nothing captured keeps the current task — which is the default answer
     // in the wizard, and the standing custom task in `docket prompt`.
@@ -213,6 +217,74 @@ async function dialogue(o: ReviewTaskOptions): Promise<StepResult> {
   const extras = await deriveExtras(o, task);
   if (extras === null) return { task: "custom", review_prompt: task };
   return { task: "custom", review_prompt: task, extra_allowed_tools: extras };
+}
+
+// ------------------------------------------------------ the receive step --
+
+export interface ReceiveStepOptions {
+  ui: Ui;
+  cfg: Config;
+  editor?: (seed: string) => string | null;
+}
+
+// receive_prompt is only present when a NEW custom task was captured here —
+// an existing non-default receive_prompt is never overwritten (a wizard
+// answer once deleted a hand-written review_prompt; this is the hard rule
+// that keeps it from happening again).
+export type ReceiveStepResult =
+  | { receive_enabled: boolean; receive_prompt?: string }
+  | "aborted";
+
+export async function runReceiveStep(
+  o: ReceiveStepOptions,
+): Promise<ReceiveStepResult> {
+  try {
+    return await receiveDialogue(o);
+  } catch (e) {
+    if (e instanceof InputEnded) return "aborted";
+    throw e;
+  }
+}
+
+async function receiveDialogue(
+  o: ReceiveStepOptions,
+): Promise<ReceiveStepResult> {
+  const { ui } = o;
+  ui.say("   when someone reviews one of your PRs, docket can pre-run");
+  ui.say("   /receive-code-review in that PR's checkout — edits and local");
+  ui.say("   commits only; it never pushes, never writes to GitHub.");
+  const answer = await ui.ask("   also act on reviews you receive? [y/N] ");
+  if (!answer.toLowerCase().startsWith("y")) return { receive_enabled: false };
+
+  const existing =
+    typeof o.cfg.receive_prompt === "string" && o.cfg.receive_prompt.trim()
+      ? o.cfg.receive_prompt
+      : undefined;
+  if (existing && existing !== DEFAULT_RECEIVE_PROMPT) {
+    ui.say(ui.dim("   keeping your existing receive task:"));
+    for (const line of existing.split("\n")) ui.say(`     ${ui.accent(line)}`);
+    return { receive_enabled: true };
+  }
+
+  ui.say("   1) default — run /receive-code-review on the feedback");
+  ui.say("   2) custom  — write your own");
+  let choice: string;
+  for (;;) {
+    choice = await ui.ask("   which? [1-2] ", "1");
+    if (choice === "1" || choice === "2") break;
+    ui.say(ui.dim("   not a valid choice"));
+  }
+  if (choice === "1") return { receive_enabled: true };
+
+  const task = await captureTask(o, DEFAULT_RECEIVE_PROMPT);
+  if (task === null) {
+    ui.say(ui.dim("   nothing entered — using the default receive task."));
+    return { receive_enabled: true };
+  }
+  ui.say();
+  ui.say(ui.dim("   receive task:"));
+  for (const line of task.split("\n")) ui.say(`     ${ui.accent(line)}`);
+  return { receive_enabled: true, receive_prompt: task };
 }
 
 // ------------------------------------------- the real editor and derive --
