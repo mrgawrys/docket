@@ -2,7 +2,10 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { paths, runLogPath } from "../src/config";
 import {
+  bareKey,
+  entryKind,
   loadState,
   markDone,
   markReviewed,
@@ -24,6 +27,67 @@ test("normalizeKey accepts org/repo#N and PR URLs, rejects garbage", () => {
   );
   expect(() => normalizeKey("total garbage")).toThrow(/cannot parse/);
   expect(() => normalizeKey("acme/widgets")).toThrow(/cannot parse/);
+});
+
+test("normalizeKey accepts mine: keys and mine: URLs, rejects other colons", () => {
+  expect(normalizeKey("mine:acme/widgets#12")).toBe("mine:acme/widgets#12");
+  expect(normalizeKey("mine:https://github.com/acme/widgets/pull/12")).toBe(
+    "mine:acme/widgets#12",
+  );
+  // today this would silently parse with "mine:org" as the org — must reject
+  expect(() => normalizeKey("theirs:acme/widgets#12")).toThrow(/cannot parse/);
+  expect(() => normalizeKey("acme:widgets/x#12")).toThrow(/cannot parse/);
+});
+
+test("entryKind and bareKey derive kind from the prefix", () => {
+  expect(entryKind("acme/widgets#12")).toBe("review");
+  expect(entryKind("mine:acme/widgets#12")).toBe("mine");
+  expect(bareKey("mine:acme/widgets#12")).toBe("acme/widgets#12");
+  expect(bareKey("acme/widgets#12")).toBe("acme/widgets#12");
+});
+
+test("splitKey strips the mine: prefix — gh never sees it", () => {
+  expect(splitKey("mine:acme/widgets#12")).toEqual({
+    repo: "acme/widgets",
+    number: "12",
+  });
+});
+
+test("runLogPath slugs the mine: prefix like / and #", () => {
+  const p = paths({ DOCKET_CONFIG_DIR: "/c", DOCKET_STATE_DIR: "/s" });
+  expect(runLogPath(p, "mine:acme/widgets#12")).toBe(
+    "/s/runs/mine-acme-widgets-12.jsonl",
+  );
+});
+
+test("loadState migrates my_review_at to review_at on read", () => {
+  const p = statePath();
+  writeFileSync(
+    p,
+    JSON.stringify({
+      "a/b#1": {
+        status: "approved",
+        my_review_at: "2026-01-01T00:00:00Z",
+        updated_at: "t",
+      },
+    }),
+  );
+  const e = loadState(p)["a/b#1"]!;
+  expect(e.review_at).toBe("2026-01-01T00:00:00Z");
+  expect("my_review_at" in e).toBe(false);
+});
+
+test("pendingEntries filters by kind when asked, all kinds otherwise", () => {
+  const s = {
+    "a/b#1": { status: "ready" as const, updated_at: "2026-01-01T00:00:00Z" },
+    "mine:a/b#2": {
+      status: "open" as const,
+      updated_at: "2026-01-02T00:00:00Z",
+    },
+  };
+  expect(pendingEntries(s).map(([k]) => k)).toEqual(["a/b#1", "mine:a/b#2"]);
+  expect(pendingEntries(s, "review").map(([k]) => k)).toEqual(["a/b#1"]);
+  expect(pendingEntries(s, "mine").map(([k]) => k)).toEqual(["mine:a/b#2"]);
 });
 
 test("splitKey splits on the last #", () => {

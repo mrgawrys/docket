@@ -11,15 +11,17 @@ import {
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import {
+  ALLOWED_TOOLS,
   claudeBin,
   claudeEnv,
-  effectiveAllowedTools,
+  effectiveReceiveAllowedTools,
   effectiveReviewPrompt,
   ghBin,
   runLogPath,
   type Config,
   type Paths,
 } from "./config";
+import { prepareCheckout, receivePrompt } from "./receive";
 import { denialGroups, type DenialGroup } from "./denials";
 import type { GhCtx } from "./github";
 import type { Logger } from "./log";
@@ -27,6 +29,7 @@ import { notify } from "./notify";
 import { selfArgs } from "./proc";
 import { parseRunEvent, tailLines } from "./runlog";
 import {
+  entryKind,
   isLiveReview,
   loadState,
   patchEntry,
@@ -36,25 +39,12 @@ import {
   updateEntry,
   type Entry,
 } from "./state";
-import { splitSummary, type Summary } from "./summary";
+import { SUMMARY_INSTRUCTION, splitSummary, type Summary } from "./summary";
 import {
   parseWorktrees,
   pickReviewWorktrees,
   type WorktreeInfo,
 } from "./worktree";
-
-// What the queue shows for every entry. Fixed rather than configurable so the
-// queue keeps a triage signal whatever `review_prompt` asks for; a prompt that
-// cannot answer a field omits it (see splitSummary).
-export const SUMMARY_INSTRUCTION =
-  `Finally, end your last message with a fenced json block — a triage summary ` +
-  `for the review queue — and write nothing after it:\n\n` +
-  "```json\n" +
-  `{"headline": "one line, at most 80 characters, the first thing the ` +
-  `reviewer should know", "issues": <how many you would flag — omit the key ` +
-  `entirely if finding issues was not your task>, "risk": "low" | "medium" | ` +
-  `"high" — omit the key if you did not assess risk}\n` +
-  "```";
 
 // Fixed worktree hygiene wraps a configurable task body. The preamble (work in
 // an isolated worktree, never touch the main copy) and the suffix (keep it
@@ -181,12 +171,39 @@ export function cleanupEntry(
   if (!clone || !existsSync(clone)) return [];
 
   const recorded = entry?.worktrees ?? [];
-  const targets = recorded.length ? recorded : legacyWorktrees(clone, number);
+  // The pr-<number> fallback exists for review entries written before paths
+  // were recorded. A mine entry's checkout may be the user's own worktree —
+  // only what worktrees[] records (docket-created) may ever be deleted.
+  const targets =
+    recorded.length || entryKind(key) === "mine"
+      ? recorded
+      : legacyWorktrees(clone, number);
   const stuck = targets.filter(
     (wt) => !removeWorktree(ctx, clone, wt, key, logPrefix),
   );
 
   Bun.spawnSync(["git", "-C", clone, "worktree", "prune"], { stderr: "pipe" });
+
+  // A checkout docket created also created its branch (`worktree add -b`), and
+  // `worktree remove` leaves that ref behind — which makes every later receive
+  // for the same PR refuse with "exists locally but isn't checked out". Only
+  // the branch of a checkout we own is ever deleted; the user's own worktree
+  // is not in worktrees[] and its branch is not ours to touch.
+  const ownedCheckout =
+    !!entry?.checkout_path && recorded.includes(entry.checkout_path);
+  if (
+    entryKind(key) === "mine" &&
+    entry?.branch &&
+    ownedCheckout &&
+    !stuck.length
+  ) {
+    const d = Bun.spawnSync(
+      ["git", "-C", clone, "branch", "-D", entry.branch],
+      { stderr: "pipe" },
+    );
+    if (d.exitCode === 0)
+      ctx.log(`${logPrefix} ${key}: deleted branch ${entry.branch}`);
+  }
   return stuck;
 }
 
@@ -242,6 +259,13 @@ export async function startReview(
     updated_at: timestamp(),
   }));
 
+  return spawnRunner(ctx, key);
+}
+
+// Detach a `docket exec <key>` runner for an entry already marked reviewing.
+// Shared by review starts and the receive trigger — the run core is the same.
+export function spawnRunner(ctx: Ctx, key: string): StartResult {
+  const { statePath } = ctx.paths;
   const argv = selfArgs("exec", key);
   const fd = openSync(ctx.paths.logPath, "a");
   const child = spawn(argv[0]!, argv.slice(1), {
@@ -262,15 +286,48 @@ export async function startReview(
   updateEntry(statePath, key, (e) =>
     e && e.status === "reviewing" ? { ...e, pid } : e!,
   );
-  ctx.log(`STARTED ${key} — background /code-review runner pid ${pid}`);
+  ctx.log(`STARTED ${key} — background runner pid ${pid}`);
   ctx.counters.started++;
   return "started";
 }
 
-// The body of one review — runs inside the detached `docket exec` process.
+// Everything that differs between a review run and a receive run; the spawn,
+// tee, tail-parse, notify, and status writes are shared.
+export type RunPlan = {
+  prompt: string;
+  allowedTools: string[];
+  cwd: string;
+  // review: discover the worktree the agent created after the run; mine:
+  // docket resolved the checkout itself, there is nothing to discover.
+  discoverWorktrees: boolean;
+  // notification + log prefix
+  label: "review" | "receive";
+};
+
+export function runPlan(ctx: Ctx, key: string, entry: Entry): RunPlan {
+  const { repo, number } = splitKey(key);
+  if (entryKind(key) === "mine") {
+    return {
+      prompt: receivePrompt(ctx.cfg, key, entry, entry.note),
+      allowedTools: effectiveReceiveAllowedTools(ctx.cfg),
+      cwd: entry.checkout_path ?? "",
+      discoverWorktrees: false,
+      label: "receive",
+    };
+  }
+  return {
+    prompt: reviewPrompt(number, repo, ctx.cfg, entry.note),
+    allowedTools: [ALLOWED_TOOLS, ...(ctx.cfg.extra_allowed_tools ?? [])],
+    cwd: entry.local_path ?? ctx.cfg.repos[repo] ?? "",
+    discoverWorktrees: true,
+    label: "review",
+  };
+}
+
+// The body of one run — runs inside the detached `docket exec` process.
 export async function execReview(ctx: Ctx, key: string): Promise<number> {
   const { statePath } = ctx.paths;
-  const entry = loadState(statePath)[key];
+  let entry = loadState(statePath)[key];
   if (!entry) {
     console.error(`unknown key: ${key} — start it with: docket review ${key}`);
     return 1;
@@ -288,6 +345,21 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
     return 1;
   }
 
+  if (entryKind(key) === "mine") {
+    // TOCTOU guard: the checkout can change between the trigger's resolve and
+    // this spawn — a now-blocked checkout downgrades the run to skipped.
+    const prep = prepareCheckout(ctx, key, entry);
+    if (!prep.ok) {
+      ctx.log(`SKIP ${key}: ${prep.reason}`);
+      patchEntry(statePath, key, { status: "skipped", error: prep.reason });
+      await notify(ctx.cfg, "docket: receive blocked", prep.reason);
+      ctx.counters.skipped++;
+      return 1;
+    }
+    entry = loadState(statePath)[key] ?? entry; // fresh checkout_path
+  }
+
+  const plan = runPlan(ctx, key, entry);
   patchEntry(statePath, key, {
     status: "reviewing",
     local_path: localPath,
@@ -295,12 +367,16 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
   });
   ctx.current.key = key;
   ctx.log(
-    `REVIEW ${key} in ${localPath} — headless /code-review running, this takes a few minutes`,
+    `${plan.label.toUpperCase()} ${key} in ${plan.cwd} — headless run, this takes a few minutes`,
   );
 
   // Snapshot before the agent runs so we can tell which worktree it creates.
-  const sha = prHeadSha(ctx, localPath, number);
-  const worktreesBefore = listWorktrees(localPath).map((w) => w.path);
+  const sha = plan.discoverWorktrees
+    ? prHeadSha(ctx, localPath, number)
+    : undefined;
+  const worktreesBefore = plan.discoverWorktrees
+    ? listWorktrees(localPath).map((w) => w.path)
+    : [];
 
   // gh.env carries GH_TOKEN when gh_account is pinned — claude runs gh itself
   const env = { ...ctx.gh.env, ...claudeEnv(ctx.cfg) };
@@ -310,16 +386,16 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
     [
       claudeBin(ctx.cfg),
       "-p",
-      reviewPrompt(number, repo, ctx.cfg, entry.note),
+      plan.prompt,
       "--output-format",
       "stream-json",
       "--verbose",
       "--permission-mode",
       "dontAsk",
       "--allowedTools",
-      effectiveAllowedTools(ctx.cfg),
+      plan.allowedTools.join(","),
     ],
-    { cwd: localPath, env, stdout: "pipe", stderr: "pipe" },
+    { cwd: plan.cwd, env, stdout: "pipe", stderr: "pipe" },
   );
   // Exposed so a SIGINT/SIGTERM handler can kill the child promptly — spawnSync
   // would otherwise block the JS thread until claude exits on its own.
@@ -339,17 +415,19 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
   // Discover the worktree the agent made (any location) and record it so
   // cleanupEntry can remove it later. Persisted after the status write below,
   // which rewrites the entry wholesale.
-  const worktrees = pickReviewWorktrees(
-    worktreesBefore,
-    listWorktrees(localPath),
-    sha,
-  );
+  const worktrees = plan.discoverWorktrees
+    ? pickReviewWorktrees(worktreesBefore, listWorktrees(localPath), sha)
+    : [];
 
   // Best-effort: a denial is worth surfacing, but never at the cost of the
   // status write below, which must land whatever this does.
   let denials: DenialGroup[] | undefined;
   try {
-    const groups = denialGroups(readFileSync(runLog, "utf8"), ctx.cfg);
+    const groups = denialGroups(
+      readFileSync(runLog, "utf8"),
+      ctx.cfg,
+      entryKind(key),
+    );
     if (groups.length) denials = groups;
   } catch {}
 
@@ -365,8 +443,31 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
   }
 
   const url = entry.url ?? "";
+  // A capitalized label for the notification title: "Review" | "Receive".
+  const Label = plan.label[0]!.toUpperCase() + plan.label.slice(1);
+  // Review entries are rewritten wholesale, as they always were. Mine entries
+  // carry fields the run must not lose (branch, checkout_path, review_at,
+  // reviewer, worktrees, flags) — for them, keep everything but the run's own
+  // leftovers. summary and denials belong to the finished run and are patched
+  // back on below: kept here, a clean run would inherit the last run's
+  // headline and denial list. note is the same — it was written for this run,
+  // and a review entry already loses it by being rewritten wholesale.
+  const carry = (e: Entry | undefined): Partial<Entry> => {
+    if (entryKind(key) !== "mine" || !e) return {};
+    const {
+      error: _error,
+      pid: _pid,
+      session_id: _sid,
+      summary: _summary,
+      denials: _denials,
+      note: _note,
+      ...rest
+    } = e;
+    return rest;
+  };
   if (sessionId) {
-    updateEntry(statePath, key, () => ({
+    updateEntry(statePath, key, (e) => ({
+      ...carry(e),
       status: "ready",
       session_id: sessionId,
       title,
@@ -375,10 +476,11 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
       updated_at: timestamp(),
     }));
     ctx.log(`READY ${key} session=${sessionId} — run \`docket\` to open it`);
-    await notify(ctx.cfg, `Review ready: ${key}`, title);
+    await notify(ctx.cfg, `${Label} ready: ${key}`, title);
     ctx.counters.reviewed++;
   } else {
-    updateEntry(statePath, key, () => ({
+    updateEntry(statePath, key, (e) => ({
+      ...carry(e),
       status: "failed",
       title,
       url,
@@ -389,7 +491,7 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
     ctx.log(
       `FAILED ${key} — retry with: docket retry ${key}, or check your setup: docket doctor`,
     );
-    await notify(ctx.cfg, `Review FAILED: ${key}`, title);
+    await notify(ctx.cfg, `${Label} FAILED: ${key}`, title);
     ctx.counters.failed++;
   }
   // Both are discovered facts about the finished run, and the status writes

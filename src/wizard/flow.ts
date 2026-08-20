@@ -19,9 +19,12 @@ import { doctorCommand } from "../doctor";
 import { ghAccountToken } from "../github";
 import type { StepResult } from "../reviewtask";
 import {
+  type ReceiveStepOptions,
+  type ReceiveStepResult,
   type ReviewTaskOptions,
   makeDerive,
   makeEditor,
+  runReceiveStep,
   runReviewTaskStep,
 } from "./reviewtask";
 import {
@@ -57,6 +60,8 @@ export interface WizardOptions {
   // The review-task step, injected like getOrigin so flow tests don't have
   // to drive its dialogue (that's tests/wizard-reviewtask.test.ts's job).
   reviewTask?: (o: ReviewTaskOptions) => Promise<StepResult>;
+  // Same arrangement for the receive question.
+  receiveTask?: (o: ReceiveStepOptions) => Promise<ReceiveStepResult>;
 }
 
 const ROOT_SUGGESTIONS = ["Development", "Work", "Projects", "code"];
@@ -483,8 +488,9 @@ function writeConfig(
   login: string,
   account: string | undefined,
   task: Exclude<StepResult, "aborted">,
+  receive: Exclude<ReceiveStepResult, "aborted">,
 ): boolean {
-  ui.step(5, "Writing config");
+  ui.step(6, "Writing config");
   // Everything the wizard doesn't own survives — openers, extra_allowed_tools
   // and friends are the user's, whether they seeded them or wrote them.
   const cfg: Record<string, unknown> = { ...existing, orgs, repos };
@@ -502,6 +508,12 @@ function writeConfig(
     if (task.extra_allowed_tools)
       cfg.extra_allowed_tools = task.extra_allowed_tools;
   }
+  // The receive answer: an omitted key beats one restating the default (off).
+  // receive_prompt is only ever written when the step captured a NEW custom
+  // task — an existing hand-written one always survives via `existing`.
+  if (receive.receive_enabled) cfg.receive_enabled = true;
+  else delete cfg.receive_enabled;
+  if (receive.receive_prompt) cfg.receive_prompt = receive.receive_prompt;
   const text = `${JSON.stringify(cfg, null, 2)}\n`;
   try {
     mkdirSync(p.configDir, { recursive: true });
@@ -544,6 +556,7 @@ export async function runNativeWizard(
     });
   const runDoctor = opts.runDoctor ?? doctorCommand;
   const reviewTask = opts.reviewTask ?? runReviewTaskStep;
+  const receiveTask = opts.receiveTask ?? runReceiveStep;
   const ui = makeUi(
     opts.input ?? process.stdin,
     opts.output ?? process.stdout,
@@ -586,6 +599,13 @@ export async function runNativeWizard(
     });
     // the step's aborted is a closed stdin: same outcome, same message path
     if (task === "aborted") throw new InputEnded("stdin closed");
+    ui.step(5, "Reviews you receive");
+    const receive = await receiveTask({
+      ui,
+      cfg: stepCfg,
+      editor: makeEditor(ui, env),
+    });
+    if (receive === "aborted") throw new InputEnded("stdin closed");
     // Written even with no repos mapped: that config is genuinely useful (the
     // poller works, unmapped repos skip at review time) and doctor says so.
     const ok = writeConfig(
@@ -597,6 +617,7 @@ export async function runNativeWizard(
       account.login,
       account.account,
       task,
+      receive,
     );
     if (!ok) return "came-up-short";
     wrote = true;
@@ -617,7 +638,7 @@ export async function runNativeWizard(
   }
 
   if (wrote) {
-    ui.step(6, "Checking the setup");
+    ui.step(7, "Checking the setup");
     const code = await runDoctor(p);
     ui.say();
     ui.say(

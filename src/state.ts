@@ -21,7 +21,12 @@ export type Status =
   | "canceled"
   | "skipped"
   | "done"
+  | "open"
   | Verdict;
+
+// Which world an entry belongs to: "review" — a PR awaiting the user's review
+// (bare org/repo#N keys); "mine" — a PR the user authored ("mine:" prefix).
+export type EntryKind = "review" | "mine";
 
 export interface Entry {
   status: Status;
@@ -33,7 +38,20 @@ export interface Entry {
   error?: string;
   flags?: string[];
   done_reason?: "merged" | "closed";
-  my_review_at?: string;
+  // The review event this entry last accounted for — review kind: the user's
+  // own review of someone's PR; mine kind: someone else's review of the
+  // user's PR. Sync only acts on reviews submitted after this cursor.
+  review_at?: string;
+  // Mine entries: the PR's head branch, captured at poll time so TUI
+  // keypresses resolve checkouts without a gh round-trip.
+  branch?: string;
+  // Mine entries: the resolved working copy for the PR branch — the user's
+  // clone, the user's worktree, or docket's own. Openers, enter, and the
+  // receive runner's cwd all read it.
+  checkout_path?: string;
+  // Mine entries: who left the newest actionable review. The panel shows it,
+  // and the TUI never fetches — so sync records it here.
+  reviewer?: string;
   note?: string;
   // Absolute paths of git worktrees this review created, discovered after the
   // run wherever the agent put them; cleanupEntry removes exactly these.
@@ -62,7 +80,17 @@ export function ensureState(statePath: string): void {
 
 export function loadState(statePath: string): State {
   ensureState(statePath);
-  return JSON.parse(readFileSync(statePath, "utf8")) as State;
+  const s = JSON.parse(readFileSync(statePath, "utf8")) as State;
+  // review_at used to be called my_review_at; migrate on read, so the old
+  // name dies on the next save.
+  for (const e of Object.values(s)) {
+    const legacy = e as Entry & { my_review_at?: string };
+    if (legacy.my_review_at !== undefined) {
+      e.review_at ??= legacy.my_review_at;
+      delete legacy.my_review_at;
+    }
+  }
+  return s;
 }
 
 export function saveState(statePath: string, s: State): void {
@@ -157,7 +185,7 @@ export function markReviewed(
 ): void {
   patchEntry(statePath, key, {
     status: verdict,
-    my_review_at: reviewedAt,
+    review_at: reviewedAt,
     flags,
   });
 }
@@ -179,27 +207,43 @@ export function liveRunners(s: State): string[] {
     .map(([k]) => k);
 }
 
-export function pendingEntries(s: State): [string, Entry][] {
+export function pendingEntries(s: State, kind?: EntryKind): [string, Entry][] {
   return Object.entries(s)
     .filter(([, e]) => e.status !== "done")
+    .filter(([k]) => kind === undefined || entryKind(k) === kind)
     .sort(([, a], [, b]) => a.updated_at.localeCompare(b.updated_at));
 }
 
+export function entryKind(key: string): EntryKind {
+  return key.startsWith("mine:") ? "mine" : "review";
+}
+
+// The key without its kind prefix; identity for review keys. gh must never
+// see the prefix — splitKey strips it too.
+export function bareKey(key: string): string {
+  return key.startsWith("mine:") ? key.slice("mine:".length) : key;
+}
+
 export function normalizeKey(input: string): string {
-  let key = input;
-  const url = input.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
+  const prefix = input.startsWith("mine:") ? "mine:" : "";
+  let key = input.slice(prefix.length);
+  const url = key.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
   if (url) key = `${url[1]}/${url[2]}#${url[3]}`;
-  if (!/^[^/#\s]+\/[^/#\s]+#\d+$/.test(key)) {
+  // No colon survives past the prefix: today "mine:org/repo#N" without this
+  // would silently parse with "mine:org" as the org.
+  if (key.includes(":") || !/^[^/#\s]+\/[^/#\s]+#\d+$/.test(key)) {
     throw new Error(
-      `cannot parse '${input}' — expected ORG/REPO#NUM or a GitHub PR URL`,
+      `cannot parse '${input}' — expected ORG/REPO#NUM or a GitHub PR URL` +
+        ` (optionally prefixed mine:)`,
     );
   }
-  return key;
+  return prefix + key;
 }
 
 export function splitKey(key: string): { repo: string; number: string } {
-  const i = key.lastIndexOf("#");
-  return { repo: key.slice(0, i), number: key.slice(i + 1) };
+  const bare = bareKey(key);
+  const i = bare.lastIndexOf("#");
+  return { repo: bare.slice(0, i), number: bare.slice(i + 1) };
 }
 
 export function reconcileOrphans(statePath: string, log: Logger): void {

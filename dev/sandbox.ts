@@ -8,6 +8,7 @@ import { join } from "node:path";
 
 // Same shims as tests/tests.sh, knobs included: GH_PR_STATUS_JSON,
 // GH_PR_VIEW_FAIL, GH_AUTH_STATUS_TEXT, GH_ORG_LIST, GH_ORG_LIST_FAIL,
+// GH_MINE_SEARCH_JSON, GH_PR_MINE_JSON, GH_PR_HEADREF_JSON,
 // CLAUDE_FAIL, CLAUDE_EMIT_DENIAL, CLAUDE_LOGGED_OUT. The gh shim logs every
 // invocation (with the GH_TOKEN it saw) to GH_CALLS; the claude shim records
 // its calls, the prompt, CLAUDE_CONFIG_DIR, and the state of testorg/demo#7 at
@@ -39,6 +40,18 @@ if [ "$1" = api ] && [ "$2" = user/teams ]; then
 fi
 if [ "$1" = pr ] && [ "$2" = view ]; then
   for a in "$@"; do
+    if [ "$a" = headRefName ]; then
+      [ "\${GH_PR_VIEW_FAIL:-0}" = 1 ] && { echo "boom" >&2; exit 1; }
+      echo "\${GH_PR_HEADREF_JSON:-{\\"headRefName\\":\\"feature\\"}}"
+      exit 0
+    fi
+    if [[ "$a" == state,isDraft* ]]; then
+      [ "\${GH_PR_VIEW_FAIL:-0}" = 1 ] && { echo "boom" >&2; exit 1; }
+      json="\${GH_PR_MINE_JSON:-}"
+      [ -n "$json" ] || json='{"state":"OPEN","isDraft":false,"headRefOid":"","headRefName":"feature","reviews":[]}'
+      echo "$json"
+      exit 0
+    fi
     if [ "$a" = headRefOid ]; then
       echo "{\"headRefOid\":\"$(git -C "$PWD" rev-parse HEAD 2>/dev/null)\"}"
       exit 0
@@ -61,6 +74,14 @@ if [ "$1" = pr ] && [ "$2" = view ]; then
   echo '{"title": "Manual PR", "url": "https://example.test/pr/42"}'
   exit 0
 fi
+# the authored-PRs search (mine view); empty unless a test scripts it, so the
+# review-request fixtures below stay undisturbed
+for a in "$@"; do
+  if [ "$a" = --author=@me ]; then
+    echo "\${GH_MINE_SEARCH_JSON:-[]}"
+    exit 0
+  fi
+done
 if [ -n "\${GH_SEARCH_JSON:-}" ]; then echo "\$GH_SEARCH_JSON"; exit 0; fi
 cat <<'JSON'
 [{"number": 7, "title": "Demo PR", "url": "https://example.test/pr/7",
@@ -89,6 +110,7 @@ for a in "$@"; do
   prev="$a"
 done
 printf '%s' "\${CLAUDE_CONFIG_DIR:-}" >"\${CFGDIR_CAPTURE:?}"
+printf '%s' "$PWD" >"\${CWD_CAPTURE:?}"
 printf '%s' "\${CLAUDE_BASH_WATCHDOG_SECONDS:-}" >"\${WATCHDOG_CAPTURE:?}"
 printf '%s' "\${GH_TOKEN:-}" >"\${GHTOKEN_CAPTURE:?}"
 bun -e 'const fs=require("fs");let s={};try{s=JSON.parse(fs.readFileSync(process.env.DOCKET_STATE_DIR+"/state.json","utf8"))}catch{};console.log((s["testorg/demo#7"]||{}).status||"absent")' >"\${STATUS_AT_CALL:?}"
@@ -151,6 +173,7 @@ export function materialize(root: string): SandboxDirs {
     PROMPT_CAPTURE: capture("prompt-capture"),
     ALLOWED_CAPTURE: capture("allowed-capture"),
     CFGDIR_CAPTURE: capture("cfgdir-capture"),
+    CWD_CAPTURE: capture("cwd-capture"),
     WATCHDOG_CAPTURE: capture("watchdog-capture"),
     GHTOKEN_CAPTURE: capture("ghtoken-capture"),
     STATUS_AT_CALL: capture("status-at-call"),

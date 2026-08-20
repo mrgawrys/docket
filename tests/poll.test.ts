@@ -72,6 +72,74 @@ test("poll: reviews run in parallel and survive the poll process exiting", async
   expect(sb.claudeCalls()).toBe(2);
 });
 
+test("poll: an owner listed twice (login in orgs) is searched once", () => {
+  const sb = makeSandbox();
+  // the gh shim's login is testuser — the same owner as the configured org
+  sb.writeConfig({
+    orgs: ["testuser"],
+    repos: { "testorg/demo": sb.demoRepo },
+  });
+  const r = sb.run(["poll", "--dry-run"]);
+  expect(r.code).toBe(0);
+  const searches = sb.ghCalls().filter((l) => l.includes("--author=@me"));
+  expect(searches).toHaveLength(1);
+});
+
+test("poll: authored PRs become open mine entries — flagged drafts, skipped unmapped, no runs", async () => {
+  const sb = makeSandbox();
+  const mineJson = JSON.stringify([
+    {
+      number: 31,
+      title: "My feature",
+      url: "https://example.test/pr/31",
+      isDraft: false,
+      repository: { nameWithOwner: "testorg/demo" },
+    },
+    {
+      number: 32,
+      title: "My draft",
+      url: "https://example.test/pr/32",
+      isDraft: true,
+      repository: { nameWithOwner: "testorg/demo" },
+    },
+    {
+      number: 33,
+      title: "Unmapped",
+      url: "https://example.test/pr/33",
+      isDraft: false,
+      repository: { nameWithOwner: "testorg/unmapped" },
+    },
+  ]);
+
+  // dry run lists mapped authored PRs (drafts included), writes nothing
+  let r = sb.run(["poll", "--dry-run"], { GH_MINE_SEARCH_JSON: mineJson });
+  expect(r.code).toBe(0);
+  expect(r.out).toContain("would track (mine): mine:testorg/demo#31");
+  expect(r.out).toContain("would track (mine): mine:testorg/demo#32");
+  expect(r.out).not.toContain("#33");
+  expect(Object.keys(sb.state())).toHaveLength(0);
+
+  // real run: open entries with branch, draft flagged, and no claude run
+  r = sb.run(["poll"], { GH_MINE_SEARCH_JSON: mineJson });
+  expect(r.code).toBe(0);
+  await sb.waitEntry("testorg/demo#7", (e) => e.status === "ready"); // review side untouched
+  const mine = sb.state()["mine:testorg/demo#31"];
+  expect(mine.status).toBe("open");
+  expect(mine.title).toBe("My feature");
+  expect(mine.branch).toBe("feature");
+  expect(mine.local_path).toBe(sb.demoRepo);
+  const draft = sb.state()["mine:testorg/demo#32"];
+  expect(draft.flags).toEqual(["draft"]);
+  expect(sb.state()["mine:testorg/unmapped#33"]).toBeUndefined();
+  expect(sb.claudeCalls()).toBe(1); // only the review-side run
+
+  // known keys are not re-created (updated_at stays put)
+  const stamped = sb.state()["mine:testorg/demo#31"].updated_at;
+  r = sb.run(["poll"], { GH_MINE_SEARCH_JSON: mineJson });
+  expect(r.code).toBe(0);
+  expect(sb.state()["mine:testorg/demo#31"].updated_at).toBe(stamped);
+});
+
 test("poll: orphaned reviewing entry (dead pid) becomes failed (scenario 6)", () => {
   const sb = makeSandbox();
   sb.writeState({

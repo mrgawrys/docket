@@ -34,6 +34,7 @@ function mount(
   real = false,
   configText = JSON.stringify(cfg),
   authWarning?: string,
+  overrides: Partial<TuiActions> = {},
 ) {
   const dir = mkdtempSync(join(tmpdir(), "docket-tui-"));
   writeFileSync(join(dir, "state.json"), JSON.stringify(state));
@@ -47,15 +48,23 @@ function mount(
   const actions: TuiActions = {
     retry: async (k) => {
       calls.push(`retry:${k}`);
-      return 0;
+      return { code: 0 };
+    },
+    review: async (k, note) => {
+      calls.push(`review:${k}${note ? `:${note}` : ""}`);
+      return { code: 0 };
+    },
+    receive: async (k, note) => {
+      calls.push(`receive:${k}${note ? `:${note}` : ""}`);
+      return { code: 0 };
     },
     poll: async () => {
       calls.push("poll");
-      return 0;
+      return { code: 0 };
     },
     sync: async () => {
       calls.push("sync");
-      return 0;
+      return { code: 0 };
     },
     dismiss: (k) => {
       calls.push(`dismiss:${k}`);
@@ -71,7 +80,7 @@ function mount(
     <App
       cfg={cfg}
       paths={p}
-      actions={actions}
+      actions={{ ...actions, ...overrides }}
       resolved={resolved}
       request={(req) => requests.push(req)}
       authWarning={authWarning}
@@ -80,10 +89,14 @@ function mount(
   return { ...r, calls, requests, paths: p };
 }
 
+// A real directory: enter refuses to resume into a clone that is gone, so a
+// made-up path would make every row's session look unavailable.
+const clone = mkdtempSync(join(tmpdir(), "docket-tui-clone-"));
+
 const entry = (over: Partial<Entry>): Entry => ({
   status: "ready",
   session_id: "s",
-  local_path: "/clone",
+  local_path: clone,
   updated_at: "2026-01-01T00:00:00Z",
   ...over,
 });
@@ -134,7 +147,7 @@ test("the cursor holds its place when the row under it is dismissed", async () =
   ui.unmount();
 });
 
-test("verbs are unavailable, with the reason shown, when the worktree or session is gone", async () => {
+test("a dead verb launches nothing and says why in the footer", async () => {
   const ui = mount({
     "acme/one#1": entry({
       status: "failed",
@@ -143,14 +156,15 @@ test("verbs are unavailable, with the reason shown, when the worktree or session
     }),
   });
   await Bun.sleep(20);
-  const frame = ui.lastFrame() ?? "";
-  expect(frame).toContain("worktree is gone: /vanished/pr-1");
-  expect(frame).toContain("no session (failed)");
+  // The reason is not on screen until asked for: the greyed key is the cue.
+  expect(ui.lastFrame() ?? "").not.toContain("worktree is gone");
 
-  // and the keys stay dead rather than launching something
   ui.stdin.write("s");
-  ui.stdin.write("d");
   await Bun.sleep(20);
+  expect(ui.lastFrame()).toMatch(/shell: .+/);
+  ui.stdin.write("\r");
+  await Bun.sleep(20);
+  expect(ui.lastFrame()).toContain("no session (failed)");
   expect(ui.requests).toEqual([]);
   ui.unmount();
 });
@@ -350,7 +364,7 @@ test("enter resolves denials only when there is no session to resume", async () 
     // a session and denials: enter belongs to the session
     "acme/one#1": entry({
       title: "One",
-      local_path: "/repo",
+      local_path: clone,
       updated_at: "2026-01-01T00:00:00Z",
       denials,
     }),
@@ -359,7 +373,7 @@ test("enter resolves denials only when there is no session to resume", async () 
       status: "failed",
       session_id: undefined,
       title: "Two",
-      local_path: "/repo",
+      local_path: clone,
       updated_at: "2026-01-02T00:00:00Z",
       denials,
     }),
@@ -386,7 +400,7 @@ test("hand-off carries every group, and r retries the PR the view was opened on"
     "acme/one#1": entry({ title: "One", updated_at: "2026-01-01T00:00:00Z" }),
     "acme/two#2": entry({
       title: "Two",
-      local_path: "/repo",
+      local_path: clone,
       updated_at: "2026-01-02T00:00:00Z",
       denials: [
         {
@@ -416,7 +430,7 @@ test("hand-off carries every group, and r retries the PR the view was opened on"
   ui.stdin.write("\r"); // one hand-off, the whole set — no per-group scope left
   await Bun.sleep(20);
   expect(ui.requests).toHaveLength(1);
-  expect(ui.requests[0]?.cwd).toBe("/repo");
+  expect(ui.requests[0]?.cwd).toBe(clone);
   expect(ui.requests[0]?.argv[1]).toContain("Bash(rg:*)");
   expect(ui.requests[0]?.argv[1]).toContain("Bash(git push:*)");
 
@@ -456,5 +470,26 @@ test("no warning line when the setup is fine", async () => {
   const ui = mount({});
   await Bun.sleep(20);
   expect(ui.lastFrame()).not.toContain("not logged in");
+  ui.unmount();
+});
+
+test("a verb that fails says so in the footer instead of clearing the status", async () => {
+  const ui = mount(
+    { "acme/one#1": entry({ title: "One" }) },
+    false,
+    JSON.stringify(cfg),
+    undefined,
+    {
+      retry: async () => ({
+        code: 1,
+        message: "cannot fetch acme/one#1 from GitHub (does the PR exist?)",
+      }),
+    },
+  );
+  ui.stdin.write("r");
+  await Bun.sleep(40);
+  // the verb reports through the frame — its own console output is displaced
+  // above it, where nobody is looking
+  expect(ui.lastFrame()).toContain("does the PR exist?");
   ui.unmount();
 });

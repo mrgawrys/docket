@@ -4,7 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { paths } from "../src/config";
 import type { DenialGroup } from "../src/denials";
-import { buildHandoff, buildResume, killEntry } from "../src/list";
+import {
+  buildFreshChat,
+  buildHandoff,
+  buildResume,
+  killEntry,
+  parsePrInput,
+} from "../src/list";
 import { makeSandbox } from "./harness";
 
 const denialGroup = (over: Partial<DenialGroup> = {}): DenialGroup => ({
@@ -30,15 +36,29 @@ test("buildResume guards and command construction", () => {
   expect(
     buildResume({ status: "failed", updated_at: "t" }, cfg),
   ).toHaveProperty("error");
+  const repo = mkdtempSync(join(tmpdir(), "docket-resume-"));
   const r = buildResume(
-    { status: "ready", session_id: "s1", local_path: "/repo", updated_at: "t" },
+    { status: "ready", session_id: "s1", local_path: repo, updated_at: "t" },
     cfg,
   );
   expect(r).toEqual({
     argv: ["/x/claude", "--resume", "s1"],
-    cwd: "/repo",
+    cwd: repo,
     env: { CLAUDE_CONFIG_DIR: "/x/home" },
   });
+  // a session outlives its directory: resuming into one that is gone would
+  // spawn claude in a nonexistent cwd, so the key goes unavailable instead
+  expect(
+    buildResume(
+      {
+        status: "ready",
+        session_id: "s1",
+        local_path: join(repo, "gone"),
+        updated_at: "t",
+      },
+      cfg,
+    ),
+  ).toHaveProperty("error");
 });
 
 test("bare docket without a terminal prints the queue instead of crashing", () => {
@@ -276,6 +296,96 @@ test("a stale already-allowed flag is not carried into the prompt", () => {
   expect((r as { argv: string[] }).argv[1]).not.toContain(
     "already in the allowlist",
   );
+});
+
+test("buildResume for a mine entry resumes in the checkout, not the clone", () => {
+  const cfg = { orgs: [], repos: {}, claude_bin: "/x/claude" };
+  const clone = mkdtempSync(join(tmpdir(), "docket-clone-"));
+  const checkout = mkdtempSync(join(tmpdir(), "docket-checkout-"));
+  const e = {
+    status: "ready" as const,
+    session_id: "s1",
+    local_path: clone,
+    checkout_path: checkout,
+    updated_at: "t",
+  };
+  expect(buildResume(e, cfg, "mine")).toMatchObject({ cwd: checkout });
+  // review kind untouched by the new field
+  expect(buildResume(e, cfg)).toMatchObject({ cwd: clone });
+  // no checkout yet: no session to resume there
+  expect(
+    buildResume({ ...e, checkout_path: undefined }, cfg, "mine"),
+  ).toHaveProperty("error");
+  // deleted by hand: the reason names the checkout, and points at R
+  const gone = buildResume(
+    { ...e, checkout_path: join(checkout, "gone") },
+    cfg,
+    "mine",
+  );
+  expect(gone).toHaveProperty("error");
+  expect((gone as { error: string }).error).toContain("R resolves");
+});
+
+test("buildFreshChat: bare claude in the checkout; error without one", () => {
+  const dir = mkdtempSync(join(tmpdir(), "docket-fresh-"));
+  const cfg = { orgs: [], repos: {}, claude_bin: "/x/claude" };
+  const r = buildFreshChat(
+    { status: "open", checkout_path: dir, updated_at: "t" },
+    cfg,
+  );
+  expect(r).toMatchObject({ argv: ["/x/claude"], cwd: dir, interactive: true });
+  expect(
+    buildFreshChat({ status: "open", updated_at: "t" }, cfg),
+  ).toHaveProperty("error");
+  expect(
+    buildFreshChat(
+      { status: "open", checkout_path: join(dir, "gone"), updated_at: "t" },
+      cfg,
+    ),
+  ).toHaveProperty("error");
+});
+
+test("parsePrInput: URL or ORG/REPO#N plus optional note; rejects bad shapes and unmapped repos", () => {
+  const cfg = { orgs: [], repos: { "acme/widgets": "/clone" } };
+  expect(parsePrInput("acme/widgets#12", cfg)).toEqual({
+    key: "acme/widgets#12",
+  });
+  expect(
+    parsePrInput(
+      "https://github.com/acme/widgets/pull/12  focus on the tests",
+      cfg,
+    ),
+  ).toEqual({ key: "acme/widgets#12", note: "focus on the tests" });
+  expect(parsePrInput("", cfg)).toHaveProperty("error");
+  expect(parsePrInput("garbage", cfg)).toMatchObject({
+    error: expect.stringContaining("cannot parse"),
+  });
+  expect(parsePrInput("acme/other#3", cfg)).toMatchObject({
+    error: expect.stringContaining("not mapped"),
+  });
+});
+
+test("printPending prints both sections", () => {
+  const sb = makeSandbox();
+  sb.writeState({
+    "testorg/demo#7": {
+      status: "ready",
+      title: "Their PR",
+      updated_at: "2026-01-01T00:00:00Z",
+    },
+    "mine:testorg/demo#9": {
+      status: "open",
+      title: "My PR",
+      updated_at: "2026-01-02T00:00:00Z",
+    },
+  });
+  // bare `docket` without a tty prints the queue instead of mounting Ink
+  const r = sb.run([]);
+  expect(r.code).toBe(0);
+  expect(r.out).toContain("queue:");
+  expect(r.out).toContain("testorg/demo#7\tready\tTheir PR");
+  expect(r.out).toContain("mine:");
+  expect(r.out).toContain("mine:testorg/demo#9\topen\tMy PR");
 });
 
 test("a group the classifier now calls write-shaped is handed off as one", () => {

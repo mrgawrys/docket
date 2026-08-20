@@ -36,6 +36,7 @@ export interface Sandbox {
   promptCapture(): string;
   allowedCapture(): string;
   cfgdirCapture(): string;
+  cwdCapture(): string;
   watchdogCapture(): string;
   ghTokenCapture(): string;
   ghCalls(): string[];
@@ -116,6 +117,7 @@ export function makeSandbox(): Sandbox {
     promptCapture: () => readFileSync(env.PROMPT_CAPTURE!, "utf8"),
     allowedCapture: () => readFileSync(env.ALLOWED_CAPTURE!, "utf8"),
     cfgdirCapture: () => readFileSync(env.CFGDIR_CAPTURE!, "utf8"),
+    cwdCapture: () => readFileSync(env.CWD_CAPTURE!, "utf8"),
     watchdogCapture: () => readFileSync(env.WATCHDOG_CAPTURE!, "utf8"),
     ghTokenCapture: () => readFileSync(env.GHTOKEN_CAPTURE!, "utf8"),
     ghCalls: () =>

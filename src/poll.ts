@@ -2,13 +2,15 @@ import { claudeAuth } from "./auth";
 import {
   ghUser,
   myTeams,
+  prView,
   reviewRequesters,
+  searchMyPrs,
   searchReviewRequests,
   type ReviewRequesters,
 } from "./github";
 import { notify } from "./notify";
 import { startReview, type Ctx } from "./reviewer";
-import { loadState } from "./state";
+import { loadState, timestamp, updateEntry, type State } from "./state";
 import { reconcile } from "./sync";
 
 // Should this candidate be skipped as "only requested via ignored teams"?
@@ -27,12 +29,60 @@ export function skipVia(
   return mine.every((t) => ignored.includes(t)) ? mine : null;
 }
 
-export async function pollCycle(ctx: Ctx, dry: boolean): Promise<void> {
-  if (!dry) reconcile(ctx);
+// Discover PRs the user authored (mapped repos only) as `open` mine entries.
+// No run ever starts here — feedback, not existence, triggers work (reconcile).
+function discoverMine(ctx: Ctx, dry: boolean, known: State): void {
+  const login = ghUser(ctx.gh);
+  if (!login) {
+    ctx.log("poll: cannot resolve GitHub login, skipping authored PRs");
+    return;
+  }
+  const seen = new Set<string>(); // one PR can match several owner searches
+  // the login may itself be listed in orgs — one search per owner is enough
+  for (const owner of new Set([...ctx.cfg.orgs, login])) {
+    for (const c of searchMyPrs(ctx.gh, owner)) {
+      const key = `mine:${c.repo}#${c.number}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (!(c.repo in ctx.cfg.repos)) continue; // unmapped repo: not listed
+      if (known[key]) continue;
+      if (dry) {
+        console.log(`would track (mine): ${key} — ${c.title}`);
+        continue;
+      }
+      // The search API has no head-ref field, so a newly discovered PR costs
+      // one pr view for its branch; reconcile keeps it fresh afterwards.
+      const info = prView<{ headRefName?: string }>(
+        ctx.gh,
+        c.repo,
+        String(c.number),
+        "headRefName",
+      );
+      updateEntry(ctx.paths.statePath, key, () => ({
+        status: "open",
+        title: c.title,
+        url: c.url,
+        local_path: ctx.cfg.repos[c.repo],
+        // Baseline the feedback cursor at discovery. Without it every review
+        // the PR ever got reads as new, and the next reconcile would address
+        // months-old feedback that is already in the branch.
+        review_at: timestamp(),
+        ...(info?.headRefName ? { branch: info.headRefName } : {}),
+        ...(c.isDraft ? { flags: ["draft"] } : {}),
+        updated_at: timestamp(),
+      }));
+      ctx.log(`TRACK ${key}: authored PR — ${c.title}`);
+    }
+  }
+}
 
+export async function pollCycle(ctx: Ctx, dry: boolean): Promise<void> {
   // Every review started while logged out fails and writes a state entry, and
   // a known key is never re-reviewed — so an auth outage silently burns the
   // whole queue. Returning first leaves those PRs to resurface next cycle.
+  // reconcile runs after this for the same reason: it starts receive runs and
+  // advances review_at past the feedback that triggered them, so a logged-out
+  // reconcile would burn the feedback exactly as it burns the review queue.
   const auth = claudeAuth(ctx.cfg);
   if ("unknown" in auth) {
     ctx.log(`auth check inconclusive (${auth.unknown}) — polling anyway`);
@@ -47,6 +97,8 @@ export async function pollCycle(ctx: Ctx, dry: boolean): Promise<void> {
     );
     return;
   }
+
+  if (!dry) await reconcile(ctx);
 
   ctx.log(`polling ${ctx.cfg.orgs.join(", ")} for review requests`);
 
@@ -78,6 +130,8 @@ export async function pollCycle(ctx: Ctx, dry: boolean): Promise<void> {
       }
     }
   }
+
+  discoverMine(ctx, dry, known);
 
   const { started, failed, skipped, synced } = ctx.counters;
   if (dry) {

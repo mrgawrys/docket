@@ -34,6 +34,8 @@ export interface Candidate {
   number: number;
   title: string;
   url: string;
+  // Only searchMyPrs keeps drafts; searchReviewRequests filters them out.
+  isDraft?: boolean;
 }
 
 function gh(ctx: GhCtx, args: string[]): string | null {
@@ -106,6 +108,88 @@ export function searchReviewRequests(ctx: GhCtx, org: string): Candidate[] {
       title: r.title,
       url: r.url,
     }));
+}
+
+// PRs the user authored under one owner (an org, or the user's own login).
+// Drafts are kept — they are listed in the mine view, only flagged. The search
+// API has no head-ref field, so the branch is fetched separately (prView) for
+// keys the poller has not seen before.
+export function searchMyPrs(ctx: GhCtx, owner: string): Candidate[] {
+  const out = gh(ctx, [
+    "search",
+    "prs",
+    "--author=@me",
+    "--state=open",
+    "--owner",
+    owner,
+    "--limit",
+    "100",
+    "--json",
+    "number,title,url,isDraft,repository",
+  ]);
+  let rows: SearchRow[] | null = null;
+  try {
+    if (out !== null) rows = JSON.parse(out) as SearchRow[];
+  } catch {
+    // fall through to the failure path
+  }
+  if (rows === null) {
+    ctx.log(`gh search (authored) failed for owner ${owner}`);
+    return [];
+  }
+  return rows.map((r) => ({
+    repo: r.repository.nameWithOwner,
+    number: r.number,
+    title: r.title,
+    url: r.url,
+    isDraft: r.isDraft,
+  }));
+}
+
+// One review someone submitted on the user's PR, flattened for decideMineSync.
+export interface PrMineInfo {
+  state: string;
+  isDraft: boolean;
+  headRefOid: string;
+  headRefName: string;
+  reviews: {
+    author: string;
+    state: string;
+    body: string;
+    submittedAt: string;
+  }[];
+}
+
+export function prMineInfo(
+  ctx: GhCtx,
+  repo: string,
+  number: string,
+): PrMineInfo | null {
+  const raw = prView<{
+    state?: string;
+    isDraft?: boolean;
+    headRefOid?: string;
+    headRefName?: string;
+    reviews?: {
+      author?: { login?: string };
+      state?: string;
+      body?: string;
+      submittedAt?: string;
+    }[];
+  }>(ctx, repo, number, "state,isDraft,headRefOid,headRefName,reviews");
+  if (!raw) return null;
+  return {
+    state: raw.state ?? "",
+    isDraft: raw.isDraft ?? false,
+    headRefOid: raw.headRefOid ?? "",
+    headRefName: raw.headRefName ?? "",
+    reviews: (raw.reviews ?? []).map((r) => ({
+      author: r.author?.login ?? "",
+      state: r.state ?? "",
+      body: r.body ?? "",
+      submittedAt: r.submittedAt ?? "",
+    })),
+  };
 }
 
 export interface ReviewRequesters {

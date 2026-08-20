@@ -7,21 +7,44 @@ export interface Binding {
   verb?: string;
 }
 
-export type KeymapView = "queue" | "denials";
+export type KeymapView = "queue" | "mine" | "denials";
 
 export const QUEUE_KEYS: Binding[] = [
   { keys: "j/k ↑/↓", label: "move" },
+  { keys: "tab", label: "my PRs" },
   { keys: "enter", label: "claude", verb: "claude" },
   { keys: "s", label: "shell", verb: "shell" },
   { keys: "d", label: "diff", verb: "diff" },
   { keys: "D", label: "denials", verb: "denials" },
   { keys: "w", label: "watch live" },
   { keys: "r", label: "retry" },
+  { keys: "n", label: "review a PR by hand" },
   { keys: "x", label: "dismiss" },
   { keys: "K", label: "kill" },
   { keys: "p", label: "poll" },
   { keys: "S", label: "sync" },
-  { keys: "?", label: "help" },
+  { keys: "?", label: "more" },
+  { keys: "q", label: "quit" },
+];
+
+// The mine view: the user's own PRs. Same movement, receive instead of retry
+// as the run verb, and every working verb aimed at the PR branch's checkout.
+export const MINE_KEYS: Binding[] = [
+  { keys: "j/k ↑/↓", label: "move" },
+  { keys: "tab", label: "queue" },
+  { keys: "enter", label: "claude", verb: "claude" },
+  { keys: "s", label: "shell", verb: "shell" },
+  { keys: "d", label: "diff", verb: "diff" },
+  { keys: "R", label: "receive now", verb: "receive" },
+  { keys: "D", label: "denials", verb: "denials" },
+  { keys: "w", label: "watch live" },
+  { keys: "r", label: "retry" },
+  { keys: "n", label: "receive a PR by hand" },
+  { keys: "x", label: "dismiss" },
+  { keys: "K", label: "kill" },
+  { keys: "p", label: "poll" },
+  { keys: "S", label: "sync" },
+  { keys: "?", label: "more" },
   { keys: "q", label: "quit" },
 ];
 
@@ -40,12 +63,16 @@ export const DENIAL_KEYS: Binding[] = [
 
 const KEYMAPS: Record<KeymapView, Binding[]> = {
   queue: QUEUE_KEYS,
+  mine: MINE_KEYS,
   denials: DENIAL_KEYS,
 };
 
-// The one-line footer: the per-entry verbs plus the way out.
+// The one-line footer: the verbs that differ between the two lists, plus the
+// way to the rest. `tab` is not here — the tab strip shows it, where the thing
+// it switches is.
 const FOOTER: Record<KeymapView, string[]> = {
-  queue: ["enter", "s", "d", "D", "w", "x", "?"],
+  queue: ["enter", "s", "d", "D", "w", "n", "?"],
+  mine: ["enter", "s", "d", "R", "D", "n", "?"],
   denials: ["j/k ↑/↓", "esc D", "?", "q"],
 };
 
@@ -64,7 +91,8 @@ export function Legend({
         return (
           <Text key={b.keys} color={off ? "gray" : undefined} dimColor={off}>
             {i > 0 ? " · " : ""}
-            <Text bold={!off}>{b.keys}</Text> {b.label}
+            <Text bold={!off}>{b.keys}</Text>
+            <Text dimColor> {b.label}</Text>
           </Text>
         );
       })}
@@ -106,6 +134,11 @@ export function Help({ unavailable }: { unavailable: Record<string, string> }) {
   return (
     <Box flexDirection="column" paddingX={1}>
       <Keys title="queue" bindings={QUEUE_KEYS} unavailable={unavailable} />
+      <Keys
+        title="my PRs view"
+        bindings={MINE_KEYS}
+        unavailable={unavailable}
+      />
       <Keys
         title="denials view"
         bindings={DENIAL_KEYS}

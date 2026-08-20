@@ -38,6 +38,11 @@ export interface Config {
   notifications?: boolean;
   review_prompt?: string;
   extra_allowed_tools?: string[];
+  // The receive side: act on reviews the user's own PRs get. Auto-runs are
+  // opt-in; the manual verb (docket receive, R) works regardless.
+  receive_enabled?: boolean;
+  receive_prompt?: string;
+  extra_receive_allowed_tools?: string[];
 }
 
 // The review task handed to claude, minus the fixed worktree hygiene that wraps
@@ -55,14 +60,67 @@ export const effectiveReviewPrompt = (cfg: Config): string =>
 // post to GitHub; the user opens the ready session and posts themselves.
 // `gh api repos/*/commits/*/pulls` is the one scoped exception: a read-only
 // commit→PR lookup reviewers reach for, with no POST meaning on that path.
+// The bare shell read verbs (ls…wc) are here because agents reach for them
+// even with Read/Grep/Glob available, and denying them buys no safety.
+// EnterWorktree/ExitWorktree: the run is told to work in a worktree, and
+// newer claude versions manage that through these tools rather than raw
+// `git worktree` calls.
 export const ALLOWED_TOOLS =
-  "Read,Grep,Glob,Task,Agent,TodoWrite,Skill(code-review),Skill(code-review:code-review),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*),Bash(gh pr list:*),Bash(gh api user:*),Bash(gh api repos/*/commits/*/pulls:*),Bash(gh search:*),Bash(gh issue view:*),Bash(gh issue list:*),Bash(git log:*),Bash(git show:*),Bash(git diff:*),Bash(git blame:*),Bash(git rev-parse:*),Bash(git fetch:*),Bash(git worktree:*),Bash(git checkout:*),Bash(git branch:*),Bash(cd:*),Bash(echo:*)";
+  "Read,Grep,Glob,Task,Agent,TodoWrite,EnterWorktree,ExitWorktree,Skill(code-review),Skill(code-review:code-review),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*),Bash(gh pr list:*),Bash(gh api user:*),Bash(gh api repos/*/commits/*/pulls:*),Bash(gh search:*),Bash(gh issue view:*),Bash(gh issue list:*),Bash(git log:*),Bash(git show:*),Bash(git diff:*),Bash(git blame:*),Bash(git rev-parse:*),Bash(git fetch:*),Bash(git worktree:*),Bash(git checkout:*),Bash(git branch:*),Bash(cd:*),Bash(echo:*),Bash(ls:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(grep:*)";
 
 // The --allowedTools value a review runs with: the read-only baseline plus any
 // configured extras. Extras are spliced in verbatim (claude's own grammar) —
 // what a custom review_prompt needs, the user allows here.
 export const effectiveAllowedTools = (cfg: Config): string =>
   [ALLOWED_TOOLS, ...(cfg.extra_allowed_tools ?? [])].join(",");
+
+// The review baseline moves working copies around on purpose — a review agent
+// makes its own worktree. A receive run never needs to: docket resolved its
+// checkout before the run started, and that checkout can be the user's own
+// clone or worktree, where a stray `git checkout` moves work out from under
+// them. So these come back off for receive.
+const CHECKOUT_MOVING = new Set([
+  "Bash(git checkout:*)",
+  "Bash(git worktree:*)",
+  "Bash(git branch:*)",
+  // the tool-level route to the same thing on newer claude versions
+  "EnterWorktree",
+  "ExitWorktree",
+]);
+
+// What a receive run may do on top of that: edit files and commit locally in
+// the PR's checkout. Deliberately absent, forever: `git push` and every
+// GitHub-write verb — the user reviews the addressed feedback and pushes
+// themselves. Note what the allowlist can and cannot promise: no push, no
+// GitHub write, and no switching another working copy are all enforced here;
+// "edits land only in this checkout" is asked for by the prompt, since Edit
+// and Write take any path they are given.
+export const RECEIVE_ALLOWED_TOOLS: string[] = [
+  ...ALLOWED_TOOLS.split(",").filter((t) => !CHECKOUT_MOVING.has(t)),
+  "Edit",
+  "Write",
+  "MultiEdit",
+  "Bash(git add:*)",
+  "Bash(git commit:*)",
+];
+
+export const effectiveReceiveAllowedTools = (cfg: Config): string[] => [
+  ...RECEIVE_ALLOWED_TOOLS,
+  ...(cfg.extra_receive_allowed_tools ?? []),
+];
+
+// The receive task body, minus the fixed checkout hygiene that wraps it
+// (see receivePrompt). {number}/{repo} are substituted at run time. Plain
+// words, no skill invocation — a receive_prompt is where a user who has a
+// review-receiving skill points at it (plus its Skill(...) allowlist entry
+// in extra_receive_allowed_tools).
+export const DEFAULT_RECEIVE_PROMPT =
+  "Address the review feedback on PR {number}: read the reviews, verify " +
+  "each point against the code, implement the changes they ask for, and " +
+  "commit the fixes locally.";
+
+export const effectiveReceivePrompt = (cfg: Config): string =>
+  cfg.receive_prompt?.trim() ? cfg.receive_prompt : DEFAULT_RECEIVE_PROMPT;
 
 export interface Paths {
   configDir: string;
@@ -219,6 +277,25 @@ export function configProblem(cfg: Config, where: string): string | null {
   ) {
     return `invalid config at ${where} — "extra_allowed_tools" must be an array of strings`;
   }
+  if (
+    cfg.extra_receive_allowed_tools !== undefined &&
+    (!Array.isArray(cfg.extra_receive_allowed_tools) ||
+      cfg.extra_receive_allowed_tools.some((t) => typeof t !== "string"))
+  ) {
+    return `invalid config at ${where} — "extra_receive_allowed_tools" must be an array of strings`;
+  }
+  if (
+    cfg.receive_enabled !== undefined &&
+    typeof cfg.receive_enabled !== "boolean"
+  ) {
+    return `invalid config at ${where} — "receive_enabled" must be true or false`;
+  }
+  if (
+    cfg.receive_prompt !== undefined &&
+    typeof cfg.receive_prompt !== "string"
+  ) {
+    return `invalid config at ${where} — "receive_prompt" must be a string`;
+  }
   return null;
 }
 
@@ -295,7 +372,7 @@ export const claudeEnv = (cfg: Config): Record<string, string> => ({
 });
 
 export const runLogPath = (p: Paths, key: string): string =>
-  join(p.stateDir, "runs", key.replace(/[/#]/g, "-") + ".jsonl");
+  join(p.stateDir, "runs", key.replace(/[/#:]/g, "-") + ".jsonl");
 
 export const notifyEnabled = (
   cfg: Config,

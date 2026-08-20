@@ -24,6 +24,8 @@ export type Spawner = (req: SuspendRequest) => Promise<SpawnOutcome>;
 export interface Mounted {
   waitUntilExit(): Promise<unknown>;
   unmount(): void;
+  // Erases the rendered frame; unmount alone leaves it on screen.
+  clear(): void;
 }
 
 export type Mount = (
@@ -95,9 +97,14 @@ export async function suspendLoop(
     let ui: Mounted | undefined;
     ui = mount((req) => {
       pending = req;
+      ui?.clear();
       ui?.unmount();
     }, notice);
-    if (pending) ui.unmount(); // requested during the first render, before ui was set
+    if (pending) {
+      // requested during the first render, before ui was set
+      ui.clear();
+      ui.unmount();
+    }
     await ui.waitUntilExit();
     if (!pending) return code;
 
@@ -105,5 +112,9 @@ export async function suspendLoop(
     const out = await spawn(pending);
     notice = out.error ?? failureOf(pending, out.code);
     code = notice ? out.code : 0;
+    // The child left the cursor wherever it stopped; without this the next
+    // frame renders under its output, and under the banner, instead of where
+    // the queue was.
+    if (process.stdout.isTTY) process.stdout.write("\x1b[2J\x1b[H");
   }
 }

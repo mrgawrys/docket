@@ -142,7 +142,26 @@ entry themselves is the only way one gets in. If a config is already there,
 merge your proposal into its existing `extra_allowed_tools` rather than
 replacing them — hand-set entries survive.
 
-## Step 5 — Write the config
+## Step 5 — Reviews you receive
+
+docket can also act on the reviews the user's **own** PRs get: when someone
+leaves actionable feedback, it addresses that feedback headlessly in the
+PR's checkout — edits and local commits only; it never pushes and never
+writes to GitHub. Ask whether the user wants that (`receive_enabled: true`);
+the default is off, and off means writing no key at all.
+
+If they opt in, offer the same default/custom choice as step 4: the default
+task reads the reviews, makes the changes they ask for, and commits locally;
+a custom task becomes `receive_prompt` (`{number}` and `{repo}` are
+substituted at run time). `receive_prompt` is also where a skill invocation
+goes if the user has a review-receiving skill they want run instead.
+
+**If the config already has a `receive_prompt`, never overwrite or delete
+it** — show it and keep it exactly as it is. A wizard answer deleting a
+hand-written prompt has happened before; present values are read-only unless
+the user explicitly asks to edit them.
+
+## Step 6 — Write the config
 
 Write `{{CONFIG_PATH}}`, creating `{{CONFIG_DIR}}` if it isn't there. Include
 **only the keys you actually determined**:
@@ -153,6 +172,9 @@ Write `{{CONFIG_PATH}}`, creating `{{CONFIG_DIR}}` if it isn't there. Include
 - `gh_account` — only when the user chose among several accounts
 - `review_prompt` and `extra_allowed_tools` — only when the user chose a
   custom task in step 4
+- `receive_enabled` — only when the user opted in during step 5;
+  `receive_prompt` only for a NEW custom receive task (an existing one is
+  kept verbatim, per step 5)
 
 ```json
 {
@@ -169,7 +191,7 @@ show the user the finished file.
 If a config is already there, read it first and keep any keys you did not
 determine yourself; the user may have set them by hand.
 
-## Step 6 — Verify
+## Step 7 — Verify
 
 Run doctor and show the user its output verbatim:
 

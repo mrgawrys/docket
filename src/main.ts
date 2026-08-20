@@ -15,16 +15,20 @@ import {
 } from "./reviewer";
 import { offCommand, onCommand } from "./scheduler";
 import {
+  bareKey,
   ensureState,
+  entryKind,
   loadState,
   normalizeKey,
   reconcileOrphans,
   setStatus,
   splitKey,
+  timestamp,
+  updateEntry,
 } from "./state";
 import { logCommand, statusCommand, watchCommand } from "./status";
-import { reconcile } from "./sync";
-import { runTui } from "./tui/app";
+import { reconcile, startReceive } from "./sync";
+import { runTui, type ActionResult } from "./tui/app";
 import { childOwnsTerminal } from "./tui/suspend";
 import { promptCommand } from "./wizard/prompt";
 import { resolveConfig } from "./wizard/trigger";
@@ -39,6 +43,9 @@ Usage:
                             in parallel as detached background processes
   docket sync               reconcile state with GitHub
   docket review <pr> [note] force-review a PR (org/repo#N or a GitHub PR URL)
+  docket receive <pr> [note] act on review feedback on your own PR (addresses
+                            the feedback in the PR's checkout; edits +
+                            local commits only, never pushes)
   docket retry <key>        re-run a failed review
   docket dismiss <key>      mark done + remove the PR worktree
   docket doctor             check setup: config, clones, gh, claude, code-review plugin
@@ -155,15 +162,49 @@ function keyArg(raw: string | undefined, usage: string): string | null {
   }
 }
 
-const startedMsg = (key: string, result: StartResult): number => {
+// Where a verb's user-facing lines go. The CLI prints them; the TUI hands in
+// a collector instead, because Ink owns the terminal — a console.log there
+// lands in the middle of the rendered frame and the user never sees it as a
+// message.
+export interface Out {
+  ok: (line: string) => void;
+  err: (line: string) => void;
+}
+const CONSOLE: Out = {
+  ok: (line) => console.log(line),
+  err: (line) => console.error(line),
+};
+
+const startedMsg = (
+  key: string,
+  result: StartResult,
+  out: Out = CONSOLE,
+): number => {
   if (result === "started") {
-    console.log(
-      `${key}: review started in the background — you'll get a notification; follow with: docket watch`,
+    out.ok(
+      `${key}: run started in the background — you'll get a notification; follow with: docket watch`,
     );
   } else if (result === "already-running") {
-    console.log(`${key}: a review is already running`);
+    out.ok(`${key}: a run is already in flight`);
   }
   return result === "spawn-failed" ? 1 : 0;
+};
+
+// startedMsg for receive runs: a skip carries a reason (blocked checkout,
+// unmapped repo) just written to the entry — report it and fail, whichever
+// door (receive, retry, the TUI's r) the run came through.
+const receiveStartedMsg = (
+  ctx: Ctx,
+  key: string,
+  result: StartResult,
+  out: Out = CONSOLE,
+): number => {
+  if (result === "skipped") {
+    const e = loadState(ctx.paths.statePath)[key];
+    out.err(`${key}: not started — ${e?.error ?? "skipped"}`);
+    return 1;
+  }
+  return startedMsg(key, result, out);
 };
 
 // Cycle bodies shared by the subcommands and the interactive menu.
@@ -177,17 +218,30 @@ const pollLocked = (ctx: Ctx, dry: boolean): Promise<number> =>
 const syncLocked = (ctx: Ctx): Promise<number> =>
   runLocked(ctx, async () => {
     resetCounters(ctx);
-    reconcile(ctx);
+    await reconcile(ctx);
     ctx.log(`sync complete: ${ctx.counters.synced} updated`);
     return 0;
   });
 
-const retryKey = (ctx: Ctx, key: string, note?: string): Promise<number> =>
+const retryKey = (
+  ctx: Ctx,
+  key: string,
+  note?: string,
+  out: Out = CONSOLE,
+): Promise<number> =>
   runUnlocked(ctx, async () => {
     const entry = loadState(ctx.paths.statePath)[key];
     if (!entry) {
-      console.error(`unknown key: ${key}`);
+      out.err(`unknown key: ${key}`);
       return 1;
+    }
+    if (entryKind(key) === "mine") {
+      return receiveStartedMsg(
+        ctx,
+        key,
+        await startReceive(ctx, key, entry, note),
+        out,
+      );
     }
     const { repo } = splitKey(key);
     const result = await startReview(
@@ -198,7 +252,50 @@ const retryKey = (ctx: Ctx, key: string, note?: string): Promise<number> =>
       entry.url ?? "",
       note,
     );
-    return startedMsg(key, result);
+    return startedMsg(key, result, out);
+  });
+
+// Start a receive run for one of the user's own PRs — the mirror of `docket
+// review`. The key is stored under the mine: prefix whatever shape came in.
+const receiveKey = (
+  ctx: Ctx,
+  rawKey: string,
+  note: string | undefined,
+  out: Out = CONSOLE,
+): Promise<number> =>
+  runUnlocked(ctx, async () => {
+    const key = entryKind(rawKey) === "mine" ? rawKey : `mine:${rawKey}`;
+    const { repo, number } = splitKey(key);
+    // Refuse before anything is written: a typo'd repo must not leave a
+    // permanent skipped row in the mine view. An already-tracked entry may
+    // carry its own local_path, so only new keys are gated on the mapping.
+    if (!(repo in ctx.cfg.repos) && !loadState(ctx.paths.statePath)[key]) {
+      out.err(`${repo} is not mapped in "repos" — add its clone path`);
+      return 1;
+    }
+    const info = prView<{ title?: string; url?: string }>(
+      ctx.gh,
+      repo,
+      number,
+      "title,url",
+    );
+    if (!info) {
+      out.err(`cannot fetch ${key} from GitHub (does the PR exist?)`);
+      return 1;
+    }
+    updateEntry(ctx.paths.statePath, key, (e) => ({
+      ...(e ?? { status: "open" as const }),
+      title: info.title ?? e?.title ?? "",
+      url: info.url ?? e?.url ?? "",
+      updated_at: timestamp(),
+    }));
+    const entry = loadState(ctx.paths.statePath)[key]!;
+    return receiveStartedMsg(
+      ctx,
+      key,
+      await startReceive(ctx, key, entry, note),
+      out,
+    );
   });
 
 const help: Command = async () => {
@@ -206,42 +303,58 @@ const help: Command = async () => {
   return 0;
 };
 
+// Force-review a PR by key — `docket review` and the TUI's `n` (queue view).
+const reviewKey = (
+  ctx: Ctx,
+  key: string,
+  note: string | undefined,
+  out: Out = CONSOLE,
+): Promise<number> =>
+  runUnlocked(ctx, async () => {
+    const { repo, number } = splitKey(key);
+    const info = prView<{ title?: string; url?: string }>(
+      ctx.gh,
+      repo,
+      number,
+      "title,url",
+    );
+    if (!info) {
+      out.err(`cannot fetch ${key} from GitHub (does the PR exist?)`);
+      return 1;
+    }
+    const result = await startReview(
+      ctx,
+      key,
+      repo,
+      info.title ?? "",
+      info.url ?? "",
+      note,
+    );
+    return startedMsg(key, result, out);
+  });
+
 const review: Command = (args) =>
-  withCtx((ctx) =>
-    runUnlocked(ctx, async () => {
-      const key = keyArg(
-        args[0],
-        "usage: docket review ORG/REPO#NUM|URL [note]",
-      );
-      if (!key) return 1;
-      const { repo, number } = splitKey(key);
-      const info = prView<{ title?: string; url?: string }>(
-        ctx.gh,
-        repo,
-        number,
-        "title,url",
-      );
-      if (!info) {
-        console.error(`cannot fetch ${key} from GitHub (does the PR exist?)`);
-        return 1;
-      }
-      const result = await startReview(
-        ctx,
-        key,
-        repo,
-        info.title ?? "",
-        info.url ?? "",
-        args[1],
-      );
-      return startedMsg(key, result);
-    }),
-  );
+  withCtx((ctx) => {
+    const key = keyArg(args[0], "usage: docket review ORG/REPO#NUM|URL [note]");
+    if (!key) return Promise.resolve(1);
+    return reviewKey(ctx, bareKey(key), args[1]);
+  });
 
 const retry: Command = (args) =>
   withCtx(async (ctx) => {
     const key = keyArg(args[0], "usage: docket retry ORG/REPO#NUM [note]");
     if (!key) return 1;
     return retryKey(ctx, key, args[1]);
+  });
+
+const receive: Command = (args) =>
+  withCtx(async (ctx) => {
+    const key = keyArg(
+      args[0],
+      "usage: docket receive ORG/REPO#NUM|URL [note]",
+    );
+    if (!key) return 1;
+    return receiveKey(ctx, key, args[1]);
   });
 
 // internal: the detached runner `startReview` spawns — one foreground review
@@ -309,6 +422,7 @@ const off: Command = async () => offCommand();
 const commands: Record<string, Command> = {
   help,
   review,
+  receive,
   retry,
   exec,
   sync,
@@ -323,14 +437,31 @@ const commands: Record<string, Command> = {
   off,
 };
 
+// Run a verb with its console output captured, so the TUI can show the last
+// line it produced instead of letting it land in the frame.
+const collected = async (
+  fn: (out: Out) => Promise<number>,
+): Promise<ActionResult> => {
+  const lines: string[] = [];
+  const push = (line: string) => {
+    lines.push(line);
+  };
+  const code = await fn({ ok: push, err: push });
+  return { code, message: lines.at(-1) };
+};
+
 async function main(): Promise<number> {
   const [cmd, ...rest] = Bun.argv.slice(2);
   if (cmd === undefined)
     return withCtx((ctx) =>
       runTui(ctx, {
-        retry: (key) => retryKey(ctx, key),
-        poll: () => pollLocked(ctx, false),
-        sync: () => syncLocked(ctx),
+        retry: (key) => collected((out) => retryKey(ctx, key, undefined, out)),
+        review: (key, note) =>
+          collected((out) => reviewKey(ctx, bareKey(key), note, out)),
+        receive: (key, note) =>
+          collected((out) => receiveKey(ctx, key, note, out)),
+        poll: () => collected(() => pollLocked(ctx, false)),
+        sync: () => collected(() => syncLocked(ctx)),
         dismiss: (key) => dismissKey(ctx, key),
         kill: (key) => killEntry(ctx, key).message,
       }),

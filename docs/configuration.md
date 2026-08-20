@@ -112,6 +112,59 @@ dropped from its proposal before you see it. That filter is best-effort, not
 a guarantee — allowlist entries are prefix patterns, so reading the proposal
 before accepting is the real gate. Empty = baseline only.
 
+## receive_enabled
+
+Turn on automatic **receive runs**: when someone leaves actionable feedback
+on a PR you authored (a review that isn't a bare comment-less approval),
+docket addresses that feedback headlessly in the PR's checkout, so a
+session with the feedback already addressed is waiting in the TUI's *my PRs*
+view (`tab`). Default `false`.
+
+The run may edit files and commit locally in the checkout — it never pushes
+and never writes to GitHub; you review its work and push yourself. Drafts are
+listed but never auto-run. The manual paths — `docket receive`, the mine
+view's `R` — work regardless of this key.
+
+If the PR's branch is already checked out somewhere in your clone, that
+checkout is used; a dirty checkout, or one ahead of the PR head, blocks the
+run (`skipped`, with the reason shown) rather than risking your work. Only
+when the branch exists nowhere locally does docket create its own worktree
+under `~/.local/state/docket/checkouts/` (removed on dismiss).
+
+## receive_prompt
+
+The receive task handed to claude. Omit (or leave blank) to run the default:
+
+`Address the review feedback on PR {number}: read the reviews, verify each
+point against the code, implement the changes they ask for, and commit the
+fixes locally.`
+
+Tokens `{number}` and `{repo}` are substituted, like `review_prompt`.
+
+The wrapper around the task is fixed and not configurable: work only in the
+PR's checkout, edits and local commits allowed, never push, never write to
+GitHub — plus the same triage-summary block every run ends with.
+
+This key is also where a skill invocation goes if you have a review-receiving
+skill you'd rather run — e.g. `Run /my-receive-skill on PR {number}.` — with
+its `Skill(...)` entry added to `extra_receive_allowed_tools` (doctor checks
+that a `Skill(plugin:name)` entry's plugin is installed, whether or not
+`receive_enabled` is on — the manual verbs run this prompt either way). The
+wizard never overwrites an existing custom value here.
+
+## extra_receive_allowed_tools
+
+Entries appended to the **receive** run's allowlist, in the same grammar as
+`extra_allowed_tools`. The receive baseline is the review baseline plus
+`Edit`, `Write`, `MultiEdit`, `Bash(git add:*)` and `Bash(git commit:*)`,
+minus `Bash(git checkout:*)`, `Bash(git worktree:*)`, `Bash(git branch:*)`,
+`EnterWorktree` and `ExitWorktree`
+— a receive run is already standing in the checkout docket resolved for it,
+and that checkout may be your own worktree. It deliberately contains no push
+and no GitHub-write verbs either, and a denied `git push` in the mine view's
+denials is labeled as the guardrail working, not offered as a rule.
+Empty = baseline only.
+
 ## openers
 
 What the queue's `s` and `d` keys run, as a chain of candidate commands per

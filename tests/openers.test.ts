@@ -5,6 +5,7 @@ import {
   DEFAULT_OPENERS,
   effectiveOpeners,
   openerContext,
+  resolveEntryWorktree,
   resolveOpeners,
   resolveWorktree,
   type OpenerContext,
@@ -137,6 +138,36 @@ test("worktree resolution distinguishes never-had-one from vanished", () => {
   expect(resolveWorktree(entry({ worktrees: ["/here"] }), () => true)).toEqual({
     path: "/here",
   });
+});
+
+test("a mine entry's verbs open its checkout, never worktrees[]", () => {
+  const entry: Entry = {
+    status: "open",
+    checkout_path: "/checkouts/feature",
+    worktrees: ["/checkouts/feature"],
+    updated_at: "t",
+  };
+  expect(resolveEntryWorktree("mine:acme/demo#7", entry, () => true)).toEqual({
+    path: "/checkouts/feature",
+  });
+  expect(
+    resolveEntryWorktree(
+      "mine:acme/demo#7",
+      { status: "open", updated_at: "t" },
+      () => true,
+    ),
+  ).toEqual({ missing: "no checkout yet (open)" });
+  expect(resolveEntryWorktree("mine:acme/demo#7", entry, () => false)).toEqual({
+    missing: "checkout is gone: /checkouts/feature",
+  });
+  // review keys keep the worktree path
+  expect(
+    resolveEntryWorktree(
+      "acme/demo#7",
+      { status: "ready", worktrees: ["/wt"], updated_at: "t" },
+      () => true,
+    ),
+  ).toEqual({ path: "/wt" });
 });
 
 test("the base commit comes from merge-base, trying each ref that could exist", () => {

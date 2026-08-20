@@ -1,4 +1,9 @@
-import { effectiveAllowedTools, type Config } from "./config";
+import {
+  effectiveAllowedTools,
+  effectiveReceiveAllowedTools,
+  type Config,
+} from "./config";
+import type { EntryKind } from "./state";
 
 // What a headless review's permission denials say, read off its stream-json run
 // log after the fact. Reviews run with `--permission-mode dontAsk` and a
@@ -215,33 +220,47 @@ export function isWriteShaped(suggestion: string): boolean {
   return WRITE_SHAPED.some((re) => re.test(command));
 }
 
-// Is this entry already in the allowlist the review ran with — the baseline or
-// the user's extras? Exported because the same question decides whether the UI
-// may offer to add it.
-export function isAllowed(suggestion: string, cfg: Config): boolean {
-  return effectiveAllowedTools(cfg)
-    .split(",")
-    .some((entry) => entry.trim() === suggestion);
+// Is this entry already in the allowlist the run ran with — the kind's
+// baseline or the user's extras for that kind? Exported because the same
+// question decides whether the UI may offer to add it.
+export function isAllowed(
+  suggestion: string,
+  cfg: Config,
+  kind: EntryKind = "review",
+): boolean {
+  const list =
+    kind === "mine"
+      ? effectiveReceiveAllowedTools(cfg)
+      : effectiveAllowedTools(cfg).split(",");
+  return list.some((entry) => entry.trim() === suggestion);
 }
 
-// A group's suggestion, added to the config text on disk. JSON.parse/stringify
-// round-trips key order (object keys iterate in the order JSON.parse read
-// them), so this survives without a diff-preserving JSON library.
+// A group's suggestion, added to the config text on disk — into the extras
+// key of the kind whose run was denied. JSON.parse/stringify round-trips key
+// order (object keys iterate in the order JSON.parse read them), so this
+// survives without a diff-preserving JSON library.
 export function applySuggestion(
   configText: string,
   suggestion: string,
+  kind: EntryKind = "review",
 ): string {
   const cfg = JSON.parse(configText) as Config;
-  const tools = cfg.extra_allowed_tools ?? [];
+  const field =
+    kind === "mine" ? "extra_receive_allowed_tools" : "extra_allowed_tools";
+  const tools = cfg[field] ?? [];
   if (!tools.some((t) => t.trim() === suggestion)) {
-    cfg.extra_allowed_tools = [...tools, suggestion];
+    cfg[field] = [...tools, suggestion];
   }
   return JSON.stringify(cfg, null, 2) + "\n";
 }
 
 // The denials of one run, grouped and classified: what to suggest, how often it
 // bit, and the two reasons a suggestion must not be applied blindly.
-export function denialGroups(logText: string, cfg: Config): DenialGroup[] {
+export function denialGroups(
+  logText: string,
+  cfg: Config,
+  kind: EntryKind = "review",
+): DenialGroup[] {
   const groups = new Map<string, DenialGroup>();
   for (const call of parseDenials(logText)) {
     const command =
@@ -257,7 +276,7 @@ export function denialGroups(logText: string, cfg: Config): DenialGroup[] {
         count: 0,
         examples: [],
         writeShaped: isWriteShaped(suggestion),
-        alreadyAllowed: isAllowed(suggestion, cfg),
+        alreadyAllowed: isAllowed(suggestion, cfg, kind),
       };
       groups.set(suggestion, group);
     }
