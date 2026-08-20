@@ -183,6 +183,27 @@ export function cleanupEntry(
   );
 
   Bun.spawnSync(["git", "-C", clone, "worktree", "prune"], { stderr: "pipe" });
+
+  // A checkout docket created also created its branch (`worktree add -b`), and
+  // `worktree remove` leaves that ref behind — which makes every later receive
+  // for the same PR refuse with "exists locally but isn't checked out". Only
+  // the branch of a checkout we own is ever deleted; the user's own worktree
+  // is not in worktrees[] and its branch is not ours to touch.
+  const ownedCheckout =
+    !!entry?.checkout_path && recorded.includes(entry.checkout_path);
+  if (
+    entryKind(key) === "mine" &&
+    entry?.branch &&
+    ownedCheckout &&
+    !stuck.length
+  ) {
+    const d = Bun.spawnSync(
+      ["git", "-C", clone, "branch", "-D", entry.branch],
+      { stderr: "pipe" },
+    );
+    if (d.exitCode === 0)
+      ctx.log(`${logPrefix} ${key}: deleted branch ${entry.branch}`);
+  }
   return stuck;
 }
 

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   DEFAULT_RECEIVE_PROMPT,
@@ -394,4 +394,32 @@ test("a clean receive run clears the previous run's summary and denials", async 
   expect(e.review_at).toBe("2026-07-19T10:00:00Z");
   expect(e.reviewer).toBe("colleague");
   expect(e.branch).toBe("feature");
+});
+
+test("dismissing a mine entry frees its branch for the next receive", async () => {
+  const sb = makeSandbox();
+  const { clone, mineJson } = prScenario(sb);
+
+  const first = sb.run(["receive", "testorg/demo#7"], {
+    GH_PR_MINE_JSON: mineJson,
+  });
+  expect(first.code).toBe(0);
+  const e = await sb.waitEntry(
+    "mine:testorg/demo#7",
+    (x) => x.status === "ready",
+  );
+  expect(e.worktrees).toEqual([realpathSync(e.checkout_path)]);
+
+  expect(sb.run(["dismiss", "mine:testorg/demo#7"]).code).toBe(0);
+  // the worktree docket created is gone, and so is the branch it created with
+  // it — otherwise the next receive refuses forever
+  expect(existsSync(e.checkout_path)).toBe(false);
+  expect(git(clone, "branch", "--list", "feature")).toBe("");
+
+  const again = sb.run(["receive", "testorg/demo#7"], {
+    GH_PR_MINE_JSON: mineJson,
+  });
+  expect(again.err).not.toContain("exists locally");
+  expect(again.code).toBe(0);
+  await sb.waitEntry("mine:testorg/demo#7", (x) => x.status === "ready");
 });
