@@ -226,6 +226,77 @@ export const scenarios: Record<string, Scenario> = {
     hint: "answer the offer — the gh shim plays GitHub",
     interactiveOnly: true,
   },
+  mine: {
+    description:
+      "your authored PRs: feedback waiting, a finished receive run, a draft, a blocked checkout",
+    config: cfg({ "testorg/api": "repos/api", "testorg/web": "repos/web" }),
+    state: {
+      // one review-kind row so tabbing back shows a populated queue
+      "testorg/api#412": entry({
+        title: "Add rate limiting to the public API",
+        url: "https://example.test/api/pull/412",
+        local_path: "repos/api",
+        summary: {
+          headline: "Token bucket resets on every deploy — limits are advisory",
+          issues: 3,
+          risk: "high",
+        },
+        updated_at: "2026-08-18T09:12:00Z",
+      }),
+      "mine:testorg/api#77": entry({
+        status: "changes-requested",
+        session_id: undefined,
+        title: "Split the poller into discover and reconcile",
+        url: "https://example.test/api/pull/77",
+        local_path: "repos/api",
+        branch: "poller-split",
+        checkout_path: "repos/api-77",
+        reviewer: "carol",
+        review_at: "2026-08-19T16:20:00Z",
+        updated_at: "2026-08-19T16:21:00Z",
+      }),
+      "mine:testorg/web#98": entry({
+        status: "ready",
+        title: "Migrate the settings page off the legacy grid",
+        url: "https://example.test/web/pull/98",
+        local_path: "repos/web",
+        branch: "settings-grid",
+        checkout_path: "repos/web-98",
+        worktrees: ["repos/web-98"],
+        reviewer: "dave",
+        review_at: "2026-08-19T11:05:00Z",
+        summary: {
+          headline: "Addressed both review threads; two commits, ready to push",
+          issues: 2,
+          risk: "low",
+        },
+        updated_at: "2026-08-19T11:30:00Z",
+      }),
+      "mine:testorg/web#101": entry({
+        status: "skipped",
+        session_id: undefined,
+        error: "checkout dirty: repos/web",
+        title: "Inline the notification templates",
+        url: "https://example.test/web/pull/101",
+        local_path: "repos/web",
+        branch: "notif-templates",
+        reviewer: "carol",
+        review_at: "2026-08-19T18:02:00Z",
+        updated_at: "2026-08-19T18:03:00Z",
+      }),
+      "mine:testorg/api#80": entry({
+        status: "open",
+        session_id: undefined,
+        title: "Sketch: split app.tsx by view",
+        url: "https://example.test/api/pull/80",
+        local_path: "repos/api",
+        branch: "app-split",
+        flags: ["draft"],
+        updated_at: "2026-08-19T19:00:00Z",
+      }),
+    },
+    hint: "tab toggles between the review queue and your PRs",
+  },
 };
 
 const materializePath = (root: string, p: string): string => {
@@ -260,6 +331,8 @@ export function seedScenario(
     const out: Entry = { ...e };
     if (out.local_path)
       out.local_path = materializePath(dirs.root, out.local_path);
+    if (out.checkout_path)
+      out.checkout_path = materializePath(dirs.root, out.checkout_path);
     if (out.worktrees)
       out.worktrees = out.worktrees.map((w) => materializePath(dirs.root, w));
     if (out.status === "reviewing" && opts.runningPid !== undefined)
