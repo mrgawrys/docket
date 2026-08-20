@@ -41,6 +41,16 @@ export function buildResume(
       error: `no session (${entry.status}) — r retries, docket doctor checks your setup`,
     };
   }
+  // A session id outlives the directory it ran in: delete the checkout by hand
+  // and enter would spawn claude in a cwd that no longer exists.
+  if (!existsSync(cwd)) {
+    return {
+      error:
+        kind === "mine"
+          ? `checkout is gone (${cwd}) — R resolves a new one`
+          : `worktree is gone (${cwd}) — r re-reviews`,
+    };
+  }
   return {
     argv: [claudeBin(cfg), "--resume", entry.session_id],
     cwd,

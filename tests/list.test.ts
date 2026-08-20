@@ -36,15 +36,29 @@ test("buildResume guards and command construction", () => {
   expect(
     buildResume({ status: "failed", updated_at: "t" }, cfg),
   ).toHaveProperty("error");
+  const repo = mkdtempSync(join(tmpdir(), "docket-resume-"));
   const r = buildResume(
-    { status: "ready", session_id: "s1", local_path: "/repo", updated_at: "t" },
+    { status: "ready", session_id: "s1", local_path: repo, updated_at: "t" },
     cfg,
   );
   expect(r).toEqual({
     argv: ["/x/claude", "--resume", "s1"],
-    cwd: "/repo",
+    cwd: repo,
     env: { CLAUDE_CONFIG_DIR: "/x/home" },
   });
+  // a session outlives its directory: resuming into one that is gone would
+  // spawn claude in a nonexistent cwd, so the key goes unavailable instead
+  expect(
+    buildResume(
+      {
+        status: "ready",
+        session_id: "s1",
+        local_path: join(repo, "gone"),
+        updated_at: "t",
+      },
+      cfg,
+    ),
+  ).toHaveProperty("error");
 });
 
 test("bare docket without a terminal prints the queue instead of crashing", () => {
@@ -286,22 +300,30 @@ test("a stale already-allowed flag is not carried into the prompt", () => {
 
 test("buildResume for a mine entry resumes in the checkout, not the clone", () => {
   const cfg = { orgs: [], repos: {}, claude_bin: "/x/claude" };
+  const clone = mkdtempSync(join(tmpdir(), "docket-clone-"));
+  const checkout = mkdtempSync(join(tmpdir(), "docket-checkout-"));
   const e = {
     status: "ready" as const,
     session_id: "s1",
-    local_path: "/clone",
-    checkout_path: "/checkouts/feature",
+    local_path: clone,
+    checkout_path: checkout,
     updated_at: "t",
   };
-  expect(buildResume(e, cfg, "mine")).toMatchObject({
-    cwd: "/checkouts/feature",
-  });
+  expect(buildResume(e, cfg, "mine")).toMatchObject({ cwd: checkout });
   // review kind untouched by the new field
-  expect(buildResume(e, cfg)).toMatchObject({ cwd: "/clone" });
+  expect(buildResume(e, cfg)).toMatchObject({ cwd: clone });
   // no checkout yet: no session to resume there
   expect(
     buildResume({ ...e, checkout_path: undefined }, cfg, "mine"),
   ).toHaveProperty("error");
+  // deleted by hand: the reason names the checkout, and points at R
+  const gone = buildResume(
+    { ...e, checkout_path: join(checkout, "gone") },
+    cfg,
+    "mine",
+  );
+  expect(gone).toHaveProperty("error");
+  expect((gone as { error: string }).error).toContain("R resolves");
 });
 
 test("buildFreshChat: bare claude in the checkout; error without one", () => {
