@@ -312,9 +312,9 @@ export function App({
     notice !== undefined && footer === notice ? "red" : "yellow";
   // The frame is as tall as its content, never the terminal: the queue takes
   // its rows, the panel its lines down to a floor, and the keys follow right
-  // under. Fixed rows: the tab strip, two bars, the blank before the legend,
-  // the legend, the footer row — and the row Ink must leave spare.
-  const fixedRows = 7;
+  // under. Fixed rows: the tab strip, four bars, the legend, the footer row,
+  // and the row Ink must leave spare.
+  const fixedRows = 8;
   const queueHeight = Math.max(
     1,
     Math.min(rows.length || 1, 10, height - fixedRows - 1),
@@ -585,7 +585,9 @@ export function App({
           <Panel lines={panel} minHeight={Math.min(PANEL_HEIGHT, panelHeight)} />
         </>
       )}
-      <Text> </Text>
+      {/* the keys are a zone like the other two: a rule of their own, not a
+          blank row, is what sets them off from the panel's prose */}
+      <Bar label="keys" width={width} />
       <Legend
         view={view === "denials" ? "denials" : list}
         unavailable={unavailable}
@@ -604,6 +606,7 @@ export function App({
           {footer ?? " "}
         </Text>
       )}
+      <Bar width={width} />
     </Box>
   );
 }
