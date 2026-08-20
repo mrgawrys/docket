@@ -101,13 +101,15 @@ one finishes.
 
 ## Day to day
 
-`docket` opens the queue. Each row carries the review's verdict at a glance —
+`docket` opens the queue. A tab strip at the top names both lists — the
+review queue and the PRs you authored — with their counts; `tab` switches.
+Each row carries the review's verdict at a glance —
 how many issues it would flag, and the risk it graded the PR — and the panel
 under the list shows the highlighted PR's headline finding. It is a triage
 screen: `enter` is how a review actually gets read.
 
 ```
-j/k ↑/↓  move          tab  my PRs         enter  claude    s  shell
+j/k ↑/↓  move          tab  other list     enter  claude    s  shell
 d  diff                D  denials          w  watch live    r  retry
 n  review a PR by hand x  dismiss          K  kill          p  poll
 S  sync                ?  help             q  quit
@@ -122,7 +124,7 @@ removes its worktree; `K` kills a running review before it burns more tokens.
 followed by a note) to review it by hand. A verb this machine cannot run is
 greyed out with the reason shown, rather than failing after the keypress.
 
-**`tab` switches to the mirror view: PRs you authored.** Each row shows the
+**`tab` switches to the other list: PRs you authored.** Each row shows the
 newest reviewer verdict on your PR; with
 [`receive_enabled`](docs/configuration.md#receive_enabled), actionable
 feedback triggers a headless receive run in that PR's checkout — it addresses

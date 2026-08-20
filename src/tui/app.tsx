@@ -104,6 +104,34 @@ function Bar({
   );
 }
 
+// Both lists named, with their counts, the open one filled in. This is where
+// `tab` lives: the key is shown next to what it switches, not in the verb list.
+function Tabs({
+  list,
+  counts,
+}: {
+  list: "queue" | "mine";
+  counts: Record<"queue" | "mine", number>;
+}) {
+  const tab = (name: "queue" | "mine", label: string) =>
+    list === name ? (
+      <Text backgroundColor="cyan" color="black" bold>
+        {` ${label} ${counts[name]} `}
+      </Text>
+    ) : (
+      <Text dimColor>{` ${label} ${counts[name]} `}</Text>
+    );
+  return (
+    <Box>
+      <Text> </Text>
+      {tab("queue", "queue")}
+      <Text> </Text>
+      {tab("mine", "my PRs")}
+      <Text dimColor>   tab switches</Text>
+    </Box>
+  );
+}
+
 export function App({
   cfg,
   paths,
@@ -130,15 +158,23 @@ export function App({
   // same render, or the old world's rows flash under the new view's legend.
   const [generation, setGeneration] = useState(0);
   const reload = useCallback(() => setGeneration((g) => g + 1), []);
-  const rows = useMemo(
-    (): Row[] =>
-      pendingEntries(loadState(paths.statePath), kind).map(([key, entry]) => ({
-        key,
-        entry,
-      })),
+  // The other list's count is read in the same pass: the tab strip shows both.
+  const { rows, counts } = useMemo(() => {
+    const state = loadState(paths.statePath);
+    const rows: Row[] = pendingEntries(state, kind).map(([key, entry]) => ({
+      key,
+      entry,
+    }));
+    const other = pendingEntries(state, kind === "mine" ? "review" : "mine");
+    return {
+      rows,
+      counts: {
+        queue: kind === "mine" ? other.length : rows.length,
+        mine: kind === "mine" ? rows.length : other.length,
+      },
+    };
     // generation is the invalidation signal for the state file's content
-    [paths.statePath, kind, generation],
-  );
+  }, [paths.statePath, kind, generation]);
   // Per-view cursors, so tabbing away and back lands where the user left.
   const [cursorKeys, setCursorKeys] = useState<
     Partial<Record<"queue" | "mine", string>>
@@ -283,7 +319,7 @@ export function App({
     notice !== undefined && footer === notice ? "red" : "yellow";
   const queueHeight = Math.max(
     1,
-    Math.min(rows.length || 1, Math.min(10, height - 8)),
+    Math.min(rows.length || 1, Math.min(10, height - 9)),
   );
   const denials = current?.entry.denials;
   // Bounded, and it shrinks with the terminal — the panel never takes the
@@ -295,7 +331,7 @@ export function App({
     1,
     Math.min(
       PANEL_HEIGHT + (denials?.length ? TEASER_HEIGHT + 1 : 0),
-      height - 1 - queueHeight - 3 - (footer ? 1 : 0),
+      height - 2 - queueHeight - 3 - (footer ? 1 : 0),
     ),
   );
   const panel = useMemo(
@@ -340,7 +376,7 @@ export function App({
         cfg: liveCfg,
         scroll,
         width: width - 2,
-        height: Math.max(1, height - 4 - (footer ? 1 : 0)),
+        height: Math.max(1, height - 5 - (footer ? 1 : 0)),
       }),
     [viewGroups, denialKind, liveCfg, scroll, width, height, footer],
   );
@@ -535,8 +571,9 @@ export function App({
         view={view === "denials" ? "denials" : list}
         unavailable={unavailable}
       />
+      <Tabs list={list} counts={counts} />
       <Bar
-        label={list === "mine" ? "docket · my PRs" : "docket"}
+        label="docket"
         right={rows.length ? `${cursor + 1}/${rows.length}` : "empty"}
         width={width}
       />

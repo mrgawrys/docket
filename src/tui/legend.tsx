@@ -23,7 +23,7 @@ export const QUEUE_KEYS: Binding[] = [
   { keys: "K", label: "kill" },
   { keys: "p", label: "poll" },
   { keys: "S", label: "sync" },
-  { keys: "?", label: "help" },
+  { keys: "?", label: "more" },
   { keys: "q", label: "quit" },
 ];
 
@@ -44,7 +44,7 @@ export const MINE_KEYS: Binding[] = [
   { keys: "K", label: "kill" },
   { keys: "p", label: "poll" },
   { keys: "S", label: "sync" },
-  { keys: "?", label: "help" },
+  { keys: "?", label: "more" },
   { keys: "q", label: "quit" },
 ];
 
@@ -67,10 +67,12 @@ const KEYMAPS: Record<KeymapView, Binding[]> = {
   denials: DENIAL_KEYS,
 };
 
-// The one-line footer: the per-entry verbs plus the way out.
+// The one-line footer: the verbs that differ between the two lists, plus the
+// way to the rest. `tab` is not here — the tab strip shows it, where the thing
+// it switches is.
 const FOOTER: Record<KeymapView, string[]> = {
-  queue: ["tab", "enter", "s", "d", "D", "w", "x", "?"],
-  mine: ["tab", "enter", "s", "d", "R", "D", "x", "?"],
+  queue: ["enter", "s", "d", "D", "w", "n", "?"],
+  mine: ["enter", "s", "d", "R", "D", "n", "?"],
   denials: ["j/k ↑/↓", "esc D", "?", "q"],
 };
 
