@@ -12,11 +12,21 @@ function localTimestamp(): string {
   );
 }
 
-export function makeLogger(logPath: string): Logger {
+export type Echo = (line: string) => void;
+
+// Where a line goes besides the file. A terminal gets it on stderr; a poll
+// child spawned by the TUI has no terminal but is asked to echo anyway
+// (DOCKET_LOG_ECHO=1) so its parent can stream the lines into its log pane.
+const stderrEcho: Echo = (line) => {
+  if (process.stderr.isTTY || process.env.DOCKET_LOG_ECHO === "1")
+    console.error(line);
+};
+
+export function makeLogger(logPath: string, echo: Echo = stderrEcho): Logger {
   mkdirSync(dirname(logPath), { recursive: true });
   return (msg) => {
     const line = `${localTimestamp()} ${msg}`;
     appendFileSync(logPath, line + "\n");
-    if (process.stderr.isTTY) console.error(line);
+    echo(line);
   };
 }

@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { type Feed, makeFeed } from "../src/activity";
 import { render } from "ink-testing-library";
 import {
   lstatSync,
@@ -35,6 +36,7 @@ function mount(
   configText = JSON.stringify(cfg),
   authWarning?: string,
   overrides: Partial<TuiActions> = {},
+  feed?: Feed,
 ) {
   const dir = mkdtempSync(join(tmpdir(), "docket-tui-"));
   writeFileSync(join(dir, "state.json"), JSON.stringify(state));
@@ -84,6 +86,7 @@ function mount(
       resolved={resolved}
       request={(req) => requests.push(req)}
       authWarning={authWarning}
+      feed={feed}
     />,
   );
   return { ...r, calls, requests, paths: p };
@@ -445,10 +448,54 @@ test("an empty queue keeps the TUI open so poll can populate it", async () => {
   const ui = mount({});
   await Bun.sleep(20);
   expect(ui.lastFrame()).toContain("No pending reviews");
-  ui.stdin.write("p");
+  ui.stdin.write("p"); // opens the log pane on the poll
   await Bun.sleep(20);
   expect(ui.calls).toEqual(["poll"]);
+  ui.stdin.write("\x1b");
+  await Bun.sleep(20);
   expect(ui.lastFrame()).toContain("No pending reviews"); // still mounted
+  ui.unmount();
+});
+
+test("the log pane streams the job's lines and reports it running, then done", async () => {
+  const feed = makeFeed();
+  let finish!: () => void;
+  const ui = mount(
+    {},
+    false,
+    undefined,
+    undefined,
+    {
+      poll: () =>
+        new Promise((res) => {
+          finish = () => res({ code: 0 });
+        }),
+    },
+    feed,
+  );
+  await Bun.sleep(20);
+  ui.stdin.write("p");
+  await Bun.sleep(20);
+  feed.push("12:00:01 polling acme for review requests");
+  await Bun.sleep(20);
+  let frame = ui.lastFrame() ?? "";
+  expect(frame).toContain("polling acme for review requests");
+  expect(frame).toContain("running");
+
+  // leaving the pane leaves the job running, and the footer says where it is
+  ui.stdin.write("\x1b");
+  await Bun.sleep(20);
+  frame = ui.lastFrame() ?? "";
+  expect(frame).toContain("No pending reviews");
+  expect(frame).toContain("polling… · l shows the log");
+
+  finish();
+  await Bun.sleep(20);
+  ui.stdin.write("l");
+  await Bun.sleep(20);
+  frame = ui.lastFrame() ?? "";
+  expect(frame).toMatch(/─ poll ─+ done ─/);
+  expect(frame).not.toMatch(/─ poll ─+ running ─/);
   ui.unmount();
 });
 

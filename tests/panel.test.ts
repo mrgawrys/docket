@@ -106,7 +106,7 @@ test("a panel with no room for both keeps the headline over the teaser", () => {
 });
 
 test("an entry with no review at all says so rather than showing blank", () => {
-  expect(panelLines({ assessment: none, notes: [], width: 60 })).toEqual([
+  expect(panelLines({ assessment: none, width: 60 })).toEqual([
     { text: "no run log", dim: true },
   ]);
 });

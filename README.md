@@ -122,7 +122,10 @@ worktree: a shell in it, or its diff in your diff tool (configurable via
 [`openers`](docs/configuration.md#openers)). `x` dismisses an entry and
 removes its worktree; `K` kills a running review before it burns more tokens.
 `n` opens a one-line input: paste a PR URL or `ORG/REPO#N` (optionally
-followed by a note) to review it by hand. A verb this machine cannot run is
+followed by a note) to review it by hand. `p` and `S` run a poll or sync in
+the background and open the log pane on it — `esc` goes back to the queue
+while it keeps running, `l` reopens the pane; everything docket logs during
+the session is there, never printed over the screen. A verb this machine cannot run is
 greyed out rather than failing after the keypress.
 
 **`tab` switches to the other list: PRs you authored.** Each row shows the

@@ -3,7 +3,9 @@
 import { ghBin, paths as resolvePaths } from "./config";
 import { doctorCommand } from "./doctor";
 import { ghAccountToken, prView } from "./github";
-import { makeLogger } from "./log";
+import { makeFeed, runLogged } from "./activity";
+import { makeLogger, type Echo } from "./log";
+import { selfArgs } from "./proc";
 import { acquireLock } from "./lock";
 import { dismissKey, killEntry } from "./list";
 import { pollCycle } from "./poll";
@@ -59,7 +61,10 @@ Usage:
 
 type Command = (args: string[]) => Promise<number>;
 
-async function withCtx(fn: (ctx: Ctx) => Promise<number>): Promise<number> {
+async function withCtx(
+  fn: (ctx: Ctx) => Promise<number>,
+  echo?: Echo,
+): Promise<number> {
   const paths = resolvePaths();
   // Both streams, because the wizard both asks and prints: the launchd poller
   // has neither, and must never end up waiting on a prompt nobody can answer.
@@ -68,7 +73,7 @@ async function withCtx(fn: (ctx: Ctx) => Promise<number>): Promise<number> {
   if ("code" in found) return found.code;
   const cfg = found.cfg;
   ensureState(paths.statePath);
-  const log = makeLogger(paths.logPath);
+  const log = makeLogger(paths.logPath, echo);
   let ghEnv = process.env as Record<string, string>;
   if (cfg.gh_account) {
     // pin every gh call (and claude's gh calls) to one account — the poller
@@ -452,20 +457,39 @@ const collected = async (
 
 async function main(): Promise<number> {
   const [cmd, ...rest] = Bun.argv.slice(2);
-  if (cmd === undefined)
-    return withCtx((ctx) =>
-      runTui(ctx, {
-        retry: (key) => collected((out) => retryKey(ctx, key, undefined, out)),
-        review: (key, note) =>
-          collected((out) => reviewKey(ctx, bareKey(key), note, out)),
-        receive: (key, note) =>
-          collected((out) => receiveKey(ctx, key, note, out)),
-        poll: () => collected(() => pollLocked(ctx, false)),
-        sync: () => collected(() => syncLocked(ctx)),
-        dismiss: (key) => dismissKey(ctx, key),
-        kill: (key) => killEntry(ctx, key).message,
-      }),
+  if (cmd === undefined) {
+    // Every log line of this process lands in the feed, never on stderr,
+    // where it would print over Ink's frame.
+    const feed = makeFeed();
+    // poll and sync run as children: their gh calls are synchronous, and in
+    // this process they would freeze the queue for the whole cycle.
+    const job = async (name: "poll" | "sync"): Promise<ActionResult> => {
+      const code = await runLogged(selfArgs(name), feed.push, {
+        DOCKET_LOG_ECHO: "1",
+      });
+      return { code, message: code === 0 ? undefined : `${name} exited ${code}` };
+    };
+    return withCtx(
+      (ctx) =>
+        runTui(
+          ctx,
+          {
+            retry: (key) =>
+              collected((out) => retryKey(ctx, key, undefined, out)),
+            review: (key, note) =>
+              collected((out) => reviewKey(ctx, bareKey(key), note, out)),
+            receive: (key, note) =>
+              collected((out) => receiveKey(ctx, key, note, out)),
+            poll: () => job("poll"),
+            sync: () => job("sync"),
+            dismiss: (key) => dismissKey(ctx, key),
+            kill: (key) => killEntry(ctx, key).message,
+          },
+          feed,
+        ),
+      feed.push,
     );
+  }
   if (cmd === "-h" || cmd === "--help") return help([]);
   const fn = commands[cmd];
   if (!fn) {

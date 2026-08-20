@@ -2,6 +2,7 @@ import { Box, render, Text, useApp, useInput, useWindowSize } from "ink";
 import { readFileSync, watch } from "node:fs";
 import { dirname } from "node:path";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type Feed, windowLines } from "../activity";
 import { readAssessment } from "../assessment";
 import { claudeAuth } from "../auth";
 import {
@@ -81,6 +82,9 @@ export interface AppProps {
   // poller writes no entries at all — so without this the queue looks exactly
   // like a morning with no new PRs.
   authWarning?: string;
+  // The session log and the running poll/sync job, held outside React so
+  // both survive a suspend's remount. Absent in tests and frames.
+  feed?: Feed;
 }
 
 function Bar({
@@ -148,6 +152,7 @@ export function App({
   onSelect,
   notice,
   authWarning,
+  feed,
 }: AppProps) {
   const { exit } = useApp();
   const size = useWindowSize();
@@ -190,9 +195,18 @@ export function App({
     (key: string | undefined) => setCursorKeys((c) => ({ ...c, [list]: key })),
     [list],
   );
-  const [view, setView] = useState<"list" | "help" | "denials">("list");
+  const [view, setView] = useState<"list" | "help" | "denials" | "log">(
+    "list",
+  );
   // Help is a detour, not a destination: esc goes back where it was opened.
-  const [helpFrom, setHelpFrom] = useState<"list" | "denials">("list");
+  const [helpFrom, setHelpFrom] = useState<"list" | "denials" | "log">("list");
+  // A counter, not a copy: the feed owns the lines, this only re-renders.
+  const [feedTick, setFeedTick] = useState(0);
+  useEffect(
+    () => feed?.subscribe(() => setFeedTick((t) => t + 1)),
+    [feed],
+  );
+  const job = feed?.job;
   const [status, setStatus] = useState<string | undefined>();
   // The `n` footer input; undefined = closed.
   const [prInput, setPrInput] = useState<string | undefined>();
@@ -306,8 +320,13 @@ export function App({
   // Last in line: action feedback is what the user just asked for, so it takes
   // the line while it lasts. The warning is still there when it clears. An
   // open `n` input takes the same row.
+  // A job running out of sight says so, and where to look.
+  const jobHint =
+    job?.running && view !== "log" ? `${job.verb}… · l shows the log` : undefined;
   const footer =
-    prInput !== undefined ? "input" : (status ?? notice ?? authWarning);
+    prInput !== undefined
+      ? "input"
+      : (status ?? jobHint ?? notice ?? authWarning);
   const footerColor =
     notice !== undefined && footer === notice ? "red" : "yellow";
   // The frame is as tall as its content, never the terminal: the queue takes
@@ -374,6 +393,39 @@ export function App({
       }),
     [viewGroups, denialKind, liveCfg, scroll, width, height],
   );
+
+  // The log pane's window: scroll counts up from the bottom, so the newest
+  // line is on screen unless the user has scrolled away from it.
+  const logPane = useMemo(
+    () => windowLines(feed?.lines ?? [], Math.max(1, height - fixedRows), scroll),
+    // biome-ignore lint/correctness/useExhaustiveDependencies: feedTick is the invalidation signal for the feed's lines
+    [feed, feedTick, height, scroll],
+  );
+
+  // p and S: start the child and open the pane on it; a second press while it
+  // runs just reopens the pane. The job's own messages are in the feed, so the
+  // footer carries only the outcome.
+  const startJob = (
+    name: "poll" | "sync",
+    verb: string,
+    fn: () => Promise<ActionResult>,
+  ) => {
+    setScroll(0);
+    setView("log");
+    if (!feed) return run(verb, fn);
+    if (feed.job?.running) return;
+    feed.setJob({ name, verb, running: true });
+    fn()
+      .then((r) => {
+        feed.setJob({ name, verb, running: false, code: r.code });
+        setStatus(r.message ?? (r.code === 0 ? `${name} done` : undefined));
+      })
+      .catch((e: unknown) => {
+        feed.setJob({ name, verb, running: false, code: 1 });
+        setStatus(`${name} failed: ${e}`);
+      })
+      .finally(reload);
+  };
 
   const move = (delta: number) => {
     if (rows.length === 0) return;
@@ -447,6 +499,18 @@ export function App({
       if (input === "?" || key.escape) setView(helpFrom);
       return;
     }
+    if (view === "log") {
+      if (input === "l" || key.escape) return setView("list");
+      if (input === "?") {
+        setHelpFrom("log");
+        return setView("help");
+      }
+      if (input === "j" || key.downArrow)
+        return setScroll(Math.max(0, scroll - 1));
+      if (input === "k" || key.upArrow)
+        return setScroll(Math.min(logPane.maxScroll, scroll + 1));
+      return;
+    }
     if (view === "denials") {
       if (input === "D" || key.escape) return setView("list");
       if (input === "?") {
@@ -492,8 +556,12 @@ export function App({
     if (input === "n") return setPrInput("");
     if (input === "j" || key.downArrow) return move(1);
     if (input === "k" || key.upArrow) return move(-1);
-    if (input === "p") return run("polling", actions.poll);
-    if (input === "S") return run("syncing", actions.sync);
+    if (input === "p") return startJob("poll", "polling", actions.poll);
+    if (input === "S") return startJob("sync", "syncing", actions.sync);
+    if (input === "l") {
+      setScroll(0);
+      return setView("log");
+    }
     if (!current) return;
     if (key.return) {
       // enter opens claude either way: the review's own session when there is
@@ -567,6 +635,33 @@ export function App({
       />
       {view === "help" ? (
         <Help unavailable={unavailable} />
+      ) : view === "log" ? (
+        <>
+          <Bar
+            label={job ? job.name : "log"}
+            right={
+              job?.running
+                ? "running"
+                : job
+                  ? job.code === 0
+                    ? "done"
+                    : `exited ${job.code}`
+                  : undefined
+            }
+            width={width}
+          />
+          <Box flexDirection="column" paddingX={1} minHeight={PANEL_HEIGHT}>
+            {logPane.lines.length === 0 ? (
+              <Text dimColor>nothing logged yet — p polls, S syncs</Text>
+            ) : (
+              logPane.lines.map((l, i) => (
+                <Text key={`${i}:${l}`} wrap="truncate-end">
+                  {l}
+                </Text>
+              ))
+            )}
+          </Box>
+        </>
       ) : view === "denials" ? (
         <>
           <Bar
@@ -589,7 +684,7 @@ export function App({
           blank row, is what sets them off from the panel's prose */}
       <Bar label="keys" width={width} />
       <Legend
-        view={view === "denials" ? "denials" : list}
+        view={view === "denials" || view === "log" ? view : list}
         unavailable={unavailable}
       />
       {prInput !== undefined ? (
@@ -613,7 +708,11 @@ export function App({
 
 // Openers are resolved once here, not per frame; the selected key rides across
 // a suspend so the cursor comes back to the PR the user acted on.
-export function runTui(ctx: Ctx, actions: TuiActions): Promise<number> {
+export function runTui(
+  ctx: Ctx,
+  actions: TuiActions,
+  feed?: Feed,
+): Promise<number> {
   // useInput needs raw mode, and Ink throws without a tty. The readline menu
   // this replaced read a closed stdin as "quit", so a script or a cron wrapper
   // that runs bare `docket` still gets the queue instead of a stack trace.
@@ -641,6 +740,7 @@ export function runTui(ctx: Ctx, actions: TuiActions): Promise<number> {
         request={request}
         notice={notice}
         authWarning={authWarning}
+        feed={feed}
         initialKey={selected}
         onSelect={(key) => {
           selected = key;
