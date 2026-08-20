@@ -13,6 +13,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
+        with:
+          # pinned: an unpinned setup handed a release a bun the tests had
+          # never met (1.4.0 broke the wizard's readline use). Bump on purpose.
+          bun-version: "1.4.0"
       - run: bun install --frozen-lockfile
       - run: bun test
 

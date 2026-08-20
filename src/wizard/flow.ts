@@ -137,6 +137,15 @@ export function makeUi(
   // input while a question is pending — piped stdin delivers every line at
   // once and the ones arriving between questions are dropped.
   const lines = rl[Symbol.asyncIterator]();
+  // Piped input that ends up front (tests, `docket setup < answers`) makes
+  // readline drain every line and close before the first question is asked.
+  // The lines stay buffered in the iterator, but prompting a closed interface
+  // throws on bun >= 1.4 (ERR_USE_AFTER_CLOSE) — so write the question
+  // ourselves once it is gone.
+  let closed = false;
+  rl.once("close", () => {
+    closed = true;
+  });
   const tty = Boolean((input as { isTTY?: boolean }).isTTY);
   const paint = (code: string) => (s: string) =>
     tty ? `\x1b[${code}m${s}\x1b[0m` : s;
@@ -150,8 +159,11 @@ export function makeUi(
     // setPrompt, not a bare write: readline repaints the line from its own
     // prompt on tab-completion and line edits, and would otherwise replace
     // the question with its default "> ".
-    rl.setPrompt(question);
-    rl.prompt();
+    if (closed) output.write(question);
+    else {
+      rl.setPrompt(question);
+      rl.prompt();
+    }
     const { value, done } = await lines.next();
     if (done) throw new InputEnded("stdin closed");
     if (!tty) say(String(value)); // piped input isn't echoed; keep a transcript
