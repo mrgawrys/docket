@@ -41,7 +41,11 @@ You'll also need:
 - [`receive_enabled`](docs/configuration.md#receive_enabled) needs nothing
   extra: the default receive task is plain instructions. A
   [`receive_prompt`](docs/configuration.md#receive_prompt) is where a skill
-  invocation goes if you have a review-receiving skill you'd rather run
+  invocation goes if you have a review-receiving skill you'd rather run —
+  checked, with its
+  [`extra_receive_allowed_tools`](docs/configuration.md#extra_receive_allowed_tools)
+  rule, whenever the keys are set: `docket receive` and `R` run them whether
+  or not `receive_enabled` is on
 
 `docket doctor` checks all of this and prints a fix for anything missing.
 

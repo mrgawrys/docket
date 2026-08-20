@@ -403,18 +403,35 @@ test("doctor: receive_enabled needs no plugin — the default task is plain word
   expect(r.out).not.toContain("receive-code-review");
 });
 
-test("doctor: receive checks only run when receive_enabled", () => {
+test("doctor: receive keys are checked even with receive_enabled off", () => {
   const sb = makeSandbox();
   sb.gitInitDemo();
-  // a blank receive_prompt would fail below, but receive is off — all green
+  // `docket receive` and R ignore receive_enabled, so a broken receive config
+  // is broken whether or not the automatic path is on
   sb.writeConfig({
     orgs: ["testorg"],
     repos: { "testorg/demo": sb.demoRepo },
     claude_config_dir: claudeHome(sb, true),
     receive_prompt: "   ",
+    extra_receive_allowed_tools: ["Skill(dev-skills:fixer)"],
+  });
+  const r = sb.run(["doctor"]);
+  expect(r.code).toBe(1);
+  expect(r.out).toMatch(/✗.*receive_prompt is set but blank/);
+  expect(r.out).toContain("'dev-skills' not found");
+});
+
+test("doctor: a config with no receive keys says nothing about receive", () => {
+  const sb = makeSandbox();
+  sb.gitInitDemo();
+  sb.writeConfig({
+    orgs: ["testorg"],
+    repos: { "testorg/demo": sb.demoRepo },
+    claude_config_dir: claudeHome(sb, true),
   });
   const r = sb.run(["doctor"]);
   expect(r.code).toBe(0);
+  expect(r.out).not.toContain("receive");
 });
 
 test("doctor: blank receive_prompt and receive Skill() entries are checked", () => {

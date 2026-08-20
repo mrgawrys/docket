@@ -252,31 +252,31 @@ export async function doctorCommand(
   };
   checkSkillEntries(cfg.extra_allowed_tools ?? []);
 
-  // The receive side is opt-in; its dependencies only bind once it is on.
-  // The default receive task needs no plugin — it is plain instructions — so
-  // only the config's own receive keys are checked here.
-  if (cfg.receive_enabled) {
-    if (cfg.receive_prompt !== undefined && !cfg.receive_prompt.trim()) {
-      fail(
-        "receive_prompt is set but blank",
-        "remove the key or give it a value; the default receive task runs meanwhile",
-      );
-    }
-    const blank = (cfg.extra_receive_allowed_tools ?? []).some(
-      (t) => !t.trim(),
+  // Only the automatic path is opt-in: `docket receive` and the TUI's R run
+  // whatever receive_enabled says, on the same prompt and the same allowlist.
+  // So these keys are checked whenever they are set — gating them on the flag
+  // let doctor pass green while R ran against an uninstalled plugin. The
+  // default receive task itself needs no plugin: it is plain instructions.
+  if (cfg.receive_prompt !== undefined && !cfg.receive_prompt.trim()) {
+    fail(
+      "receive_prompt is set but blank",
+      "remove the key or give it a value; the default receive task runs meanwhile",
     );
-    if (blank) {
-      fail(
-        "extra_receive_allowed_tools has a blank entry",
-        "remove it — every entry must be a tool rule like Bash(bun test:*)",
-      );
-    } else if (cfg.extra_receive_allowed_tools?.length) {
-      pass(
-        `extra receive allowed tools: ${cfg.extra_receive_allowed_tools.length} configured`,
-      );
-    }
-    checkSkillEntries(cfg.extra_receive_allowed_tools ?? []);
   }
+  const blankReceive = (cfg.extra_receive_allowed_tools ?? []).some(
+    (t) => !t.trim(),
+  );
+  if (blankReceive) {
+    fail(
+      "extra_receive_allowed_tools has a blank entry",
+      "remove it — every entry must be a tool rule like Bash(bun test:*)",
+    );
+  } else if (cfg.extra_receive_allowed_tools?.length) {
+    pass(
+      `extra receive allowed tools: ${cfg.extra_receive_allowed_tools.length} configured`,
+    );
+  }
+  checkSkillEntries(cfg.extra_receive_allowed_tools ?? []);
 
   return failed === 0 ? 0 : 1;
 }

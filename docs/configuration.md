@@ -148,8 +148,9 @@ GitHub — plus the same triage-summary block every run ends with.
 This key is also where a skill invocation goes if you have a review-receiving
 skill you'd rather run — e.g. `Run /my-receive-skill on PR {number}.` — with
 its `Skill(...)` entry added to `extra_receive_allowed_tools` (doctor checks
-that a `Skill(plugin:name)` entry's plugin is installed). The wizard never
-overwrites an existing custom value here.
+that a `Skill(plugin:name)` entry's plugin is installed, whether or not
+`receive_enabled` is on — the manual verbs run this prompt either way). The
+wizard never overwrites an existing custom value here.
 
 ## extra_receive_allowed_tools
 
