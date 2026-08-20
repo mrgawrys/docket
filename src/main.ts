@@ -43,9 +43,9 @@ Usage:
                             in parallel as detached background processes
   docket sync               reconcile state with GitHub
   docket review <pr> [note] force-review a PR (org/repo#N or a GitHub PR URL)
-  docket receive <pr> [note] act on review feedback on your own PR (runs
-                            /receive-code-review in the PR's checkout;
-                            edits + local commits only, never pushes)
+  docket receive <pr> [note] act on review feedback on your own PR (addresses
+                            the feedback in the PR's checkout; edits +
+                            local commits only, never pushes)
   docket retry <key>        re-run a failed review
   docket dismiss <key>      mark done + remove the PR worktree
   docket doctor             check setup: config, clones, gh, claude, code-review plugin

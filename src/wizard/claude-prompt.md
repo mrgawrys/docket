@@ -145,14 +145,16 @@ replacing them — hand-set entries survive.
 ## Step 5 — Reviews you receive
 
 docket can also act on the reviews the user's **own** PRs get: when someone
-leaves actionable feedback, it pre-runs `/receive-code-review` headlessly in
-that PR's checkout — edits and local commits only; it never pushes and never
+leaves actionable feedback, it addresses that feedback headlessly in the
+PR's checkout — edits and local commits only; it never pushes and never
 writes to GitHub. Ask whether the user wants that (`receive_enabled: true`);
 the default is off, and off means writing no key at all.
 
 If they opt in, offer the same default/custom choice as step 4: the default
-runs `/receive-code-review`, a custom task becomes `receive_prompt`
-(`{number}` and `{repo}` are substituted at run time).
+task reads the reviews, makes the changes they ask for, and commits locally;
+a custom task becomes `receive_prompt` (`{number}` and `{repo}` are
+substituted at run time). `receive_prompt` is also where a skill invocation
+goes if the user has a review-receiving skill they want run instead.
 
 **If the config already has a `receive_prompt`, never overwrite or delete
 it** — show it and keep it exactly as it is. A wizard answer deleting a

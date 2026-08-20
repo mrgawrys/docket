@@ -14,7 +14,7 @@
   "review_prompt": "Review the PR by running /code-review {number}.",
   "extra_allowed_tools": [],
   "receive_enabled": false,
-  "receive_prompt": "Address the review feedback by running /receive-code-review {number}.",
+  "receive_prompt": "Address the review feedback on PR {number}: read the reviews, verify each point against the code, implement the changes they ask for, and commit the fixes locally.",
   "extra_receive_allowed_tools": [],
   "openers": {
     "shell": [{ "cmd": ["$SHELL"] }],

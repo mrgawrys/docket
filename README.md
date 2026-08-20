@@ -38,9 +38,10 @@ You'll also need:
   `claude plugin install code-review@claude-plugins-official` — unless you
   set a custom [`review_prompt`](docs/configuration.md#review_prompt) that
   doesn't run `/code-review`
-- with [`receive_enabled`](docs/configuration.md#receive_enabled): a plugin
-  or skill providing `/receive-code-review`, unless your custom
-  [`receive_prompt`](docs/configuration.md#receive_prompt) doesn't run it
+- [`receive_enabled`](docs/configuration.md#receive_enabled) needs nothing
+  extra: the default receive task is plain instructions. A
+  [`receive_prompt`](docs/configuration.md#receive_prompt) is where a skill
+  invocation goes if you have a review-receiving skill you'd rather run
 
 `docket doctor` checks all of this and prints a fix for anything missing.
 
@@ -120,8 +121,8 @@ greyed out with the reason shown, rather than failing after the keypress.
 **`tab` switches to the mirror view: PRs you authored.** Each row shows the
 newest reviewer verdict on your PR; with
 [`receive_enabled`](docs/configuration.md#receive_enabled), actionable
-feedback triggers a headless `/receive-code-review` run in that PR's checkout
-— edits and local commits only, never a push — and `enter` resumes the
+feedback triggers a headless receive run in that PR's checkout — it addresses
+the feedback with edits and local commits only, never a push — and `enter` resumes the
 resulting session where you inspect and push yourself. `R` runs receive by
 hand (it works even with the automatic path off), `s`/`d` open the PR
 branch's checkout, and `n` here starts a receive run for a pasted PR.
@@ -202,9 +203,10 @@ Everything lives in `~/.config/docket/config.json`. Beyond `orgs` and
 - `review_prompt` — swap the default `/code-review` run for any review task
   you can phrase as a prompt; `docket prompt` sets it for you, together with
   the `extra_allowed_tools` the task needs
-- `receive_enabled` — act on reviews *you* receive: pre-run
-  `/receive-code-review` on your own PRs when feedback lands (edits and local
-  commits in the PR's checkout; never a push, never a GitHub write)
+- `receive_enabled` — act on reviews *you* receive: pre-address the feedback
+  on your own PRs when it lands (edits and local commits in the PR's
+  checkout; never a push, never a GitHub write); `receive_prompt` swaps the
+  task, e.g. for one invoking your own review-receiving skill
 - `openers` — which shell and diff tool the queue's `s` and `d` keys launch
 - `gh_account` — pin polling to one `gh` account, so `gh auth switch` can't
   silently blind the poller

@@ -33,7 +33,9 @@ test("receivePrompt: fixed preamble — checkout only, commits yes, push and Git
   expect(p).toContain("NEVER push");
   expect(p).toContain("NEVER write to GitHub");
   expect(p).toContain(
-    "Address the review feedback by running /receive-code-review 12.",
+    "Address the review feedback on PR 12: read the reviews, verify each " +
+      "point against the code, implement the changes they ask for, and " +
+      "commit the fixes locally.",
   );
   expect(p).toContain("triage summary"); // the summary block is demanded too
 });
@@ -64,6 +66,9 @@ test("receive allowlist: edit + local git verbs, and never push or GitHub writes
   expect(RECEIVE_ALLOWED_TOOLS).toContain("MultiEdit");
   expect(RECEIVE_ALLOWED_TOOLS).toContain("Bash(git add:*)");
   expect(RECEIVE_ALLOWED_TOOLS).toContain("Bash(git commit:*)");
+  // no pinned skill name: the default task is plain words, and a user's own
+  // receive skill arrives via receive_prompt + extra_receive_allowed_tools
+  expect(joined).not.toContain("receive-code-review");
   // the guarantee the receive feature rests on: assert the absence
   expect(joined).not.toContain("push");
   expect(joined).not.toContain("gh pr comment");
@@ -179,7 +184,7 @@ test("feedback on an opted-in PR runs receive headlessly in a docket-owned check
 
   // the receive allowlist and prompt, not the review ones
   expect(sb.allowedCapture()).toBe(RECEIVE_ALLOWED_TOOLS.join(","));
-  expect(sb.promptCapture()).toContain("/receive-code-review 7");
+  expect(sb.promptCapture()).toContain("Address the review feedback on PR 7");
   expect(sb.promptCapture()).toContain("NEVER push");
 });
 

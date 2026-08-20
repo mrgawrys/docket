@@ -389,57 +389,32 @@ test("doctor: blank review_prompt → ✗ telling the user to remove or fill it"
   expect(r.out).toMatch(/✗.*review_prompt/);
 });
 
-test("doctor: receive_enabled without the receive-code-review plugin fails; with it passes", () => {
+test("doctor: receive_enabled needs no plugin — the default task is plain words", () => {
   const sb = makeSandbox();
   sb.gitInitDemo();
-  const base = {
-    orgs: ["testorg"],
-    repos: { "testorg/demo": sb.demoRepo },
-    receive_enabled: true,
-  };
-  sb.writeConfig({ ...base, claude_config_dir: claudeHomeWith(sb) });
-  let r = sb.run(["doctor"]);
-  expect(r.code).toBe(1);
-  expect(r.out).toMatch(/✗.*receive-code-review plugin/);
-
-  sb.writeConfig({
-    ...base,
-    claude_config_dir: claudeHomeWith(sb, "receive-code-review@acme"),
-  });
-  r = sb.run(["doctor"]);
-  expect(r.code).toBe(0);
-  expect(r.out).toContain("✓ receive-code-review plugin installed");
-});
-
-test("doctor: receive checks only run when receive_enabled", () => {
-  const sb = makeSandbox();
-  sb.gitInitDemo();
-  // no receive-code-review plugin installed, but receive is off — all green
   sb.writeConfig({
     orgs: ["testorg"],
     repos: { "testorg/demo": sb.demoRepo },
     claude_config_dir: claudeHome(sb, true),
+    receive_enabled: true,
   });
   const r = sb.run(["doctor"]);
   expect(r.code).toBe(0);
   expect(r.out).not.toContain("receive-code-review");
 });
 
-test("doctor: custom receive_prompt without the slash command → plugin not required", () => {
+test("doctor: receive checks only run when receive_enabled", () => {
   const sb = makeSandbox();
   sb.gitInitDemo();
+  // a blank receive_prompt would fail below, but receive is off — all green
   sb.writeConfig({
     orgs: ["testorg"],
     repos: { "testorg/demo": sb.demoRepo },
     claude_config_dir: claudeHome(sb, true),
-    receive_enabled: true,
-    receive_prompt: "Address the feedback and commit the fixes locally.",
+    receive_prompt: "   ",
   });
   const r = sb.run(["doctor"]);
   expect(r.code).toBe(0);
-  expect(r.out).toContain(
-    "receive-code-review plugin: not required (custom receive_prompt)",
-  );
 });
 
 test("doctor: blank receive_prompt and receive Skill() entries are checked", () => {
@@ -448,7 +423,7 @@ test("doctor: blank receive_prompt and receive Skill() entries are checked", () 
   sb.writeConfig({
     orgs: ["testorg"],
     repos: { "testorg/demo": sb.demoRepo },
-    claude_config_dir: claudeHomeWith(sb, "receive-code-review@acme"),
+    claude_config_dir: claudeHomeWith(sb),
     receive_enabled: true,
     receive_prompt: "   ",
     extra_receive_allowed_tools: ["Skill(dev-skills:fixer)"],

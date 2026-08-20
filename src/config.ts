@@ -75,13 +75,11 @@ export const effectiveAllowedTools = (cfg: Config): string =>
   [ALLOWED_TOOLS, ...(cfg.extra_allowed_tools ?? [])].join(",");
 
 // What a receive run may do on top of the review baseline: edit files and
-// commit locally in the PR's checkout, and run the receive skill. Deliberately
-// absent, forever: `git push` and every GitHub-write verb — the user reviews
-// the addressed feedback and pushes themselves.
+// commit locally in the PR's checkout. Deliberately absent, forever:
+// `git push` and every GitHub-write verb — the user reviews the addressed
+// feedback and pushes themselves.
 export const RECEIVE_ALLOWED_TOOLS: string[] = [
   ...ALLOWED_TOOLS.split(","),
-  "Skill(receive-code-review)",
-  "Skill(receive-code-review:receive-code-review)",
   "Edit",
   "Write",
   "MultiEdit",
@@ -95,9 +93,14 @@ export const effectiveReceiveAllowedTools = (cfg: Config): string[] => [
 ];
 
 // The receive task body, minus the fixed checkout hygiene that wraps it
-// (see receivePrompt). {number}/{repo} are substituted at run time.
+// (see receivePrompt). {number}/{repo} are substituted at run time. Plain
+// words, no skill invocation — a receive_prompt is where a user who has a
+// review-receiving skill points at it (plus its Skill(...) allowlist entry
+// in extra_receive_allowed_tools).
 export const DEFAULT_RECEIVE_PROMPT =
-  "Address the review feedback by running /receive-code-review {number}.";
+  "Address the review feedback on PR {number}: read the reviews, verify " +
+  "each point against the code, implement the changes they ask for, and " +
+  "commit the fixes locally.";
 
 export const effectiveReceivePrompt = (cfg: Config): string =>
   cfg.receive_prompt?.trim() ? cfg.receive_prompt : DEFAULT_RECEIVE_PROMPT;

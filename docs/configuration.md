@@ -116,7 +116,7 @@ before accepting is the real gate. Empty = baseline only.
 
 Turn on automatic **receive runs**: when someone leaves actionable feedback
 on a PR you authored (a review that isn't a bare comment-less approval),
-docket pre-runs `/receive-code-review` headlessly in that PR's checkout, so a
+docket addresses that feedback headlessly in the PR's checkout, so a
 session with the feedback already addressed is waiting in the TUI's *my PRs*
 view (`tab`). Default `false`.
 
@@ -133,15 +133,23 @@ under `~/.local/state/docket/checkouts/` (removed on dismiss).
 
 ## receive_prompt
 
-The receive task handed to claude. Omit (or leave blank) to run the default,
-`Address the review feedback by running /receive-code-review {number}.`
+The receive task handed to claude. Omit (or leave blank) to run the default:
+
+`Address the review feedback on PR {number}: read the reviews, verify each
+point against the code, implement the changes they ask for, and commit the
+fixes locally.`
+
 Tokens `{number}` and `{repo}` are substituted, like `review_prompt`.
 
 The wrapper around the task is fixed and not configurable: work only in the
 PR's checkout, edits and local commits allowed, never push, never write to
-GitHub — plus the same triage-summary block every run ends with. A prompt
-that doesn't run `/receive-code-review` needs no receive plugin (doctor
-checks this). The wizard never overwrites an existing custom value here.
+GitHub — plus the same triage-summary block every run ends with.
+
+This key is also where a skill invocation goes if you have a review-receiving
+skill you'd rather run — e.g. `Run /my-receive-skill on PR {number}.` — with
+its `Skill(...)` entry added to `extra_receive_allowed_tools` (doctor checks
+that a `Skill(plugin:name)` entry's plugin is installed). The wizard never
+overwrites an existing custom value here.
 
 ## extra_receive_allowed_tools
 

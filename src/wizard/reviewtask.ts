@@ -250,8 +250,8 @@ async function receiveDialogue(
   o: ReceiveStepOptions,
 ): Promise<ReceiveStepResult> {
   const { ui } = o;
-  ui.say("   when someone reviews one of your PRs, docket can pre-run");
-  ui.say("   /receive-code-review in that PR's checkout — edits and local");
+  ui.say("   when someone reviews one of your PRs, docket can address the");
+  ui.say("   feedback headlessly in that PR's checkout — edits and local");
   ui.say("   commits only; it never pushes, never writes to GitHub.");
   const answer = await ui.ask("   also act on reviews you receive? [y/N] ");
   if (!answer.toLowerCase().startsWith("y")) return { receive_enabled: false };
@@ -266,8 +266,8 @@ async function receiveDialogue(
     return { receive_enabled: true };
   }
 
-  ui.say("   1) default — run /receive-code-review on the feedback");
-  ui.say("   2) custom  — write your own");
+  ui.say("   1) default — read the reviews, make the changes, commit locally");
+  ui.say("   2) custom  — write your own (where a receive skill invocation goes)");
   let choice: string;
   for (;;) {
     choice = await ui.ask("   which? [1-2] ", "1");
