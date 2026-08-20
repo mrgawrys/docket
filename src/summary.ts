@@ -107,6 +107,19 @@ export function issueChip(summary?: Summary): Chip | undefined {
   };
 }
 
+// A mine row's counterpart to the issue chip: what is still open on the
+// user's own PR. Absent until a sync has looked.
+export function threadChip(threads?: {
+  unresolved: number;
+  total: number;
+}): Chip | undefined {
+  if (!threads) return undefined;
+  if (threads.unresolved > 0)
+    return { text: `${threads.unresolved} unresolved`, color: "yellow" };
+  if (threads.total > 0) return { text: "✓ resolved", color: "green" };
+  return undefined;
+}
+
 const RISK_CHIP: Record<Risk, Chip> = {
   low: { text: "LOW", color: "green" },
   medium: { text: "MED", color: "yellow" },

@@ -253,6 +253,7 @@ export const scenarios: Record<string, Scenario> = {
         checkout_path: "repos/api-77",
         reviewer: "carol",
         review_at: "2026-08-19T16:20:00Z",
+        threads: { unresolved: 3, total: 4 },
         updated_at: "2026-08-19T16:21:00Z",
       }),
       "mine:testorg/web#98": entry({
@@ -265,6 +266,7 @@ export const scenarios: Record<string, Scenario> = {
         worktrees: ["repos/web-98"],
         reviewer: "dave",
         review_at: "2026-08-19T11:05:00Z",
+        threads: { unresolved: 0, total: 2 },
         summary: {
           headline: "Addressed both review threads; two commits, ready to push",
           issues: 2,

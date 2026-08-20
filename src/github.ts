@@ -69,6 +69,59 @@ export function prView<T>(
   }
 }
 
+export interface Threads {
+  unresolved: number;
+  total: number;
+}
+
+// Review thread resolution is GraphQL-only: `pr view --json` has no field
+// for it. The first 100 threads are enough for any PR a person still reads.
+export function prThreads(
+  ctx: GhCtx,
+  repo: string,
+  number: string,
+): Threads | null {
+  const [owner, name] = repo.split("/");
+  const query =
+    "query($owner:String!,$name:String!,$number:Int!){" +
+    "repository(owner:$owner,name:$name){pullRequest(number:$number){" +
+    "reviewThreads(first:100){totalCount nodes{isResolved}}}}}";
+  const out = gh(ctx, [
+    "api",
+    "graphql",
+    "-f",
+    `query=${query}`,
+    "-F",
+    `owner=${owner}`,
+    "-F",
+    `name=${name}`,
+    "-F",
+    `number=${number}`,
+  ]);
+  if (out === null) return null;
+  try {
+    const t = (
+      JSON.parse(out) as {
+        data?: {
+          repository?: {
+            pullRequest?: {
+              reviewThreads?: { totalCount?: number; nodes?: { isResolved?: boolean }[] };
+            };
+          };
+        };
+      }
+    ).data?.repository?.pullRequest?.reviewThreads;
+    if (!t) return null;
+    const nodes = t.nodes ?? [];
+    return {
+      total: t.totalCount ?? nodes.length,
+      unresolved: nodes.filter((n) => !n.isResolved).length,
+    };
+  } catch {
+    return null;
+  }
+}
+
 interface SearchRow {
   number: number;
   title: string;

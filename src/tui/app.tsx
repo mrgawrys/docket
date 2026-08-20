@@ -258,9 +258,17 @@ export function App({
       return { kind: "none", reason: "" } as const;
     const a = readAssessment(runLogPath(paths, current.key));
     if (a.kind === "none" && kind === "mine" && current.entry.reviewer) {
+      // What the reviewer said, and what is still open — not a promise of
+      // feedback: a bare approval with every thread resolved has none.
+      const t = current.entry.threads;
+      const tail = t?.unresolved
+        ? ` — ${t.unresolved} unresolved thread${t.unresolved === 1 ? "" : "s"}`
+        : t?.total
+          ? " — all threads resolved"
+          : "";
       return {
         kind: "text",
-        text: `${current.entry.status} by ${current.entry.reviewer} — feedback awaiting you`,
+        text: `${current.entry.status} by ${current.entry.reviewer}${tail}`,
       } as const;
     }
     return a;

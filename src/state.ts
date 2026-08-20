@@ -52,6 +52,9 @@ export interface Entry {
   // Mine entries: who left the newest actionable review. The panel shows it,
   // and the TUI never fetches — so sync records it here.
   reviewer?: string;
+  // Review threads on the user's own PR, as of the last sync: the unresolved
+  // count is what the row shows where a review row shows its issue count.
+  threads?: { unresolved: number; total: number };
   note?: string;
   // Absolute paths of git worktrees this review created, discovered after the
   // run wherever the agent put them; cleanupEntry removes exactly these.

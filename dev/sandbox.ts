@@ -8,7 +8,7 @@ import { join } from "node:path";
 
 // Same shims as tests/tests.sh, knobs included: GH_PR_STATUS_JSON,
 // GH_PR_VIEW_FAIL, GH_AUTH_STATUS_TEXT, GH_ORG_LIST, GH_ORG_LIST_FAIL,
-// GH_MINE_SEARCH_JSON, GH_PR_MINE_JSON, GH_PR_HEADREF_JSON,
+// GH_MINE_SEARCH_JSON, GH_PR_MINE_JSON, GH_PR_HEADREF_JSON, GH_THREADS_JSON,
 // CLAUDE_FAIL, CLAUDE_EMIT_DENIAL, CLAUDE_LOGGED_OUT. The gh shim logs every
 // invocation (with the GH_TOKEN it saw) to GH_CALLS; the claude shim records
 // its calls, the prompt, CLAUDE_CONFIG_DIR, and the state of testorg/demo#7 at
@@ -32,6 +32,12 @@ if [ "$1" = auth ] && [ "$2" = token ]; then
   echo "tok-$4"; exit 0
 fi
 if [ "$1" = api ] && [ "$2" = user ]; then echo testuser; exit 0; fi
+if [ "$1" = api ] && [ "$2" = graphql ]; then
+  json="\${GH_THREADS_JSON:-}"
+  [ -n "$json" ] || json='{"data":{"repository":{"pullRequest":{"reviewThreads":{"totalCount":0,"nodes":[]}}}}}'
+  echo "$json"
+  exit 0
+fi
 if [ "$1" = api ] && [ "$2" = user/teams ]; then
   [ "\${GH_TEAMS_FAIL:-0}" = 1 ] && { echo "boom" >&2; exit 1; }
   [ -n "\${GH_TEAMS_CALLS:-}" ] && echo t >>"\$GH_TEAMS_CALLS"

@@ -1,4 +1,10 @@
-import { ghUser, prMineInfo, prView, type PrMineInfo } from "./github";
+import {
+  ghUser,
+  prMineInfo,
+  prThreads,
+  prView,
+  type PrMineInfo,
+} from "./github";
 import { feedbackNotification, notify } from "./notify";
 import { prepareCheckout, shouldAutoRun } from "./receive";
 import {
@@ -245,6 +251,18 @@ async function syncMine(
       status: standing.verdict,
       reviewer: standing.reviewer,
     });
+    entry = loadState(statePath)[key] ?? entry;
+  }
+
+  // The thread counts ride along on every sync: resolving a thread is not a
+  // review event, so nothing else would notice it.
+  const threads = prThreads(ctx.gh, repo, number);
+  if (
+    threads &&
+    (threads.unresolved !== entry.threads?.unresolved ||
+      threads.total !== entry.threads?.total)
+  ) {
+    patchEntry(statePath, key, { threads });
     entry = loadState(statePath)[key] ?? entry;
   }
 

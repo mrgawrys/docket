@@ -129,7 +129,8 @@ the session is there, never printed over the screen. A verb this machine cannot 
 greyed out rather than failing after the keypress.
 
 **`tab` switches to the other list: PRs you authored.** Each row shows the
-newest reviewer verdict on your PR; with
+reviewers' standing verdict on your PR and how many review threads are still
+unresolved, where a review row shows its issue count; with
 [`receive_enabled`](docs/configuration.md#receive_enabled), actionable
 feedback triggers a headless receive run in that PR's checkout — it addresses
 the feedback with edits and local commits only, never a push — and `enter` resumes the

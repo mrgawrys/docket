@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { issueChip, riskChip, splitSummary } from "../src/summary";
+import { issueChip, riskChip, splitSummary, threadChip } from "../src/summary";
 
 const fenced = (json: string) => "```json\n" + json + "\n```";
 
@@ -131,4 +131,17 @@ test("risk renders its own chip, and nothing when unassessed", () => {
   });
   expect(riskChip({ risk: "high" })).toEqual({ text: "HIGH", color: "red" });
   expect(riskChip({ headline: "x" })).toBeUndefined();
+});
+
+test("threadChip: unresolved count, all-resolved mark, nothing before a sync", () => {
+  expect(threadChip(undefined)).toBeUndefined();
+  expect(threadChip({ unresolved: 0, total: 0 })).toBeUndefined();
+  expect(threadChip({ unresolved: 0, total: 2 })).toEqual({
+    text: "✓ resolved",
+    color: "green",
+  });
+  expect(threadChip({ unresolved: 3, total: 4 })).toEqual({
+    text: "3 unresolved",
+    color: "yellow",
+  });
 });
