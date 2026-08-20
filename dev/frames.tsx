@@ -63,15 +63,23 @@ export async function renderFrames(
     const actions: TuiActions = {
       retry: async (k) => {
         calls.push(`retry:${k}`);
-        return 0;
+        return { code: 0 };
+      },
+      review: async (k) => {
+        calls.push(`review:${k}`);
+        return { code: 0 };
+      },
+      receive: async (k) => {
+        calls.push(`receive:${k}`);
+        return { code: 0 };
       },
       poll: async () => {
         calls.push("poll");
-        return 0;
+        return { code: 0 };
       },
       sync: async () => {
         calls.push("sync");
-        return 0;
+        return { code: 0 };
       },
       dismiss: (k) => {
         calls.push(`dismiss:${k}`);

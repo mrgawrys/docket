@@ -28,7 +28,7 @@ import {
 } from "./state";
 import { logCommand, statusCommand, watchCommand } from "./status";
 import { reconcile, startReceive } from "./sync";
-import { runTui } from "./tui/app";
+import { runTui, type ActionResult } from "./tui/app";
 import { childOwnsTerminal } from "./tui/suspend";
 import { promptCommand } from "./wizard/prompt";
 import { resolveConfig } from "./wizard/trigger";
@@ -162,13 +162,30 @@ function keyArg(raw: string | undefined, usage: string): string | null {
   }
 }
 
-const startedMsg = (key: string, result: StartResult): number => {
+// Where a verb's user-facing lines go. The CLI prints them; the TUI hands in
+// a collector instead, because Ink owns the terminal — a console.log there
+// lands in the middle of the rendered frame and the user never sees it as a
+// message.
+export interface Out {
+  ok: (line: string) => void;
+  err: (line: string) => void;
+}
+const CONSOLE: Out = {
+  ok: (line) => console.log(line),
+  err: (line) => console.error(line),
+};
+
+const startedMsg = (
+  key: string,
+  result: StartResult,
+  out: Out = CONSOLE,
+): number => {
   if (result === "started") {
-    console.log(
+    out.ok(
       `${key}: run started in the background — you'll get a notification; follow with: docket watch`,
     );
   } else if (result === "already-running") {
-    console.log(`${key}: a run is already in flight`);
+    out.ok(`${key}: a run is already in flight`);
   }
   return result === "spawn-failed" ? 1 : 0;
 };
@@ -180,13 +197,14 @@ const receiveStartedMsg = (
   ctx: Ctx,
   key: string,
   result: StartResult,
+  out: Out = CONSOLE,
 ): number => {
   if (result === "skipped") {
     const e = loadState(ctx.paths.statePath)[key];
-    console.error(`${key}: not started — ${e?.error ?? "skipped"}`);
+    out.err(`${key}: not started — ${e?.error ?? "skipped"}`);
     return 1;
   }
-  return startedMsg(key, result);
+  return startedMsg(key, result, out);
 };
 
 // Cycle bodies shared by the subcommands and the interactive menu.
@@ -205,11 +223,16 @@ const syncLocked = (ctx: Ctx): Promise<number> =>
     return 0;
   });
 
-const retryKey = (ctx: Ctx, key: string, note?: string): Promise<number> =>
+const retryKey = (
+  ctx: Ctx,
+  key: string,
+  note?: string,
+  out: Out = CONSOLE,
+): Promise<number> =>
   runUnlocked(ctx, async () => {
     const entry = loadState(ctx.paths.statePath)[key];
     if (!entry) {
-      console.error(`unknown key: ${key}`);
+      out.err(`unknown key: ${key}`);
       return 1;
     }
     if (entryKind(key) === "mine") {
@@ -217,6 +240,7 @@ const retryKey = (ctx: Ctx, key: string, note?: string): Promise<number> =>
         ctx,
         key,
         await startReceive(ctx, key, entry, note),
+        out,
       );
     }
     const { repo } = splitKey(key);
@@ -228,7 +252,7 @@ const retryKey = (ctx: Ctx, key: string, note?: string): Promise<number> =>
       entry.url ?? "",
       note,
     );
-    return startedMsg(key, result);
+    return startedMsg(key, result, out);
   });
 
 // Start a receive run for one of the user's own PRs — the mirror of `docket
@@ -237,6 +261,7 @@ const receiveKey = (
   ctx: Ctx,
   rawKey: string,
   note: string | undefined,
+  out: Out = CONSOLE,
 ): Promise<number> =>
   runUnlocked(ctx, async () => {
     const key = entryKind(rawKey) === "mine" ? rawKey : `mine:${rawKey}`;
@@ -245,7 +270,7 @@ const receiveKey = (
     // permanent skipped row in the mine view. An already-tracked entry may
     // carry its own local_path, so only new keys are gated on the mapping.
     if (!(repo in ctx.cfg.repos) && !loadState(ctx.paths.statePath)[key]) {
-      console.error(`${repo} is not mapped in "repos" — add its clone path`);
+      out.err(`${repo} is not mapped in "repos" — add its clone path`);
       return 1;
     }
     const info = prView<{ title?: string; url?: string }>(
@@ -255,7 +280,7 @@ const receiveKey = (
       "title,url",
     );
     if (!info) {
-      console.error(`cannot fetch ${key} from GitHub (does the PR exist?)`);
+      out.err(`cannot fetch ${key} from GitHub (does the PR exist?)`);
       return 1;
     }
     updateEntry(ctx.paths.statePath, key, (e) => ({
@@ -269,6 +294,7 @@ const receiveKey = (
       ctx,
       key,
       await startReceive(ctx, key, entry, note),
+      out,
     );
   });
 
@@ -282,6 +308,7 @@ const reviewKey = (
   ctx: Ctx,
   key: string,
   note: string | undefined,
+  out: Out = CONSOLE,
 ): Promise<number> =>
   runUnlocked(ctx, async () => {
     const { repo, number } = splitKey(key);
@@ -292,7 +319,7 @@ const reviewKey = (
       "title,url",
     );
     if (!info) {
-      console.error(`cannot fetch ${key} from GitHub (does the PR exist?)`);
+      out.err(`cannot fetch ${key} from GitHub (does the PR exist?)`);
       return 1;
     }
     const result = await startReview(
@@ -303,7 +330,7 @@ const reviewKey = (
       info.url ?? "",
       note,
     );
-    return startedMsg(key, result);
+    return startedMsg(key, result, out);
   });
 
 const review: Command = (args) =>
@@ -410,16 +437,31 @@ const commands: Record<string, Command> = {
   off,
 };
 
+// Run a verb with its console output captured, so the TUI can show the last
+// line it produced instead of letting it land in the frame.
+const collected = async (
+  fn: (out: Out) => Promise<number>,
+): Promise<ActionResult> => {
+  const lines: string[] = [];
+  const push = (line: string) => {
+    lines.push(line);
+  };
+  const code = await fn({ ok: push, err: push });
+  return { code, message: lines.at(-1) };
+};
+
 async function main(): Promise<number> {
   const [cmd, ...rest] = Bun.argv.slice(2);
   if (cmd === undefined)
     return withCtx((ctx) =>
       runTui(ctx, {
-        retry: (key) => retryKey(ctx, key),
-        review: (key, note) => reviewKey(ctx, bareKey(key), note),
-        receive: (key, note) => receiveKey(ctx, key, note),
-        poll: () => pollLocked(ctx, false),
-        sync: () => syncLocked(ctx),
+        retry: (key) => collected((out) => retryKey(ctx, key, undefined, out)),
+        review: (key, note) =>
+          collected((out) => reviewKey(ctx, bareKey(key), note, out)),
+        receive: (key, note) =>
+          collected((out) => receiveKey(ctx, key, note, out)),
+        poll: () => collected(() => pollLocked(ctx, false)),
+        sync: () => collected(() => syncLocked(ctx)),
         dismiss: (key) => dismissKey(ctx, key),
         kill: (key) => killEntry(ctx, key).message,
       }),

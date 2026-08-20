@@ -34,6 +34,7 @@ function mount(
   real = false,
   configText = JSON.stringify(cfg),
   authWarning?: string,
+  overrides: Partial<TuiActions> = {},
 ) {
   const dir = mkdtempSync(join(tmpdir(), "docket-tui-"));
   writeFileSync(join(dir, "state.json"), JSON.stringify(state));
@@ -47,23 +48,23 @@ function mount(
   const actions: TuiActions = {
     retry: async (k) => {
       calls.push(`retry:${k}`);
-      return 0;
+      return { code: 0 };
     },
     review: async (k, note) => {
       calls.push(`review:${k}${note ? `:${note}` : ""}`);
-      return 0;
+      return { code: 0 };
     },
     receive: async (k, note) => {
       calls.push(`receive:${k}${note ? `:${note}` : ""}`);
-      return 0;
+      return { code: 0 };
     },
     poll: async () => {
       calls.push("poll");
-      return 0;
+      return { code: 0 };
     },
     sync: async () => {
       calls.push("sync");
-      return 0;
+      return { code: 0 };
     },
     dismiss: (k) => {
       calls.push(`dismiss:${k}`);
@@ -79,7 +80,7 @@ function mount(
     <App
       cfg={cfg}
       paths={p}
-      actions={actions}
+      actions={{ ...actions, ...overrides }}
       resolved={resolved}
       request={(req) => requests.push(req)}
       authWarning={authWarning}
@@ -464,5 +465,26 @@ test("no warning line when the setup is fine", async () => {
   const ui = mount({});
   await Bun.sleep(20);
   expect(ui.lastFrame()).not.toContain("not logged in");
+  ui.unmount();
+});
+
+test("a verb that fails says so in the footer instead of clearing the status", async () => {
+  const ui = mount(
+    { "acme/one#1": entry({ title: "One" }) },
+    false,
+    JSON.stringify(cfg),
+    undefined,
+    {
+      retry: async () => ({
+        code: 1,
+        message: "cannot fetch acme/one#1 from GitHub (does the PR exist?)",
+      }),
+    },
+  );
+  ui.stdin.write("r");
+  await Bun.sleep(40);
+  // the verb reports through the frame — its own console output is displaced
+  // above it, where nobody is looking
+  expect(ui.lastFrame()).toContain("does the PR exist?");
   ui.unmount();
 });

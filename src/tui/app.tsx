@@ -45,14 +45,22 @@ import { Panel } from "./panel";
 import { Queue, type Row } from "./queue";
 import { suspendLoop, type SuspendRequest } from "./suspend";
 
+// What a background verb did: its exit code, and the line it would have
+// printed. Ink owns the terminal, so nothing a verb has to say may reach the
+// user any other way.
+export interface ActionResult {
+  code: number;
+  message?: string;
+}
+
 export interface TuiActions {
-  retry(key: string): Promise<number>;
+  retry(key: string): Promise<ActionResult>;
   // The two `n` submits: force-review a PR, or receive feedback on one of the
   // user's own (the latter also behind R). Keys may arrive bare or prefixed.
-  review(key: string, note?: string): Promise<number>;
-  receive(key: string, note?: string): Promise<number>;
-  poll(): Promise<number>;
-  sync(): Promise<number>;
+  review(key: string, note?: string): Promise<ActionResult>;
+  receive(key: string, note?: string): Promise<ActionResult>;
+  poll(): Promise<ActionResult>;
+  sync(): Promise<ActionResult>;
   // Both return what to tell the user: their own output goes to the console,
   // which Ink displaces above the frame where nobody is looking.
   dismiss(key: string): string;
@@ -343,10 +351,12 @@ export function App({
     setCursorKey(rows[next]?.key);
   };
 
-  const run = (label: string, fn: () => Promise<number>) => {
+  const run = (label: string, fn: () => Promise<ActionResult>) => {
     setStatus(`${label}…`);
     fn()
-      .then(() => setStatus(undefined))
+      .then((r) =>
+        setStatus(r.message ?? (r.code === 0 ? undefined : `${label} failed`)),
+      )
       .catch((e: unknown) => setStatus(`${label} failed: ${e}`))
       .finally(reload);
   };
