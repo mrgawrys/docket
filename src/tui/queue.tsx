@@ -1,6 +1,6 @@
 import { Box, Text } from "ink";
 import { denialChip } from "../denialview";
-import type { Entry, Status } from "../state";
+import { statusLabel, type Entry, type Status } from "../state";
 import { issueChip, riskChip, threadChip } from "../summary";
 
 export interface Row {
@@ -72,7 +72,7 @@ export function Queue({
             </Box>
             <Box width={18} flexShrink={0}>
               <Text color={STATUS_COLOR[entry.status]} wrap="truncate-end">
-                {entry.status}
+                {statusLabel(key, entry.status)}
               </Text>
             </Box>
             {/* fixed widths, so an entry with no summary leaves a gap rather

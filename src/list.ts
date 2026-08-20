@@ -31,7 +31,12 @@ export function buildResume(
   | { argv: string[]; cwd: string; env: Record<string, string> }
   | { error: string } {
   if (entry.status === "reviewing") {
-    return { error: "still being reviewed — w watches it live, K kills it" };
+    return {
+      error:
+        kind === "mine"
+          ? "still addressing the feedback — w watches it live, K kills it"
+          : "still being reviewed — w watches it live, K kills it",
+    };
   }
   // claude stores sessions under a slug of the directory it ran in: a review
   // ran in the clone, a receive run in the PR's checkout — resume in the same.

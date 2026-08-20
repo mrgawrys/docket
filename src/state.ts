@@ -217,6 +217,20 @@ export function pendingEntries(s: State, kind?: EntryKind): [string, Entry][] {
     .sort(([, a], [, b]) => a.updated_at.localeCompare(b.updated_at));
 }
 
+// The stored status is shared between the two kinds of entry; the word the
+// user reads is not. A run on one of their own PRs addresses feedback — it
+// never reviews — and its finished state is fixes waiting for their eyes.
+const MINE_STATUS_LABEL: Partial<Record<Status, string>> = {
+  reviewing: "addressing",
+  ready: "fixes ready",
+};
+
+export function statusLabel(key: string, status: Status): string {
+  return entryKind(key) === "mine"
+    ? (MINE_STATUS_LABEL[status] ?? status)
+    : status;
+}
+
 export function entryKind(key: string): EntryKind {
   return key.startsWith("mine:") ? "mine" : "review";
 }

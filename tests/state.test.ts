@@ -6,6 +6,7 @@ import { paths, runLogPath } from "../src/config";
 import {
   bareKey,
   entryKind,
+  statusLabel,
   loadState,
   markDone,
   markReviewed,
@@ -154,4 +155,13 @@ test("pendingEntries excludes done, sorts by updated_at ascending", () => {
     "a/b#1": { status: "failed" as const, updated_at: "2026-01-01T00:00:00Z" },
   };
   expect(pendingEntries(s).map(([k]) => k)).toEqual(["a/b#1", "a/b#2"]);
+});
+
+// A mine row never "reviews": the stored status is shared, the word is not.
+test("statusLabel renames the run states for mine entries only", () => {
+  expect(statusLabel("mine:o/r#1", "reviewing")).toBe("addressing");
+  expect(statusLabel("mine:o/r#1", "ready")).toBe("fixes ready");
+  expect(statusLabel("mine:o/r#1", "approved")).toBe("approved");
+  expect(statusLabel("o/r#1", "reviewing")).toBe("reviewing");
+  expect(statusLabel("o/r#1", "ready")).toBe("ready");
 });
