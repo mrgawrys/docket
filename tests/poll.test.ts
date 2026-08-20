@@ -72,6 +72,19 @@ test("poll: reviews run in parallel and survive the poll process exiting", async
   expect(sb.claudeCalls()).toBe(2);
 });
 
+test("poll: an owner listed twice (login in orgs) is searched once", () => {
+  const sb = makeSandbox();
+  // the gh shim's login is testuser — the same owner as the configured org
+  sb.writeConfig({
+    orgs: ["testuser"],
+    repos: { "testorg/demo": sb.demoRepo },
+  });
+  const r = sb.run(["poll", "--dry-run"]);
+  expect(r.code).toBe(0);
+  const searches = sb.ghCalls().filter((l) => l.includes("--author=@me"));
+  expect(searches).toHaveLength(1);
+});
+
 test("poll: authored PRs become open mine entries — flagged drafts, skipped unmapped, no runs", async () => {
   const sb = makeSandbox();
   const mineJson = JSON.stringify([

@@ -38,7 +38,8 @@ function discoverMine(ctx: Ctx, dry: boolean, known: State): void {
     return;
   }
   const seen = new Set<string>(); // one PR can match several owner searches
-  for (const owner of [...ctx.cfg.orgs, login]) {
+  // the login may itself be listed in orgs — one search per owner is enough
+  for (const owner of new Set([...ctx.cfg.orgs, login])) {
     for (const c of searchMyPrs(ctx.gh, owner)) {
       const key = `mine:${c.repo}#${c.number}`;
       if (seen.has(key)) continue;
