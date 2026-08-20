@@ -310,21 +310,25 @@ export function App({
     prInput !== undefined ? "input" : (status ?? notice ?? authWarning);
   const footerColor =
     notice !== undefined && footer === notice ? "red" : "yellow";
-  // The frame fills the terminal (less the row Ink must leave spare) and every
-  // region has a fixed height, the queue's included: a row appearing or
-  // vanishing must not move the detail bar or the legend. Two bars, the tab
-  // strip, the legend, its blank row, and the footer row are the fixed seven.
-  const frameHeight = Math.max(8, height - 1);
-  const queueHeight = Math.max(1, Math.min(10, frameHeight - 8));
+  // The frame is as tall as its content, never the terminal: the queue takes
+  // its rows, the panel its lines down to a floor, and the keys follow right
+  // under. Fixed rows: the tab strip, two bars, the blank before the legend,
+  // the legend, the footer row — and the row Ink must leave spare.
+  const fixedRows = 7;
+  const queueHeight = Math.max(
+    1,
+    Math.min(rows.length || 1, 10, height - fixedRows - 1),
+  );
   const denials = current?.entry.denials;
   // Bounded, and it shrinks with the terminal — the panel never takes the
   // screen away from the queue the way the old scrolling pane did. A run with
-  // denials asks for the teaser's rows on top of the summary's.
+  // denials asks for the teaser's rows on top of the summary's. It is padded
+  // to PANEL_HEIGHT, so a one-line headline does not pull the legend up.
   const panelHeight = Math.max(
     1,
     Math.min(
       PANEL_HEIGHT + (denials?.length ? TEASER_HEIGHT + 1 : 0),
-      frameHeight - 7 - queueHeight,
+      height - fixedRows - queueHeight,
     ),
   );
   const panel = useMemo(
@@ -366,9 +370,9 @@ export function App({
         cfg: liveCfg,
         scroll,
         width: width - 2,
-        height: Math.max(1, frameHeight - 7),
+        height: Math.max(1, height - fixedRows),
       }),
-    [viewGroups, denialKind, liveCfg, scroll, width, frameHeight],
+    [viewGroups, denialKind, liveCfg, scroll, width, height],
   );
 
   const move = (delta: number) => {
@@ -554,7 +558,7 @@ export function App({
   });
 
   return (
-    <Box flexDirection="column" width={width} height={frameHeight}>
+    <Box flexDirection="column" width={width}>
       {/* the tabs are the title: the bar under them carries only the position */}
       <Tabs list={list} counts={counts} />
       <Bar
@@ -574,18 +578,14 @@ export function App({
         </>
       ) : (
         <>
-          <Box height={queueHeight} flexShrink={0}>
-            <Queue rows={rows} cursor={cursor} height={queueHeight} />
-          </Box>
+          <Queue rows={rows} cursor={cursor} height={queueHeight} />
           {/* the bar names the row the panel belongs to, so the two regions
               read as queue-then-detail rather than one column of text */}
           <Bar label={current?.key ?? "no selection"} width={width} />
-          <Panel lines={panel} />
+          <Panel lines={panel} minHeight={Math.min(PANEL_HEIGHT, panelHeight)} />
         </>
       )}
-      {/* the keys sit on the bottom edge, where every pager puts them; the
-          spacer keeps them there however short the panel is */}
-      <Box flexGrow={1} />
+      <Text> </Text>
       <Legend
         view={view === "denials" ? "denials" : list}
         unavailable={unavailable}
