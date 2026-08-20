@@ -74,6 +74,8 @@ test("receive allowlist: edit + local git verbs, and never push or GitHub writes
   expect(RECEIVE_ALLOWED_TOOLS).not.toContain("Bash(git checkout:*)");
   expect(RECEIVE_ALLOWED_TOOLS).not.toContain("Bash(git worktree:*)");
   expect(RECEIVE_ALLOWED_TOOLS).not.toContain("Bash(git branch:*)");
+  expect(RECEIVE_ALLOWED_TOOLS).not.toContain("EnterWorktree");
+  expect(RECEIVE_ALLOWED_TOOLS).not.toContain("ExitWorktree");
   // the guarantee the receive feature rests on: assert the absence
   expect(joined).not.toContain("push");
   expect(joined).not.toContain("gh pr comment");

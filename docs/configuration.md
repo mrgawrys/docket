@@ -157,7 +157,8 @@ wizard never overwrites an existing custom value here.
 Entries appended to the **receive** run's allowlist, in the same grammar as
 `extra_allowed_tools`. The receive baseline is the review baseline plus
 `Edit`, `Write`, `MultiEdit`, `Bash(git add:*)` and `Bash(git commit:*)`,
-minus `Bash(git checkout:*)`, `Bash(git worktree:*)` and `Bash(git branch:*)`
+minus `Bash(git checkout:*)`, `Bash(git worktree:*)`, `Bash(git branch:*)`,
+`EnterWorktree` and `ExitWorktree`
 — a receive run is already standing in the checkout docket resolved for it,
 and that checkout may be your own worktree. It deliberately contains no push
 and no GitHub-write verbs either, and a denied `git push` in the mine view's

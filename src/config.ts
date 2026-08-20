@@ -83,6 +83,9 @@ const CHECKOUT_MOVING = new Set([
   "Bash(git checkout:*)",
   "Bash(git worktree:*)",
   "Bash(git branch:*)",
+  // the tool-level route to the same thing on newer claude versions
+  "EnterWorktree",
+  "ExitWorktree",
 ]);
 
 // What a receive run may do on top of that: edit files and commit locally in
