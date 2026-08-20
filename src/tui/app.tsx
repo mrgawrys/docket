@@ -88,16 +88,22 @@ function Bar({
   right,
   width,
 }: {
-  label: string;
+  label?: string;
   right?: string;
   width: number;
 }) {
-  const head = `─ ${label} `;
+  const head = label ? `─ ${label} ` : "──";
   const tail = right ? ` ${right} ─` : "─";
   const fill = Math.max(0, width - head.length - tail.length);
   return (
     <Text dimColor>
-      {head}
+      {label ? (
+        <>
+          ─ <Text dimColor={false}>{label}</Text>{" "}
+        </>
+      ) : (
+        head
+      )}
       {"─".repeat(fill)}
       {tail}
     </Text>
@@ -297,41 +303,28 @@ export function App({
     return u;
   }, [current, cfg, resolved, enterResolves, kind, liveCfg]);
 
-  const notes = useMemo(() => {
-    const byReason = new Map<string, string[]>();
-    for (const [verb, reason] of Object.entries(unavailable)) {
-      // A review that tripped no denials is the normal case, not a machine
-      // this verb cannot run on: the greyed key says it, the panel need not.
-      if (verb === "denials" || verb === "handoff") continue;
-      byReason.set(reason, [...(byReason.get(reason) ?? []), verb]);
-    }
-    return [...byReason].map(
-      ([reason, verbs]) => `${verbs.join("/")}: ${reason}`,
-    );
-  }, [unavailable]);
-
   // Last in line: action feedback is what the user just asked for, so it takes
   // the line while it lasts. The warning is still there when it clears. An
-  // open `n` input takes the same row, so it counts as a footer for layout.
+  // open `n` input takes the same row.
   const footer =
     prInput !== undefined ? "input" : (status ?? notice ?? authWarning);
   const footerColor =
     notice !== undefined && footer === notice ? "red" : "yellow";
-  const queueHeight = Math.max(
-    1,
-    Math.min(rows.length || 1, Math.min(10, height - 9)),
-  );
+  // The frame fills the terminal (less the row Ink must leave spare) and every
+  // region has a fixed height, the queue's included: a row appearing or
+  // vanishing must not move the detail bar or the legend. Two bars, the tab
+  // strip, the legend, its blank row, and the footer row are the fixed seven.
+  const frameHeight = Math.max(8, height - 1);
+  const queueHeight = Math.max(1, Math.min(10, frameHeight - 8));
   const denials = current?.entry.denials;
   // Bounded, and it shrinks with the terminal — the panel never takes the
-  // screen away from the queue the way the old scrolling pane did. The `- 3`
-  // is the two bars plus the row the frame must leave spare: fill every row
-  // and the terminal scrolls the whole thing on each render. A run with
+  // screen away from the queue the way the old scrolling pane did. A run with
   // denials asks for the teaser's rows on top of the summary's.
   const panelHeight = Math.max(
     1,
     Math.min(
       PANEL_HEIGHT + (denials?.length ? TEASER_HEIGHT + 1 : 0),
-      height - 2 - queueHeight - 3 - (footer ? 1 : 0),
+      frameHeight - 7 - queueHeight,
     ),
   );
   const panel = useMemo(
@@ -339,7 +332,6 @@ export function App({
       panelLines({
         summary,
         assessment,
-        notes,
         denials,
         cfg: liveCfg,
         kind,
@@ -350,7 +342,6 @@ export function App({
     [
       summary,
       assessment,
-      notes,
       denials,
       liveCfg,
       kind,
@@ -366,8 +357,7 @@ export function App({
   const denialRow = rows.find((r) => r.key === denialKey);
   const denialKind: EntryKind = denialKey ? entryKind(denialKey) : kind;
   const viewGroups = denialRow?.entry.denials ?? [];
-  // The denials view takes the whole region below the bars: legend, the two
-  // bars and the row the frame must leave spare (see panelHeight).
+  // The denials view takes the whole region between the bars and the legend.
   const denialPanel = useMemo(
     () =>
       denialView({
@@ -376,9 +366,9 @@ export function App({
         cfg: liveCfg,
         scroll,
         width: width - 2,
-        height: Math.max(1, height - 5 - (footer ? 1 : 0)),
+        height: Math.max(1, frameHeight - 7),
       }),
-    [viewGroups, denialKind, liveCfg, scroll, width, height, footer],
+    [viewGroups, denialKind, liveCfg, scroll, width, frameHeight],
   );
 
   const move = (delta: number) => {
@@ -564,16 +554,10 @@ export function App({
   });
 
   return (
-    <Box flexDirection="column" width={width}>
-      {/* the legend leads: fixed at the top, it cannot be moved around by
-          however much assessment the row below it happens to have */}
-      <Legend
-        view={view === "denials" ? "denials" : list}
-        unavailable={unavailable}
-      />
+    <Box flexDirection="column" width={width} height={frameHeight}>
+      {/* the tabs are the title: the bar under them carries only the position */}
       <Tabs list={list} counts={counts} />
       <Bar
-        label="docket"
         right={rows.length ? `${cursor + 1}/${rows.length}` : "empty"}
         width={width}
       />
@@ -590,13 +574,22 @@ export function App({
         </>
       ) : (
         <>
-          <Queue rows={rows} cursor={cursor} height={queueHeight} />
+          <Box height={queueHeight} flexShrink={0}>
+            <Queue rows={rows} cursor={cursor} height={queueHeight} />
+          </Box>
           {/* the bar names the row the panel belongs to, so the two regions
               read as queue-then-detail rather than one column of text */}
           <Bar label={current?.key ?? "no selection"} width={width} />
           <Panel lines={panel} />
         </>
       )}
+      {/* the keys sit on the bottom edge, where every pager puts them; the
+          spacer keeps them there however short the panel is */}
+      <Box flexGrow={1} />
+      <Legend
+        view={view === "denials" ? "denials" : list}
+        unavailable={unavailable}
+      />
       {prInput !== undefined ? (
         <Text color="cyan" wrap="truncate-end">
           {list === "mine" ? "receive" : "review"} PR ▸ {prInput}█{" "}
@@ -604,11 +597,13 @@ export function App({
             (URL or ORG/REPO#N, then a note · enter runs, esc cancels)
           </Text>
         </Text>
-      ) : footer ? (
+      ) : (
+        // always a row, empty or not: a message arriving must not shift the
+        // legend
         <Text color={footerColor} wrap="truncate-end">
-          {footer}
+          {footer ?? " "}
         </Text>
-      ) : null}
+      )}
     </Box>
   );
 }
@@ -630,6 +625,9 @@ export function runTui(ctx: Ctx, actions: TuiActions): Promise<number> {
       ? `claude is not logged in (${auth.dir}) — run: docket doctor`
       : undefined;
   let selected: string | undefined;
+  // The frame is sized to the terminal, so it starts at the top of a cleared
+  // screen rather than wherever the shell prompt left the cursor.
+  if (process.stdout.isTTY) process.stdout.write("\x1b[2J\x1b[H");
   return suspendLoop((request, notice) =>
     render(
       <App

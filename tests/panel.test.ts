@@ -10,7 +10,6 @@ test("the recorded headline is what the panel shows, in full weight", () => {
     panelLines({
       summary: { headline: "choice questions render as Text", issues: 1 },
       assessment: prose("a whole review nobody asked to read here"),
-      notes: [],
       width: 60,
     }),
   ).toEqual([{ text: "choice questions render as Text" }]);
@@ -19,7 +18,6 @@ test("the recorded headline is what the panel shows, in full weight", () => {
 test("without a headline it falls back to the prose, dimmed and marked short", () => {
   const lines = panelLines({
     assessment: prose("one\ntwo\nthree\nfour\nfive\nsix"),
-    notes: [],
     width: 60,
     height: 3,
   });
@@ -32,7 +30,6 @@ test("markdown blank lines do not eat rows the fallback needs for content", () =
     assessment: prose(
       "# Code review\n\nTwo findings.\n\nBoth in the migration.",
     ),
-    notes: [],
     width: 60,
     height: 3,
   });
@@ -46,33 +43,16 @@ test("markdown blank lines do not eat rows the fallback needs for content", () =
 test("prose that fits is not marked as truncated", () => {
   const lines = panelLines({
     assessment: prose("all of it"),
-    notes: [],
     width: 60,
     height: 4,
   });
   expect(lines.map((l) => l.text)).toEqual(["all of it"]);
 });
 
-test("a verb the machine cannot run leads, and costs the panel a row", () => {
-  // Losing the reason a key is dead is worse than losing a line of verdict.
-  const lines = panelLines({
-    summary: { headline: "aaa bbb ccc ddd" },
-    assessment: none,
-    notes: ["shell/diff: worktree is gone"],
-    width: 5,
-    height: 2,
-  });
-  expect(lines).toEqual([
-    { text: "shell/diff: worktree is gone", color: "yellow" },
-    { text: "aaa" },
-  ]);
-});
-
 test("the panel never outgrows its height, whatever it is filled with", () => {
   for (const height of [1, 2, 4]) {
     const lines = panelLines({
       assessment: prose("x ".repeat(400)),
-      notes: ["a", "b", "c", "d", "e"],
       width: 10,
       height,
     });
@@ -94,7 +74,6 @@ test("the denials teaser leads the panel, and never at the headline's expense", 
   const lines = panelLines({
     summary: { headline: "the verdict", issues: 1 },
     assessment: none,
-    notes: [],
     denials,
     cfg: { orgs: [], repos: {} },
     width: 60,
@@ -109,7 +88,6 @@ test("a panel with no room for both keeps the headline over the teaser", () => {
   const lines = panelLines({
     summary: { headline: "the verdict", issues: 1 },
     assessment: none,
-    notes: [],
     denials: [
       {
         tool: "Bash",

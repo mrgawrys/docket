@@ -91,7 +91,8 @@ export function Legend({
         return (
           <Text key={b.keys} color={off ? "gray" : undefined} dimColor={off}>
             {i > 0 ? " · " : ""}
-            <Text bold={!off}>{b.keys}</Text> {b.label}
+            <Text bold={!off}>{b.keys}</Text>
+            <Text dimColor> {b.label}</Text>
           </Text>
         );
       })}

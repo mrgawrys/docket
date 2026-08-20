@@ -9,7 +9,6 @@ export interface Row {
 }
 
 const STATUS_COLOR: Partial<Record<Status, string>> = {
-  open: "blue",
   ready: "green",
   reviewing: "cyan",
   failed: "red",
@@ -99,7 +98,7 @@ export function Queue({
             ) : null}
             {flags ? (
               <Box flexShrink={0}>
-                <Text color="yellow">{flags} </Text>
+                <Text color="gray">{flags} </Text>
               </Box>
             ) : null}
             <Box flexGrow={1} flexShrink={1} minWidth={0}>

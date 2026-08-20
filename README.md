@@ -103,7 +103,8 @@ one finishes.
 
 `docket` opens the queue. A tab strip at the top names both lists — the
 review queue and the PRs you authored — with their counts; `tab` switches.
-Each row carries the review's verdict at a glance —
+The keys sit on the bottom edge, and a key this machine cannot run is greyed
+there: press it and the reason lands in the footer. Each row carries the review's verdict at a glance —
 how many issues it would flag, and the risk it graded the PR — and the panel
 under the list shows the highlighted PR's headline finding. It is a triage
 screen: `enter` is how a review actually gets read.
@@ -122,7 +123,7 @@ worktree: a shell in it, or its diff in your diff tool (configurable via
 removes its worktree; `K` kills a running review before it burns more tokens.
 `n` opens a one-line input: paste a PR URL or `ORG/REPO#N` (optionally
 followed by a note) to review it by hand. A verb this machine cannot run is
-greyed out with the reason shown, rather than failing after the keypress.
+greyed out rather than failing after the keypress.
 
 **`tab` switches to the other list: PRs you authored.** Each row shows the
 newest reviewer verdict on your PR; with

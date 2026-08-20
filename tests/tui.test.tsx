@@ -147,7 +147,7 @@ test("the cursor holds its place when the row under it is dismissed", async () =
   ui.unmount();
 });
 
-test("verbs are unavailable, with the reason shown, when the worktree or session is gone", async () => {
+test("a dead verb launches nothing and says why in the footer", async () => {
   const ui = mount({
     "acme/one#1": entry({
       status: "failed",
@@ -156,14 +156,15 @@ test("verbs are unavailable, with the reason shown, when the worktree or session
     }),
   });
   await Bun.sleep(20);
-  const frame = ui.lastFrame() ?? "";
-  expect(frame).toContain("worktree is gone: /vanished/pr-1");
-  expect(frame).toContain("no session (failed)");
+  // The reason is not on screen until asked for: the greyed key is the cue.
+  expect(ui.lastFrame() ?? "").not.toContain("worktree is gone");
 
-  // and the keys stay dead rather than launching something
   ui.stdin.write("s");
-  ui.stdin.write("d");
   await Bun.sleep(20);
+  expect(ui.lastFrame()).toMatch(/shell: .+/);
+  ui.stdin.write("\r");
+  await Bun.sleep(20);
+  expect(ui.lastFrame()).toContain("no session (failed)");
   expect(ui.requests).toEqual([]);
   ui.unmount();
 });
