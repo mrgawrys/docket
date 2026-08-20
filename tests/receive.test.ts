@@ -261,6 +261,40 @@ test("docket receive runs regardless of receive_enabled, keys under mine:", asyn
   expect(blocked.err).toContain("checkout dirty");
 });
 
+test("docket retry on a mine key with a blocked checkout reports the reason, exit 1", () => {
+  const sb = makeSandbox();
+  const { clone, mineJson } = prScenario(sb);
+  git(clone, "checkout", "-q", "feature");
+  writeFileSync(join(clone, "f.txt"), "uncommitted local work\n");
+  sb.writeState({
+    "mine:testorg/demo#7": {
+      status: "skipped",
+      title: "My PR",
+      url: "u",
+      branch: "feature",
+      local_path: clone,
+      updated_at: "2026-01-01T00:00:00Z",
+    },
+  });
+  const before = sb.claudeCalls();
+  const r = sb.run(["retry", "mine:testorg/demo#7"], {
+    GH_PR_MINE_JSON: mineJson,
+  });
+  expect(r.code).toBe(1); // same contract as docket receive, not a silent 0
+  expect(r.err).toContain("checkout dirty");
+  expect(sb.claudeCalls()).toBe(before);
+});
+
+test("docket receive on an unmapped repo refuses without writing state", () => {
+  const sb = makeSandbox();
+  sb.writeConfig({ orgs: ["testorg"], repos: {} });
+  const r = sb.run(["receive", "testorg/typoed#3"]);
+  expect(r.code).toBe(1);
+  expect(r.err).toContain('testorg/typoed is not mapped in "repos"');
+  // no permanent skipped row lands in the mine view
+  expect(sb.state()["mine:testorg/typoed#3"]).toBeUndefined();
+});
+
 test("exec re-checks the checkout before spawning claude (TOCTOU downgrade)", () => {
   const sb = makeSandbox();
   const { clone, mineJson } = prScenario(sb, { receive_enabled: true });

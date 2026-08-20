@@ -173,6 +173,22 @@ const startedMsg = (key: string, result: StartResult): number => {
   return result === "spawn-failed" ? 1 : 0;
 };
 
+// startedMsg for receive runs: a skip carries a reason (blocked checkout,
+// unmapped repo) just written to the entry — report it and fail, whichever
+// door (receive, retry, the TUI's r) the run came through.
+const receiveStartedMsg = (
+  ctx: Ctx,
+  key: string,
+  result: StartResult,
+): number => {
+  if (result === "skipped") {
+    const e = loadState(ctx.paths.statePath)[key];
+    console.error(`${key}: not started — ${e?.error ?? "skipped"}`);
+    return 1;
+  }
+  return startedMsg(key, result);
+};
+
 // Cycle bodies shared by the subcommands and the interactive menu.
 const pollLocked = (ctx: Ctx, dry: boolean): Promise<number> =>
   runLocked(ctx, async () => {
@@ -197,7 +213,11 @@ const retryKey = (ctx: Ctx, key: string, note?: string): Promise<number> =>
       return 1;
     }
     if (entryKind(key) === "mine") {
-      return startedMsg(key, await startReceive(ctx, key, entry, note));
+      return receiveStartedMsg(
+        ctx,
+        key,
+        await startReceive(ctx, key, entry, note),
+      );
     }
     const { repo } = splitKey(key);
     const result = await startReview(
@@ -215,11 +235,20 @@ const retryKey = (ctx: Ctx, key: string, note?: string): Promise<number> =>
 // review`. The key is stored under the mine: prefix whatever shape came in.
 const receiveKey = (
   ctx: Ctx,
-  key: string,
+  rawKey: string,
   note: string | undefined,
 ): Promise<number> =>
   runUnlocked(ctx, async () => {
+    const key =
+      entryKind(rawKey) === "mine" ? rawKey : `mine:${rawKey}`;
     const { repo, number } = splitKey(key);
+    // Refuse before anything is written: a typo'd repo must not leave a
+    // permanent skipped row in the mine view. An already-tracked entry may
+    // carry its own local_path, so only new keys are gated on the mapping.
+    if (!(repo in ctx.cfg.repos) && !loadState(ctx.paths.statePath)[key]) {
+      console.error(`${repo} is not mapped in "repos" — add its clone path`);
+      return 1;
+    }
     const info = prView<{ title?: string; url?: string }>(
       ctx.gh,
       repo,
@@ -237,14 +266,7 @@ const receiveKey = (
       updated_at: timestamp(),
     }));
     const entry = loadState(ctx.paths.statePath)[key]!;
-    const result = await startReceive(ctx, key, entry, note);
-    if (result === "skipped") {
-      // the reason (blocked checkout, unmapped repo) was just written
-      const e = loadState(ctx.paths.statePath)[key];
-      console.error(`${key}: not started — ${e?.error ?? "skipped"}`);
-      return 1;
-    }
-    return startedMsg(key, result);
+    return receiveStartedMsg(ctx, key, await startReceive(ctx, key, entry, note));
   });
 
 const help: Command = async () => {
@@ -302,11 +324,7 @@ const receive: Command = (args) =>
       "usage: docket receive ORG/REPO#NUM|URL [note]",
     );
     if (!key) return 1;
-    return receiveKey(
-      ctx,
-      entryKind(key) === "mine" ? key : `mine:${key}`,
-      args[1],
-    );
+    return receiveKey(ctx, key, args[1]);
   });
 
 // internal: the detached runner `startReview` spawns — one foreground review
@@ -396,12 +414,7 @@ async function main(): Promise<number> {
       runTui(ctx, {
         retry: (key) => retryKey(ctx, key),
         review: (key, note) => reviewKey(ctx, bareKey(key), note),
-        receive: (key, note) =>
-          receiveKey(
-            ctx,
-            entryKind(key) === "mine" ? key : `mine:${key}`,
-            note,
-          ),
+        receive: (key, note) => receiveKey(ctx, key, note),
         poll: () => pollLocked(ctx, false),
         sync: () => syncLocked(ctx),
         dismiss: (key) => dismissKey(ctx, key),
