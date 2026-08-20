@@ -80,6 +80,16 @@ export function resolveCheckout(
     return { ok: true, path, owned: under(path, checkoutsDir) };
   }
 
+  // A local branch that is checked out nowhere is still the user's work —
+  // `worktree add -b` would refuse anyway, but with raw git output; say it
+  // in plain words instead.
+  if (git(clone, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]).ok) {
+    return {
+      ok: false,
+      reason: `branch ${branch} exists locally but isn't checked out`,
+    };
+  }
+
   // The branch exists nowhere locally: fetch it and give it a worktree of
   // docket's own, tracking the remote branch. Only this path is owned — the
   // caller records it in worktrees[], the set of paths docket may delete.

@@ -94,6 +94,20 @@ test("checkout behind the PR head fast-forwards (fetching the new sha)", () => {
   expect(git(s.clone, "rev-parse", "HEAD")).toBe(newHead);
 });
 
+test("branch exists locally but checked out nowhere: blocked in plain words", () => {
+  const s = scenario();
+  git(s.clone, "branch", "feature", "origin/feature"); // no checkout anywhere
+  const r = resolve(s);
+  expect(r).toEqual({
+    ok: false,
+    reason: "branch feature exists locally but isn't checked out",
+  });
+  // and nothing landed under checkoutsDir
+  expect(
+    git(s.clone, "worktree", "list", "--porcelain").includes("checkouts"),
+  ).toBe(false);
+});
+
 test("branch absent everywhere: created under checkoutsDir, tracking, owned", () => {
   const s = scenario();
   const r = resolve(s);
