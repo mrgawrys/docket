@@ -74,12 +74,26 @@ export const ALLOWED_TOOLS =
 export const effectiveAllowedTools = (cfg: Config): string =>
   [ALLOWED_TOOLS, ...(cfg.extra_allowed_tools ?? [])].join(",");
 
-// What a receive run may do on top of the review baseline: edit files and
-// commit locally in the PR's checkout. Deliberately absent, forever:
-// `git push` and every GitHub-write verb — the user reviews the addressed
-// feedback and pushes themselves.
+// The review baseline moves working copies around on purpose — a review agent
+// makes its own worktree. A receive run never needs to: docket resolved its
+// checkout before the run started, and that checkout can be the user's own
+// clone or worktree, where a stray `git checkout` moves work out from under
+// them. So these come back off for receive.
+const CHECKOUT_MOVING = new Set([
+  "Bash(git checkout:*)",
+  "Bash(git worktree:*)",
+  "Bash(git branch:*)",
+]);
+
+// What a receive run may do on top of that: edit files and commit locally in
+// the PR's checkout. Deliberately absent, forever: `git push` and every
+// GitHub-write verb — the user reviews the addressed feedback and pushes
+// themselves. Note what the allowlist can and cannot promise: no push, no
+// GitHub write, and no switching another working copy are all enforced here;
+// "edits land only in this checkout" is asked for by the prompt, since Edit
+// and Write take any path they are given.
 export const RECEIVE_ALLOWED_TOOLS: string[] = [
-  ...ALLOWED_TOOLS.split(","),
+  ...ALLOWED_TOOLS.split(",").filter((t) => !CHECKOUT_MOVING.has(t)),
   "Edit",
   "Write",
   "MultiEdit",

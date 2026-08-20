@@ -69,6 +69,11 @@ test("receive allowlist: edit + local git verbs, and never push or GitHub writes
   // no pinned skill name: the default task is plain words, and a user's own
   // receive skill arrives via receive_prompt + extra_receive_allowed_tools
   expect(joined).not.toContain("receive-code-review");
+  // a receive run stands in a checkout that may be the user's own worktree:
+  // the verbs that would switch it out from under them are not inherited
+  expect(RECEIVE_ALLOWED_TOOLS).not.toContain("Bash(git checkout:*)");
+  expect(RECEIVE_ALLOWED_TOOLS).not.toContain("Bash(git worktree:*)");
+  expect(RECEIVE_ALLOWED_TOOLS).not.toContain("Bash(git branch:*)");
   // the guarantee the receive feature rests on: assert the absence
   expect(joined).not.toContain("push");
   expect(joined).not.toContain("gh pr comment");
@@ -245,7 +250,7 @@ test("docket receive runs regardless of receive_enabled, keys under mine:", asyn
     (x) => x.status === "ready",
   );
   expect(e.title).toBe("Manual PR"); // fetched via gh pr view
-  expect(e.note).toBe("skip the wording nits");
+  expect(e.note).toBeUndefined(); // consumed by the run it was given for
   expect(sb.promptCapture()).toContain(
     "Additional context from the author: skip the wording nits",
   );

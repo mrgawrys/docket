@@ -89,10 +89,14 @@ function mount(
   return { ...r, calls, requests, paths: p };
 }
 
+// A real directory: enter refuses to resume into a clone that is gone, so a
+// made-up path would make every row's session look unavailable.
+const clone = mkdtempSync(join(tmpdir(), "docket-tui-clone-"));
+
 const entry = (over: Partial<Entry>): Entry => ({
   status: "ready",
   session_id: "s",
-  local_path: "/clone",
+  local_path: clone,
   updated_at: "2026-01-01T00:00:00Z",
   ...over,
 });
@@ -359,7 +363,7 @@ test("enter resolves denials only when there is no session to resume", async () 
     // a session and denials: enter belongs to the session
     "acme/one#1": entry({
       title: "One",
-      local_path: "/repo",
+      local_path: clone,
       updated_at: "2026-01-01T00:00:00Z",
       denials,
     }),
@@ -368,7 +372,7 @@ test("enter resolves denials only when there is no session to resume", async () 
       status: "failed",
       session_id: undefined,
       title: "Two",
-      local_path: "/repo",
+      local_path: clone,
       updated_at: "2026-01-02T00:00:00Z",
       denials,
     }),
@@ -395,7 +399,7 @@ test("hand-off carries every group, and r retries the PR the view was opened on"
     "acme/one#1": entry({ title: "One", updated_at: "2026-01-01T00:00:00Z" }),
     "acme/two#2": entry({
       title: "Two",
-      local_path: "/repo",
+      local_path: clone,
       updated_at: "2026-01-02T00:00:00Z",
       denials: [
         {
@@ -425,7 +429,7 @@ test("hand-off carries every group, and r retries the PR the view was opened on"
   ui.stdin.write("\r"); // one hand-off, the whole set — no per-group scope left
   await Bun.sleep(20);
   expect(ui.requests).toHaveLength(1);
-  expect(ui.requests[0]?.cwd).toBe("/repo");
+  expect(ui.requests[0]?.cwd).toBe(clone);
   expect(ui.requests[0]?.argv[1]).toContain("Bash(rg:*)");
   expect(ui.requests[0]?.argv[1]).toContain("Bash(git push:*)");
 
