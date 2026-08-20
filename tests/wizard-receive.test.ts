@@ -65,6 +65,30 @@ test("yes + custom captures a receive task through the editor", async () => {
   });
 });
 
+test("enter-through with receive already enabled keeps it enabled", async () => {
+  // a hand-set receive_enabled: true must survive a wizard re-run where the
+  // user just presses enter — the default reflects the current config
+  const r = await drive([""], {
+    cfg: {
+      ...BARE,
+      receive_enabled: true,
+      receive_prompt: "My hand-written receive task.",
+    },
+    editor: () => {
+      throw new Error("editor must not open");
+    },
+  });
+  expect(r.result).toEqual({ receive_enabled: true });
+  expect(r.out).toContain("[Y/n]");
+});
+
+test("an explicit no still turns receive off when it was enabled", async () => {
+  const r = await drive(["n"], {
+    cfg: { ...BARE, receive_enabled: true },
+  });
+  expect(r.result).toEqual({ receive_enabled: false });
+});
+
 test("an existing non-default receive_prompt is NEVER overwritten", async () => {
   // the review_prompt deletion incident, receive edition: saying yes must
   // keep the hand-written task and never even offer the default/custom choice

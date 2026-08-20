@@ -253,7 +253,13 @@ async function receiveDialogue(
   ui.say("   when someone reviews one of your PRs, docket can address the");
   ui.say("   feedback headlessly in that PR's checkout — edits and local");
   ui.say("   commits only; it never pushes, never writes to GitHub.");
-  const answer = await ui.ask("   also act on reviews you receive? [y/N] ");
+  // The default mirrors the current config: enter-through must never switch
+  // off a feature the user turned on by hand.
+  const enabled = o.cfg.receive_enabled === true;
+  const answer = await ui.ask(
+    `   also act on reviews you receive? [${enabled ? "Y/n" : "y/N"}] `,
+    enabled ? "y" : "n",
+  );
   if (!answer.toLowerCase().startsWith("y")) return { receive_enabled: false };
 
   const existing =
