@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { PrMineInfo } from "../src/github";
 import type { Entry } from "../src/state";
-import { decideMineSync, decideSync } from "../src/sync";
+import { decideMineSync, decideSync, mineStanding } from "../src/sync";
 import { makeSandbox } from "./harness";
 
 test("decideSync: merged/closed/no-review/verdicts/flags", () => {
@@ -261,6 +261,62 @@ test("decideMineSync: equal verdicts — the newest of the worst is the reviewer
     at: "2026-02-03T00:00:00Z",
     reviewer: "erin",
   });
+});
+
+test("mineStanding: latest review per reviewer, worst wins, mine ignored", () => {
+  const reviews = [
+    rev({ author: "a", state: "CHANGES_REQUESTED", submittedAt: "2026-01-01T00:00:00Z" }),
+    rev({ author: "a", state: "APPROVED", body: "", submittedAt: "2026-01-03T00:00:00Z" }),
+    rev({ author: "b", state: "COMMENTED", submittedAt: "2026-01-02T00:00:00Z" }),
+    rev({ author: "me", state: "CHANGES_REQUESTED", submittedAt: "2026-01-04T00:00:00Z" }),
+  ];
+  // a's later approval supersedes a's earlier request; b's comment is the worst left
+  expect(mineStanding(mineInfo(reviews), "me")).toEqual({
+    verdict: "commented",
+    reviewer: "b",
+  });
+  expect(mineStanding(mineInfo([]), "me")).toBeUndefined();
+  // a bare approval counts for display even though it is not actionable
+  expect(
+    mineStanding(mineInfo([rev({ state: "APPROVED", body: "" })]), "me"),
+  ).toEqual({ verdict: "approved", reviewer: "other" });
+});
+
+test("sync: mine entry — a review older than the cursor still sets the row's status", () => {
+  const sb = makeSandbox();
+  sb.writeState({
+    "mine:testorg/demo#7": {
+      status: "open",
+      title: "My PR",
+      url: "u",
+      branch: "feature",
+      local_path: sb.demoRepo,
+      // discovered after the approval landed: the cursor is past it
+      review_at: "2026-08-01T00:00:00Z",
+      updated_at: "2026-08-01T00:00:00Z",
+    },
+  });
+  const json = JSON.stringify({
+    state: "OPEN",
+    isDraft: false,
+    headRefOid: "sha1",
+    headRefName: "feature",
+    reviews: [
+      {
+        author: { login: "colleague" },
+        state: "APPROVED",
+        body: "",
+        submittedAt: "2026-07-19T10:00:00Z",
+      },
+    ],
+  });
+  const before = sb.claudeCalls();
+  expect(sb.run(["sync"], { GH_PR_MINE_JSON: json }).code).toBe(0);
+  const e = sb.state()["mine:testorg/demo#7"];
+  expect(e.status).toBe("approved");
+  expect(e.reviewer).toBe("colleague");
+  expect(e.review_at).toBe("2026-08-01T00:00:00Z"); // display, not action
+  expect(sb.claudeCalls()).toBe(before);
 });
 
 test("sync: mine entry — feedback records verdict/cursor/reviewer, no run starts", () => {

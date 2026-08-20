@@ -76,6 +76,38 @@ const VERDICT_RANK: Record<Verdict, number> = {
   approved: 0,
 };
 
+// The PR's standing as its reviewers currently see it: each other reviewer's
+// latest review, worst verdict wins (newest on ties). This is what the row
+// shows — the cursor below decides what to act on, never what to display, so
+// an approval older than docket's discovery of the PR still reads "approved".
+export function mineStanding(
+  info: PrMineInfo,
+  me: string,
+): { verdict: Verdict; reviewer: string } | undefined {
+  const latest = new Map<string, PrMineInfo["reviews"][number]>();
+  for (const r of info.reviews) {
+    if (r.author === me || !(toVerdict(r.state) in VERDICT_RANK)) continue;
+    const prev = latest.get(r.author);
+    if (!prev || r.submittedAt > prev.submittedAt) latest.set(r.author, r);
+  }
+  if (latest.size === 0) return undefined;
+  const worst = [...latest.values()].reduce((a, b) => {
+    const diff =
+      VERDICT_RANK[toVerdict(b.state)] - VERDICT_RANK[toVerdict(a.state)];
+    return diff > 0 || (diff === 0 && b.submittedAt > a.submittedAt) ? b : a;
+  });
+  return { verdict: toVerdict(worst.state), reviewer: worst.author };
+}
+
+// Statuses that describe the PR rather than a run: only these give way to
+// the standing. A run in flight or finished keeps telling its own story.
+const VERDICT_STATES = new Set<string>([
+  "open",
+  "approved",
+  "changes-requested",
+  "commented",
+]);
+
 // Actionable feedback on the user's PR: a review by someone else, newer than
 // the entry's cursor, that is not a bare comment-less approval.
 export function decideMineSync(
@@ -199,6 +231,19 @@ async function syncMine(
     patchEntry(statePath, key, {
       flags,
       ...(info.headRefName ? { branch: info.headRefName } : {}),
+    });
+    entry = loadState(statePath)[key] ?? entry;
+  }
+
+  const standing = mineStanding(info, me);
+  if (
+    standing &&
+    VERDICT_STATES.has(entry.status) &&
+    (standing.verdict !== entry.status || standing.reviewer !== entry.reviewer)
+  ) {
+    patchEntry(statePath, key, {
+      status: standing.verdict,
+      reviewer: standing.reviewer,
     });
     entry = loadState(statePath)[key] ?? entry;
   }
