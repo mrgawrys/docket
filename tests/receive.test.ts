@@ -346,3 +346,52 @@ test("poll while logged out starts no receive run and leaves the cursor put", ()
   expect(sb.state()["mine:testorg/demo#7"].review_at).toBeUndefined();
   expect(sb.state()["mine:testorg/demo#7"].status).toBe("open");
 });
+
+test("a clean receive run clears the previous run's summary and denials", async () => {
+  const sb = makeSandbox();
+  const { clone, mineJson } = prScenario(sb);
+  sb.writeState({
+    "mine:testorg/demo#7": {
+      status: "ready",
+      title: "My PR",
+      url: "u",
+      branch: "feature",
+      local_path: clone,
+      review_at: "2026-07-19T10:00:00Z",
+      reviewer: "colleague",
+      session_id: "sess-old",
+      summary: {
+        headline: "stale headline from the run before",
+        issues: 3,
+        risk: "high",
+      },
+      denials: [
+        {
+          tool: "Bash",
+          suggestion: "Bash(rg:*)",
+          count: 2,
+          examples: ["rg --files"],
+          writeShaped: false,
+          alreadyAllowed: false,
+        },
+      ],
+      updated_at: "2026-01-01T00:00:00Z",
+    },
+  });
+
+  const r = sb.run(["receive", "testorg/demo#7"], {
+    GH_PR_MINE_JSON: mineJson,
+  });
+  expect(r.code).toBe(0);
+  const e = await sb.waitEntry(
+    "mine:testorg/demo#7",
+    (x) => x.session_id === "sess-1234",
+  );
+  // the run that produced them is gone; its evidence must not outlive it
+  expect(e.summary).toBeUndefined();
+  expect(e.denials).toBeUndefined();
+  // the fields the run must not lose are still there
+  expect(e.review_at).toBe("2026-07-19T10:00:00Z");
+  expect(e.reviewer).toBe("colleague");
+  expect(e.branch).toBe("feature");
+});

@@ -427,10 +427,19 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
   // Review entries are rewritten wholesale, as they always were. Mine entries
   // carry fields the run must not lose (branch, checkout_path, review_at,
   // reviewer, worktrees, flags) — for them, keep everything but the run's own
-  // leftovers.
+  // leftovers. summary and denials belong to the finished run and are patched
+  // back on below: kept here, a clean run would inherit the last run's
+  // headline and denial list.
   const carry = (e: Entry | undefined): Partial<Entry> => {
     if (entryKind(key) !== "mine" || !e) return {};
-    const { error: _error, pid: _pid, session_id: _sid, ...rest } = e;
+    const {
+      error: _error,
+      pid: _pid,
+      session_id: _sid,
+      summary: _summary,
+      denials: _denials,
+      ...rest
+    } = e;
     return rest;
   };
   if (sessionId) {
