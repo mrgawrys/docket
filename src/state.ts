@@ -52,6 +52,9 @@ export interface Entry {
   // Mine entries: who left the newest actionable review. The panel shows it,
   // and the TUI never fetches — so sync records it here.
   reviewer?: string;
+  // Review threads on the user's own PR, as of the last sync: the unresolved
+  // count is what the row shows where a review row shows its issue count.
+  threads?: { unresolved: number; total: number };
   note?: string;
   // Absolute paths of git worktrees this review created, discovered after the
   // run wherever the agent put them; cleanupEntry removes exactly these.
@@ -212,6 +215,20 @@ export function pendingEntries(s: State, kind?: EntryKind): [string, Entry][] {
     .filter(([, e]) => e.status !== "done")
     .filter(([k]) => kind === undefined || entryKind(k) === kind)
     .sort(([, a], [, b]) => a.updated_at.localeCompare(b.updated_at));
+}
+
+// The stored status is shared between the two kinds of entry; the word the
+// user reads is not. A run on one of their own PRs addresses feedback — it
+// never reviews — and its finished state is fixes waiting for their eyes.
+const MINE_STATUS_LABEL: Partial<Record<Status, string>> = {
+  reviewing: "addressing",
+  ready: "fixes ready",
+};
+
+export function statusLabel(key: string, status: Status): string {
+  return entryKind(key) === "mine"
+    ? (MINE_STATUS_LABEL[status] ?? status)
+    : status;
 }
 
 export function entryKind(key: string): EntryKind {

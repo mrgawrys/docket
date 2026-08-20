@@ -10,7 +10,7 @@ import { prMineInfo } from "./github";
 // imports this module for the mine RunPlan)
 import type { Ctx } from "./reviewer";
 import { patchEntry, splitKey, type Entry } from "./state";
-import { SUMMARY_INSTRUCTION } from "./summary";
+import { RECEIVE_SUMMARY_INSTRUCTION } from "./summary";
 
 // Fixed checkout hygiene wraps a configurable task body, exactly like the
 // review prompt: the preamble (stay in the checkout, no push, no GitHub
@@ -32,7 +32,14 @@ export function receivePrompt(
     `working copy. You may edit files and commit locally. NEVER push, and ` +
     `NEVER write to GitHub (no comments, no reviews, no API mutations) — ` +
     `the author reviews your work and pushes themselves.\n\n` +
-    `${body}\n\n${SUMMARY_INSTRUCTION}`;
+    `The feedback lives in three places; read all of them first: inline ` +
+    `thread comments via \`gh api repos/${repo}/pulls/${number}/comments\`, ` +
+    `review bodies via \`gh api repos/${repo}/pulls/${number}/reviews\`, ` +
+    `and conversation comments via ` +
+    `\`gh api repos/${repo}/issues/${number}/comments\`. ` +
+    `If none of them can be read, stop and say so — do not go looking for ` +
+    `other work to do instead.\n\n` +
+    `${body}\n\n${RECEIVE_SUMMARY_INSTRUCTION}`;
   if (note) p += `\n\nAdditional context from the author: ${note}`;
   return p;
 }

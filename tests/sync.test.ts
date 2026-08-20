@@ -310,11 +310,30 @@ test("sync: mine entry — a review older than the cursor still sets the row's s
       },
     ],
   });
+  const threads = JSON.stringify({
+    data: {
+      repository: {
+        pullRequest: {
+          reviewThreads: {
+            totalCount: 3,
+            nodes: [
+              { isResolved: true },
+              { isResolved: false },
+              { isResolved: false },
+            ],
+          },
+        },
+      },
+    },
+  });
   const before = sb.claudeCalls();
-  expect(sb.run(["sync"], { GH_PR_MINE_JSON: json }).code).toBe(0);
+  expect(
+    sb.run(["sync"], { GH_PR_MINE_JSON: json, GH_THREADS_JSON: threads }).code,
+  ).toBe(0);
   const e = sb.state()["mine:testorg/demo#7"];
   expect(e.status).toBe("approved");
   expect(e.reviewer).toBe("colleague");
+  expect(e.threads).toEqual({ unresolved: 2, total: 3 });
   expect(e.review_at).toBe("2026-08-01T00:00:00Z"); // display, not action
   expect(sb.claudeCalls()).toBe(before);
 });

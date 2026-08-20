@@ -1,7 +1,7 @@
 import { Box, Text } from "ink";
 import { denialChip } from "../denialview";
-import type { Entry, Status } from "../state";
-import { issueChip, riskChip } from "../summary";
+import { entryKind, statusLabel, type Entry, type Status } from "../state";
+import { issueChip, receiveChip, riskChip, threadChip } from "../summary";
 
 export interface Row {
   key: string;
@@ -56,6 +56,15 @@ export function Queue({
         const index = start + i;
         const selected = index === cursor;
         const flags = (entry.flags ?? []).map((f) => `+${f}`).join(" ");
+        // A PR of the user's own counts its unresolved threads where a review
+        // counts its issues; a run's summary fills in until a sync has looked.
+        const mine = entryKind(key) === "mine";
+        const chip = entry.threads
+          ? threadChip(entry.threads)
+          : issueChip(entry.summary);
+        // A review weighs risk; a receive run counts what it did with the
+        // feedback. Same slot, wider: "12 addressed · 3 deferred" is 24, plus a gap.
+        const tail = mine ? receiveChip(entry.summary) : riskChip(entry.summary);
         return (
           // only the title may shrink; without this a long row pulls the
           // columns of that one row out of alignment with its neighbours
@@ -67,21 +76,21 @@ export function Queue({
             </Box>
             <Box width={18} flexShrink={0}>
               <Text color={STATUS_COLOR[entry.status]} wrap="truncate-end">
-                {entry.status}
+                {statusLabel(key, entry.status)}
               </Text>
             </Box>
             {/* fixed widths, so an entry with no summary leaves a gap rather
                 than shifting every other row's columns out of line */}
-            {/* "⚠ 12 issues" is 11 wide; anything narrower collides with the
-                risk chip */}
-            <Box width={12} flexShrink={0}>
-              <Text color={issueChip(entry.summary)?.color} wrap="truncate-end">
-                {issueChip(entry.summary)?.text ?? ""}
+            {/* "12 unresolved" is 13 wide; anything narrower collides with
+                the risk chip */}
+            <Box width={14} flexShrink={0}>
+              <Text color={chip?.color} wrap="truncate-end">
+                {chip?.text ?? ""}
               </Text>
             </Box>
-            <Box width={5} flexShrink={0}>
-              <Text color={riskChip(entry.summary)?.color} wrap="truncate-end">
-                {riskChip(entry.summary)?.text ?? ""}
+            <Box width={mine ? 26 : 5} flexShrink={0}>
+              <Text color={tail?.color} wrap="truncate-end">
+                {tail?.text ?? ""}
               </Text>
             </Box>
             {/* "⊘ 999" is 5 wide; the sixth column is the gap before the

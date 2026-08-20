@@ -97,6 +97,12 @@ const CHECKOUT_MOVING = new Set([
 // and Write take any path they are given.
 export const RECEIVE_ALLOWED_TOOLS: string[] = [
   ...ALLOWED_TOOLS.split(",").filter((t) => !CHECKOUT_MOVING.has(t)),
+  // The feedback itself: `gh pr view --comments` never shows inline thread
+  // comments, and those are where the asks live. GET-only paths, still no
+  // `gh api -X` and no graphql — the latter mutates as readily as it reads.
+  "Bash(gh api repos/*/pulls/*/comments:*)",
+  "Bash(gh api repos/*/pulls/*/reviews:*)",
+  "Bash(gh api repos/*/issues/*/comments:*)",
   "Edit",
   "Write",
   "MultiEdit",
