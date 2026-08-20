@@ -293,7 +293,7 @@ export function App({
     // denials rather than on a session that was never written. In the mine
     // view a fresh chat in the checkout is the second fallback.
     if ("error" in resume && !enterResolves) {
-      if (kind !== "mine") {
+      if (kind !== "mine" || isLiveReview(current.entry)) {
         u.claude = resume.error;
       } else {
         const fresh = buildFreshChat(current.entry, cfg);
@@ -579,8 +579,10 @@ export function App({
       const r = buildResume(current.entry, cfg, kind);
       if ("error" in r) {
         // Mine view: no session yet, but the checkout is there — a fresh chat
-        // in it beats a dead key.
-        if (kind === "mine") {
+        // in it beats a dead key. Not while a run is in flight, though: it is
+        // about to produce the session, and an empty claude in the same
+        // checkout only looks like it.
+        if (kind === "mine" && !isLiveReview(current.entry)) {
           const fresh = buildFreshChat(current.entry, cfg);
           if (!("error" in fresh)) return request(fresh);
           return setStatus(`${current.key} ${fresh.error}`);
