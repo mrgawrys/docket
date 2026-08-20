@@ -320,3 +320,29 @@ test("exec re-checks the checkout before spawning claude (TOCTOU downgrade)", ()
   expect(e.error).toContain("checkout dirty");
   expect(sb.claudeCalls()).toBe(before);
 });
+
+test("poll while logged out starts no receive run and leaves the cursor put", () => {
+  const sb = makeSandbox();
+  const { clone, mineJson } = prScenario(sb, { receive_enabled: true });
+  sb.writeState({
+    "mine:testorg/demo#7": {
+      status: "open",
+      title: "My PR",
+      url: "u",
+      branch: "feature",
+      local_path: clone,
+      updated_at: "2026-01-01T00:00:00Z",
+    },
+  });
+
+  const before = sb.claudeCalls();
+  const r = sb.run(["poll"], {
+    GH_PR_MINE_JSON: mineJson,
+    CLAUDE_LOGGED_OUT: "1",
+  });
+  expect(r.code).toBe(0);
+  expect(sb.claudeCalls()).toBe(before);
+  // the cursor must not move past feedback no run ever addressed
+  expect(sb.state()["mine:testorg/demo#7"].review_at).toBeUndefined();
+  expect(sb.state()["mine:testorg/demo#7"].status).toBe("open");
+});

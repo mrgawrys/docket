@@ -73,11 +73,12 @@ function discoverMine(ctx: Ctx, dry: boolean, known: State): void {
 }
 
 export async function pollCycle(ctx: Ctx, dry: boolean): Promise<void> {
-  if (!dry) await reconcile(ctx);
-
   // Every review started while logged out fails and writes a state entry, and
   // a known key is never re-reviewed — so an auth outage silently burns the
   // whole queue. Returning first leaves those PRs to resurface next cycle.
+  // reconcile runs after this for the same reason: it starts receive runs and
+  // advances review_at past the feedback that triggered them, so a logged-out
+  // reconcile would burn the feedback exactly as it burns the review queue.
   const auth = claudeAuth(ctx.cfg);
   if ("unknown" in auth) {
     ctx.log(`auth check inconclusive (${auth.unknown}) — polling anyway`);
@@ -92,6 +93,8 @@ export async function pollCycle(ctx: Ctx, dry: boolean): Promise<void> {
     );
     return;
   }
+
+  if (!dry) await reconcile(ctx);
 
   ctx.log(`polling ${ctx.cfg.orgs.join(", ")} for review requests`);
 
