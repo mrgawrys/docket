@@ -457,3 +457,32 @@ test("a newly discovered PR does not re-address the feedback it arrived with", a
   expect(sb.claudeCalls()).toBe(0);
   expect(sb.state()["mine:testorg/demo#7"].status).toBe("open");
 });
+
+test("a note applies to the run it was given for, not to every run after it", async () => {
+  const sb = makeSandbox();
+  const { mineJson } = prScenario(sb);
+
+  const first = sb.run(
+    ["receive", "testorg/demo#7", "skip the perf comments"],
+    {
+      GH_PR_MINE_JSON: mineJson,
+    },
+  );
+  expect(first.code).toBe(0);
+  await sb.waitEntry("mine:testorg/demo#7", (x) => x.status === "ready");
+  expect(sb.promptCapture()).toContain(
+    "Additional context from the author: skip the perf comments",
+  );
+  // the run it belonged to is over — a later automatic run must not inherit it
+  expect(sb.state()["mine:testorg/demo#7"].note).toBeUndefined();
+
+  const second = sb.run(["receive", "testorg/demo#7"], {
+    GH_PR_MINE_JSON: mineJson,
+  });
+  expect(second.code).toBe(0);
+  await sb.waitEntry(
+    "mine:testorg/demo#7",
+    (x) => x.status === "ready" && !x.note,
+  );
+  expect(sb.promptCapture()).not.toContain("skip the perf comments");
+});

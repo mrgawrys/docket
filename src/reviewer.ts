@@ -450,7 +450,8 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
   // reviewer, worktrees, flags) — for them, keep everything but the run's own
   // leftovers. summary and denials belong to the finished run and are patched
   // back on below: kept here, a clean run would inherit the last run's
-  // headline and denial list.
+  // headline and denial list. note is the same — it was written for this run,
+  // and a review entry already loses it by being rewritten wholesale.
   const carry = (e: Entry | undefined): Partial<Entry> => {
     if (entryKind(key) !== "mine" || !e) return {};
     const {
@@ -459,6 +460,7 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
       session_id: _sid,
       summary: _summary,
       denials: _denials,
+      note: _note,
       ...rest
     } = e;
     return rest;
