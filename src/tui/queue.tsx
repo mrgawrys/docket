@@ -1,7 +1,7 @@
 import { Box, Text } from "ink";
 import { denialChip } from "../denialview";
-import { statusLabel, type Entry, type Status } from "../state";
-import { issueChip, riskChip, threadChip } from "../summary";
+import { entryKind, statusLabel, type Entry, type Status } from "../state";
+import { issueChip, receiveChip, riskChip, threadChip } from "../summary";
 
 export interface Row {
   key: string;
@@ -58,9 +58,13 @@ export function Queue({
         const flags = (entry.flags ?? []).map((f) => `+${f}`).join(" ");
         // A PR of the user's own counts its unresolved threads where a review
         // counts its issues; a run's summary fills in until a sync has looked.
+        const mine = entryKind(key) === "mine";
         const chip = entry.threads
           ? threadChip(entry.threads)
           : issueChip(entry.summary);
+        // A review weighs risk; a receive run counts what it did with the
+        // feedback. Same slot, wider: "12 addressed · 3 deferred" is 24, plus a gap.
+        const tail = mine ? receiveChip(entry.summary) : riskChip(entry.summary);
         return (
           // only the title may shrink; without this a long row pulls the
           // columns of that one row out of alignment with its neighbours
@@ -84,9 +88,9 @@ export function Queue({
                 {chip?.text ?? ""}
               </Text>
             </Box>
-            <Box width={5} flexShrink={0}>
-              <Text color={riskChip(entry.summary)?.color} wrap="truncate-end">
-                {riskChip(entry.summary)?.text ?? ""}
+            <Box width={mine ? 26 : 5} flexShrink={0}>
+              <Text color={tail?.color} wrap="truncate-end">
+                {tail?.text ?? ""}
               </Text>
             </Box>
             {/* "⊘ 999" is 5 wide; the sixth column is the gap before the

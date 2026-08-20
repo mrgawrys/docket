@@ -1,5 +1,11 @@
 import { expect, test } from "bun:test";
-import { issueChip, riskChip, splitSummary, threadChip } from "../src/summary";
+import {
+  issueChip,
+  receiveChip,
+  riskChip,
+  splitSummary,
+  threadChip,
+} from "../src/summary";
 
 const fenced = (json: string) => "```json\n" + json + "\n```";
 
@@ -144,4 +150,26 @@ test("threadChip: unresolved count, all-resolved mark, nothing before a sync", (
     text: "3 unresolved",
     color: "yellow",
   });
+});
+
+test("splitSummary: a receive run's addressed/deferred counts are kept", () => {
+  const r = splitSummary(
+    'done\n```json\n{"headline":"two nits taken","addressed":2,"deferred":1}\n```',
+  );
+  expect(r.summary).toEqual({ headline: "two nits taken", addressed: 2, deferred: 1 });
+  expect(r.prose).toBe("done");
+});
+
+// The chip says what the run did, and stays silent when it never got to count.
+test("receiveChip: counts, or nothing when neither count was reported", () => {
+  expect(receiveChip({ addressed: 3, deferred: 0 })).toEqual({
+    text: "3 addressed",
+    color: "green",
+  });
+  expect(receiveChip({ addressed: 3, deferred: 1 })).toEqual({
+    text: "3 addressed · 1 deferred",
+    color: "yellow",
+  });
+  expect(receiveChip({ headline: "feedback unreadable" })).toBeUndefined();
+  expect(receiveChip(undefined)).toBeUndefined();
 });

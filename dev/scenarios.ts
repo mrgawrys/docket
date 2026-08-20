@@ -269,8 +269,8 @@ export const scenarios: Record<string, Scenario> = {
         threads: { unresolved: 0, total: 2 },
         summary: {
           headline: "Addressed both review threads; two commits, ready to push",
-          issues: 2,
-          risk: "low",
+          addressed: 2,
+          deferred: 1,
         },
         updated_at: "2026-08-19T11:30:00Z",
       }),

@@ -143,7 +143,11 @@ Tokens `{number}` and `{repo}` are substituted, like `review_prompt`.
 
 The wrapper around the task is fixed and not configurable: work only in the
 PR's checkout, edits and local commits allowed, never push, never write to
-GitHub — plus the same triage-summary block every run ends with.
+GitHub; where the feedback is (inline thread comments, review bodies and
+conversation comments, each a read-only `gh api` path) and an instruction to
+stop rather than invent work if none of it can be read; and a closing summary
+block of its own — `headline`, `addressed`, `deferred` — which the mine view
+shows as `3 addressed · 1 deferred` where a review row shows risk.
 
 This key is also where a skill invocation goes if you have a review-receiving
 skill you'd rather run — e.g. `Run /my-receive-skill on PR {number}.` — with
@@ -156,8 +160,11 @@ wizard never overwrites an existing custom value here.
 
 Entries appended to the **receive** run's allowlist, in the same grammar as
 `extra_allowed_tools`. The receive baseline is the review baseline plus
-`Edit`, `Write`, `MultiEdit`, `Bash(git add:*)` and `Bash(git commit:*)`,
-minus `Bash(git checkout:*)`, `Bash(git worktree:*)`, `Bash(git branch:*)`,
+`Edit`, `Write`, `MultiEdit`, `Bash(git add:*)`, `Bash(git commit:*)` and
+the three read-only `gh api` paths the feedback lives at
+(`repos/*/pulls/*/comments`, `repos/*/pulls/*/reviews`,
+`repos/*/issues/*/comments` — never `gh api graphql`, which mutates as
+readily as it reads), minus `Bash(git checkout:*)`, `Bash(git worktree:*)`, `Bash(git branch:*)`,
 `EnterWorktree` and `ExitWorktree`
 — a receive run is already standing in the checkout docket resolved for it,
 and that checkout may be your own worktree. It deliberately contains no push

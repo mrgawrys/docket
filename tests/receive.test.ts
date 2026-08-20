@@ -37,7 +37,15 @@ test("receivePrompt: fixed preamble — checkout only, commits yes, push and Git
       "point against the code, implement the changes they ask for, and " +
       "commit the fixes locally.",
   );
-  expect(p).toContain("triage summary"); // the summary block is demanded too
+  // the feedback's three homes are named, and an unreadable one is a stop
+  expect(p).toContain("gh api repos/acme/widgets/pulls/12/comments");
+  expect(p).toContain("gh api repos/acme/widgets/pulls/12/reviews");
+  expect(p).toContain("gh api repos/acme/widgets/issues/12/comments");
+  expect(p).toContain("do not go looking for other work");
+  // the receive contract, not the review one: no issues, no risk
+  expect(p).toContain('"addressed"');
+  expect(p).toContain('"deferred"');
+  expect(p).not.toContain('"risk"');
 });
 
 test("receivePrompt: custom body substituted, preamble still fixed, note appended", () => {
@@ -66,6 +74,13 @@ test("receive allowlist: edit + local git verbs, and never push or GitHub writes
   expect(RECEIVE_ALLOWED_TOOLS).toContain("MultiEdit");
   expect(RECEIVE_ALLOWED_TOOLS).toContain("Bash(git add:*)");
   expect(RECEIVE_ALLOWED_TOOLS).toContain("Bash(git commit:*)");
+  // the feedback itself is readable — inline threads are not in `gh pr view`
+  expect(RECEIVE_ALLOWED_TOOLS).toContain("Bash(gh api repos/*/pulls/*/comments:*)");
+  expect(RECEIVE_ALLOWED_TOOLS).toContain("Bash(gh api repos/*/pulls/*/reviews:*)");
+  expect(RECEIVE_ALLOWED_TOOLS).toContain("Bash(gh api repos/*/issues/*/comments:*)");
+  // but only those paths: graphql mutates, and a bare `gh api` is everything
+  expect(joined).not.toContain("gh api graphql");
+  expect(joined).not.toContain("Bash(gh api:*)");
   // no pinned skill name: the default task is plain words, and a user's own
   // receive skill arrives via receive_prompt + extra_receive_allowed_tools
   expect(joined).not.toContain("receive-code-review");
