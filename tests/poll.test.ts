@@ -133,11 +133,15 @@ test("poll: authored PRs become open mine entries — flagged drafts, skipped un
   expect(sb.state()["mine:testorg/unmapped#33"]).toBeUndefined();
   expect(sb.claudeCalls()).toBe(1); // only the review-side run
 
-  // known keys are not re-created (updated_at stays put)
-  const stamped = sb.state()["mine:testorg/demo#31"].updated_at;
+  // known keys are not re-created. Asserted on review_at, not updated_at:
+  // the first cycle that can see the new entry backfills its thread counts,
+  // which restamps updated_at without re-creating anything.
+  const stamped = sb.state()["mine:testorg/demo#31"].review_at;
   r = sb.run(["poll"], { GH_MINE_SEARCH_JSON: mineJson });
   expect(r.code).toBe(0);
-  expect(sb.state()["mine:testorg/demo#31"].updated_at).toBe(stamped);
+  expect(sb.state()["mine:testorg/demo#31"].review_at).toBe(stamped);
+  expect(sb.state()["mine:testorg/demo#31"].status).toBe("open");
+  expect(sb.claudeCalls()).toBe(1);
 });
 
 test("poll: orphaned reviewing entry (dead pid) becomes failed (scenario 6)", () => {
