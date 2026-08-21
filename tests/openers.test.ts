@@ -121,6 +121,34 @@ test("verbs run in the worktree, and are unavailable when it is gone", () => {
   expect(gone).toEqual({ unavailable: "worktree is gone: /wt/pr 7" });
 });
 
+test("browse opens the PR url without a worktree, and says so without a url", () => {
+  const resolved = resolveOpeners(cfg(), installed("open"));
+  expect(resolved.browse).toEqual(["open", "{url}"]);
+
+  // the rows most worth opening on GitHub are the ones with no checkout yet
+  const noCheckout = buildOpener(
+    "browse",
+    resolved,
+    ctx({ worktree: { missing: "no checkout yet (open)" }, base: null }),
+  );
+  expect(noCheckout).toEqual({
+    argv: ["open", "https://github.test/acme/demo/pull/7"],
+    cwd: ".",
+  });
+
+  expect(buildOpener("browse", resolved, ctx({ url: "" }))).toEqual({
+    unavailable: "no PR url recorded on this entry",
+  });
+});
+
+test("xdg-open carries the browse chain where open is not the opener", () => {
+  expect(resolveOpeners(cfg(), installed("xdg-open")).browse).toEqual([
+    "xdg-open",
+    "{url}",
+  ]);
+  expect(resolveOpeners(cfg(), installed("git")).browse).toBeUndefined();
+});
+
 test("worktree resolution distinguishes never-had-one from vanished", () => {
   const entry = (over: Partial<Entry>): Entry => ({
     status: "ready",

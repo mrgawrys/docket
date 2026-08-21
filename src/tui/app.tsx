@@ -24,6 +24,7 @@ import {
 } from "../list";
 import {
   buildOpener,
+  launchDetached,
   openerContext,
   resolveOpeners,
   resolveEntryWorktree,
@@ -300,6 +301,9 @@ export function App({
       if (!resolved[verb]) u[verb] = `no ${verb} opener found on PATH`;
       else if ("missing" in wt) u[verb] = wt.missing;
     }
+    // browse wants no worktree — only the url the entry was tracked with.
+    if (!resolved.browse) u.browse = "no browse opener found on PATH";
+    else if (!current.entry.url) u.browse = "no PR url recorded on this entry";
     if (kind === "mine") {
       // Only the statically known reasons grey R: a dirty/ahead checkout is
       // found out by the trigger flow (probing git per row per render is too
@@ -477,6 +481,20 @@ export function App({
     });
   };
 
+  // The browser gets the url off the entry, so this works on a row that has no
+  // checkout yet — and never suspends: the queue stays on screen.
+  const browse = () => {
+    if (!current) return;
+    const r = buildOpener(
+      "browse",
+      resolved,
+      openerContext(current.key, current.entry),
+    );
+    if ("unavailable" in r) return setStatus(`browse: ${r.unavailable}`);
+    const err = launchDetached(r.argv, r.cwd);
+    setStatus(err ?? `opening ${current.entry.url} in your browser`);
+  };
+
   // The `n` submit: parse, then hand to the view's verb — review a PR from
   // the queue, receive feedback on one of the user's own from the mine view.
   const submitPr = (text: string) => {
@@ -607,6 +625,7 @@ export function App({
       setScroll(0);
       return setView("denials");
     }
+    if (input === "o") return browse();
     if (input === "s") return open("shell");
     // ink reports ctrl+letter as the bare letter, and Ctrl+D is muscle memory
     // for EOF — it must not hand the terminal to the diff opener.

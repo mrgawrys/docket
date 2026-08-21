@@ -3,6 +3,9 @@ import { Box, Text } from "ink";
 export interface Binding {
   keys: string;
   label: string;
+  // The footer is one line and already full: a binding whose label does not
+  // fit there carries a terser one for it, and keeps the full one for `?`.
+  short?: string;
   // Set when the binding hands the terminal to something that may be missing.
   verb?: string;
 }
@@ -15,14 +18,15 @@ export const QUEUE_KEYS: Binding[] = [
   { keys: "enter", label: "claude", verb: "claude" },
   { keys: "s", label: "shell", verb: "shell" },
   { keys: "d", label: "diff", verb: "diff" },
+  { keys: "o", label: "open on GitHub", short: "github", verb: "browse" },
   { keys: "D", label: "denials", verb: "denials" },
   { keys: "w", label: "watch live" },
   { keys: "r", label: "retry" },
-  { keys: "n", label: "review a PR by hand" },
+  { keys: "n", label: "review a PR by hand", short: "review by hand" },
   { keys: "x", label: "dismiss" },
   { keys: "K", label: "kill" },
-  { keys: "p", label: "poll (opens the log)" },
-  { keys: "S", label: "sync (opens the log)" },
+  { keys: "p", label: "poll — find new PRs and review them" },
+  { keys: "S", label: "sync — refresh the PRs already listed" },
   { keys: "l", label: "log" },
   { keys: "?", label: "more" },
   { keys: "q", label: "quit" },
@@ -36,15 +40,16 @@ export const MINE_KEYS: Binding[] = [
   { keys: "enter", label: "claude", verb: "claude" },
   { keys: "s", label: "shell", verb: "shell" },
   { keys: "d", label: "diff", verb: "diff" },
-  { keys: "R", label: "receive now", verb: "receive" },
+  { keys: "R", label: "receive now", short: "receive", verb: "receive" },
+  { keys: "o", label: "open on GitHub", short: "github", verb: "browse" },
   { keys: "D", label: "denials", verb: "denials" },
   { keys: "w", label: "watch live" },
   { keys: "r", label: "retry" },
-  { keys: "n", label: "receive a PR by hand" },
+  { keys: "n", label: "receive a PR by hand", short: "receive by hand" },
   { keys: "x", label: "dismiss" },
   { keys: "K", label: "kill" },
-  { keys: "p", label: "poll (opens the log)" },
-  { keys: "S", label: "sync (opens the log)" },
+  { keys: "p", label: "poll — find new PRs and review them" },
+  { keys: "S", label: "sync — refresh the PRs already listed" },
   { keys: "l", label: "log" },
   { keys: "?", label: "more" },
   { keys: "q", label: "quit" },
@@ -83,8 +88,8 @@ const KEYMAPS: Record<KeymapView, Binding[]> = {
 // way to the rest. `tab` is not here — the tab strip shows it, where the thing
 // it switches is.
 const FOOTER: Record<KeymapView, string[]> = {
-  queue: ["enter", "s", "d", "D", "w", "n", "?"],
-  mine: ["enter", "s", "d", "R", "D", "n", "?"],
+  queue: ["enter", "s", "d", "o", "D", "w", "n", "?"],
+  mine: ["enter", "s", "d", "o", "R", "D", "n", "?"],
   denials: ["j/k ↑/↓", "esc D", "?", "q"],
   log: ["j/k ↑/↓", "esc l", "?", "q"],
 };
@@ -105,7 +110,7 @@ export function Legend({
           <Text key={b.keys} color={off ? "gray" : undefined} dimColor={off}>
             {i > 0 ? " · " : ""}
             <Text bold={!off}>{b.keys}</Text>
-            <Text dimColor> {b.label}</Text>
+            <Text dimColor> {b.short ?? b.label}</Text>
           </Text>
         );
       })}

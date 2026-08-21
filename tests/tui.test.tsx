@@ -24,7 +24,7 @@ import type { SuspendRequest } from "../src/tui/suspend";
 const cfg: Config = { orgs: [], repos: {} };
 const resolved = resolveOpeners(
   cfg,
-  (bin) => bin === "git" || bin === "/bin/sh",
+  (bin) => bin === "git" || bin === "/bin/sh" || bin === "open",
 );
 
 // `real` makes dismiss do what the command does — mark the entry done, which

@@ -174,10 +174,12 @@ Empty = baseline only.
 
 ## openers
 
-What the queue's `s` and `d` keys run, as a chain of candidate commands per
-verb; the first whose binary is on `PATH` wins, so the shipped `diff` chain
-tries `revdiff`, then `tuicr`, then plain `git diff`. Both verbs run in the
-PR's worktree.
+What the queue's `s`, `d` and `o` keys run, as a chain of candidate commands
+per verb; the first whose binary is on `PATH` wins, so the shipped `diff`
+chain tries `revdiff`, then `tuicr`, then plain `git diff`, and `browse` tries
+`open`, then `xdg-open`. `shell` and `diff` run in the PR's worktree and are
+unavailable without one; `browse` needs only the PR's url, so it works on a
+row whose review has not run yet.
 
 Tokens `{worktree}` `{clone}` `{base}` `{head}` `{number}` `{repo}` `{url}`
 are substituted per argument — the command is executed directly, never

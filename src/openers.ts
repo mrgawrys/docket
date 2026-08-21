@@ -6,6 +6,7 @@ import { entryKind, splitKey, type Entry } from "./state";
 // chain: git is already required, so the chain can never come up empty.
 export const DEFAULT_OPENERS: Openers = {
   shell: [{ cmd: ["$SHELL"] }],
+  browse: [{ cmd: ["open", "{url}"] }, { cmd: ["xdg-open", "{url}"] }],
   diff: [
     { cmd: ["revdiff", "{base}", "{head}"] },
     { cmd: ["tuicr", "-r", "{base}..{head}"] },
@@ -19,6 +20,10 @@ export const effectiveOpeners = (cfg: Config): Openers => ({
   ...DEFAULT_OPENERS,
   ...(cfg.openers ?? {}),
 });
+
+// Verbs that address the PR on github.com rather than its checkout: they need
+// no worktree, run nowhere in particular, and never take the terminal.
+export const URL_VERBS = new Set(["browse"]);
 
 export type Resolve = (bin: string) => boolean;
 export const onPath: Resolve = (bin) => Bun.which(bin) !== null;
@@ -75,7 +80,15 @@ export function buildOpener(
 ): OpenerResult {
   const cmd = resolved[verb];
   if (!cmd) return { unavailable: `no ${verb} opener found on PATH` };
-  if ("missing" in ctx.worktree) return { unavailable: ctx.worktree.missing };
+  // A URL verb stays available on a row that never got a checkout — those are
+  // exactly the rows whose PR you most want to open.
+  const urlVerb = URL_VERBS.has(verb);
+  if (!urlVerb && "missing" in ctx.worktree)
+    return { unavailable: ctx.worktree.missing };
+  const wt = "path" in ctx.worktree ? ctx.worktree.path : "";
+  if (!ctx.url && cmd.some((a) => a.includes("{url}"))) {
+    return { unavailable: "no PR url recorded on this entry" };
+  }
   if (ctx.base === null && cmd.some((a) => a.includes("{base}"))) {
     return {
       unavailable:
@@ -83,7 +96,7 @@ export function buildOpener(
     };
   }
   const tokens: Record<string, string> = {
-    "{worktree}": ctx.worktree.path,
+    "{worktree}": wt,
     "{clone}": ctx.clone,
     "{base}": ctx.base ?? "",
     "{head}": ctx.head,
@@ -98,7 +111,9 @@ export function buildOpener(
       (t) => tokens[t] ?? t,
     ),
   );
-  return { argv, cwd: ctx.worktree.path };
+  // A browser does not care where it was launched from; anchoring it to a
+  // worktree would only add a way for the verb to fail.
+  return { argv, cwd: urlVerb ? "." : wt };
 }
 
 export type GitRunner = (args: string[], cwd: string) => string | null;
@@ -109,6 +124,22 @@ export const runGit: GitRunner = (args, cwd) => {
     stderr: "pipe",
   });
   return p.exitCode === 0 ? p.stdout.toString().trim() : null;
+};
+
+// A URL verb hands nothing to the terminal, so it must not suspend the queue
+// the way `s` and `d` do: spawn it detached, discard its output, leave the
+// frame up. Returns why it could not start, or null.
+export type Launcher = (argv: string[], cwd: string) => string | null;
+
+export const launchDetached: Launcher = (argv, cwd) => {
+  try {
+    Bun.spawn(argv, { cwd, stdio: ["ignore", "ignore", "ignore"] }).unref();
+    return null;
+  } catch (e) {
+    // Bun.spawn throws synchronously on a missing binary — uncaught it would
+    // take the whole queue down from a keypress.
+    return `${argv[0] ?? "?"}: ${(e as Error).message}`;
+  }
 };
 
 // origin/HEAD is a symref plenty of clones never got — and when it is missing,

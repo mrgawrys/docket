@@ -110,22 +110,28 @@ under the list shows the highlighted PR's headline finding. It is a triage
 screen: `enter` is how a review actually gets read.
 
 ```
-j/k ↑/↓  move          tab  other list     enter  claude    s  shell
-d  diff                D  denials          w  watch live    r  retry
-n  review a PR by hand x  dismiss          K  kill          p  poll
-S  sync                ?  help             q  quit
+j/k ↑/↓  move         tab  other list       enter  claude         s  shell
+d  diff               o  open on GitHub     D  denials            w  watch live
+r  retry              n  review by hand     x  dismiss            K  kill
+p  poll               S  sync               l  log                ?  help
+q  quit
 ```
 
 `enter` resumes the Claude session where the review ran, with full context —
 ask follow-ups, push back, dig into a finding. `s` and `d` open the PR's
-worktree: a shell in it, or its diff in your diff tool (configurable via
-[`openers`](docs/configuration.md#openers)). `x` dismisses an entry and
+worktree: a shell in it, or its diff in your diff tool; `o` opens the PR
+itself on github.com, and works on a row whose review has not run yet — all
+three are configurable via
+[`openers`](docs/configuration.md#openers). `x` dismisses an entry and
 removes its worktree; `K` kills a running review before it burns more tokens.
 `n` opens a one-line input: paste a PR URL or `ORG/REPO#N` (optionally
-followed by a note) to review it by hand. `p` and `S` run a poll or sync in
-the background and open the log pane on it — `esc` goes back to the queue
-while it keeps running, `l` reopens the pane; everything docket logs during
-the session is there, never printed over the screen. A verb this machine cannot run is
+followed by a note) to review it by hand. **`p` looks for PRs you have not
+been shown yet and starts reviewing them; `S` only refreshes the rows already
+listed** — verdicts, merges, unresolved threads — and starts nothing, so it
+costs no tokens. A poll syncs first, so it is always the wider of the two.
+Both run in the background and open the log pane on it — `esc` goes back to
+the queue while it keeps running, `l` reopens the pane; everything docket logs
+during the session is there, never printed over the screen. A verb this machine cannot run is
 greyed out rather than failing after the keypress.
 
 **`tab` switches to the other list: PRs you authored.** Each row shows the
@@ -145,7 +151,8 @@ The rest of the CLI:
 | `docket review ORG/REPO#N ["note"]` | force-review any PR (URLs work too); the note is handed to the reviewer as extra context |
 | `docket receive ORG/REPO#N ["note"]` | act on the review feedback on your own PR, regardless of `receive_enabled`; refuses a dirty or diverged checkout |
 | `docket watch [ORG/REPO#N]` | follow a running review live; without an argument, follow the poller log |
-| `docket sync` | reconcile with GitHub now: merged/closed PRs are dismissed, PRs you already reviewed show your verdict |
+| `docket poll [--dry-run]` | one full cycle: sync, then find PRs newly awaiting you and review them (this is what the poller runs) |
+| `docket sync` | reconcile with GitHub now: merged/closed PRs are dismissed, PRs you already reviewed show your verdict; never starts a review |
 | `docket dismiss ORG/REPO#N` | mark an entry done without reviewing it |
 | `docket doctor` | check the whole setup and print fixes |
 | `docket prompt` | set the review task, and derive the tools it needs |
@@ -218,7 +225,8 @@ Everything lives in `~/.config/docket/config.json`. Beyond `orgs` and
   on your own PRs when it lands (edits and local commits in the PR's
   checkout; never a push, never a GitHub write); `receive_prompt` swaps the
   task, e.g. for one invoking your own review-receiving skill
-- `openers` — which shell and diff tool the queue's `s` and `d` keys launch
+- `openers` — which shell, diff tool, and browser the queue's `s`, `d` and `o`
+  keys launch
 - `gh_account` — pin polling to one `gh` account, so `gh auth switch` can't
   silently blind the poller
 - `ignored_teams` — skip PRs that only reach you through a team you're not

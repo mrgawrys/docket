@@ -51,7 +51,7 @@ test("doctor: all checks green → exit 0, one ✓ per check", () => {
   });
   const r = sb.run(["doctor"]);
   expect(r.code).toBe(0);
-  expect(r.out.match(/✓/g)?.length).toBe(9);
+  expect(r.out.match(/✓/g)?.length).toBe(10);
   expect(r.out).not.toContain("✗");
   expect(r.out).toContain("code-review plugin");
 });
@@ -66,7 +66,7 @@ test("doctor: gh_account not set → that check is not run", () => {
   });
   const r = sb.run(["doctor"]);
   expect(r.code).toBe(0);
-  expect(r.out.match(/✓/g)?.length).toBe(8);
+  expect(r.out.match(/✓/g)?.length).toBe(9);
 });
 
 test("doctor: missing config → ✗ with a seeded config to edit, later checks skipped, exit 1", () => {

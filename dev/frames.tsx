@@ -94,7 +94,7 @@ export async function renderFrames(
     // change with the developer's PATH or login shell.
     const resolved = resolveOpeners(
       cfg,
-      (bin) => bin === "git" || bin === "/bin/sh",
+      (bin) => bin === "git" || bin === "/bin/sh" || bin === "open",
       { SHELL: "/bin/sh" } as NodeJS.ProcessEnv,
     );
     const ui = render(
