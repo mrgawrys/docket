@@ -265,10 +265,27 @@ test("decideMineSync: equal verdicts — the newest of the worst is the reviewer
 
 test("mineStanding: latest review per reviewer, worst wins, mine ignored", () => {
   const reviews = [
-    rev({ author: "a", state: "CHANGES_REQUESTED", submittedAt: "2026-01-01T00:00:00Z" }),
-    rev({ author: "a", state: "APPROVED", body: "", submittedAt: "2026-01-03T00:00:00Z" }),
-    rev({ author: "b", state: "COMMENTED", submittedAt: "2026-01-02T00:00:00Z" }),
-    rev({ author: "me", state: "CHANGES_REQUESTED", submittedAt: "2026-01-04T00:00:00Z" }),
+    rev({
+      author: "a",
+      state: "CHANGES_REQUESTED",
+      submittedAt: "2026-01-01T00:00:00Z",
+    }),
+    rev({
+      author: "a",
+      state: "APPROVED",
+      body: "",
+      submittedAt: "2026-01-03T00:00:00Z",
+    }),
+    rev({
+      author: "b",
+      state: "COMMENTED",
+      submittedAt: "2026-01-02T00:00:00Z",
+    }),
+    rev({
+      author: "me",
+      state: "CHANGES_REQUESTED",
+      submittedAt: "2026-01-04T00:00:00Z",
+    }),
   ];
   // a's later approval supersedes a's earlier request; b's comment is the worst left
   expect(mineStanding(mineInfo(reviews), "me")).toEqual({

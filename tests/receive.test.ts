@@ -75,9 +75,15 @@ test("receive allowlist: edit + local git verbs, and never push or GitHub writes
   expect(RECEIVE_ALLOWED_TOOLS).toContain("Bash(git add:*)");
   expect(RECEIVE_ALLOWED_TOOLS).toContain("Bash(git commit:*)");
   // the feedback itself is readable — inline threads are not in `gh pr view`
-  expect(RECEIVE_ALLOWED_TOOLS).toContain("Bash(gh api repos/*/pulls/*/comments:*)");
-  expect(RECEIVE_ALLOWED_TOOLS).toContain("Bash(gh api repos/*/pulls/*/reviews:*)");
-  expect(RECEIVE_ALLOWED_TOOLS).toContain("Bash(gh api repos/*/issues/*/comments:*)");
+  expect(RECEIVE_ALLOWED_TOOLS).toContain(
+    "Bash(gh api repos/*/pulls/*/comments:*)",
+  );
+  expect(RECEIVE_ALLOWED_TOOLS).toContain(
+    "Bash(gh api repos/*/pulls/*/reviews:*)",
+  );
+  expect(RECEIVE_ALLOWED_TOOLS).toContain(
+    "Bash(gh api repos/*/issues/*/comments:*)",
+  );
   // but only those paths: graphql mutates, and a bare `gh api` is everything
   expect(joined).not.toContain("gh api graphql");
   expect(joined).not.toContain("Bash(gh api:*)");

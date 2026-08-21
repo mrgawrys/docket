@@ -64,7 +64,9 @@ export function Queue({
           : issueChip(entry.summary);
         // A review weighs risk; a receive run counts what it did with the
         // feedback. Same slot, wider: "12 addressed · 3 deferred" is 24, plus a gap.
-        const tail = mine ? receiveChip(entry.summary) : riskChip(entry.summary);
+        const tail = mine
+          ? receiveChip(entry.summary)
+          : riskChip(entry.summary);
         return (
           // only the title may shrink; without this a long row pulls the
           // columns of that one row out of alignment with its neighbours

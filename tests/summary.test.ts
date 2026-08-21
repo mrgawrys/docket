@@ -156,7 +156,11 @@ test("splitSummary: a receive run's addressed/deferred counts are kept", () => {
   const r = splitSummary(
     'done\n```json\n{"headline":"two nits taken","addressed":2,"deferred":1}\n```',
   );
-  expect(r.summary).toEqual({ headline: "two nits taken", addressed: 2, deferred: 1 });
+  expect(r.summary).toEqual({
+    headline: "two nits taken",
+    addressed: 2,
+    deferred: 1,
+  });
   expect(r.prose).toBe("done");
 });
 

@@ -467,7 +467,10 @@ async function main(): Promise<number> {
       const code = await runLogged(selfArgs(name), feed.push, {
         DOCKET_LOG_ECHO: "1",
       });
-      return { code, message: code === 0 ? undefined : `${name} exited ${code}` };
+      return {
+        code,
+        message: code === 0 ? undefined : `${name} exited ${code}`,
+      };
     };
     return withCtx(
       (ctx) =>

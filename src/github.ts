@@ -105,7 +105,10 @@ export function prThreads(
         data?: {
           repository?: {
             pullRequest?: {
-              reviewThreads?: { totalCount?: number; nodes?: { isResolved?: boolean }[] };
+              reviewThreads?: {
+                totalCount?: number;
+                nodes?: { isResolved?: boolean }[];
+              };
             };
           };
         };

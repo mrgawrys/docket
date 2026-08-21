@@ -137,7 +137,7 @@ function Tabs({
       {tab("queue", "queue")}
       <Text> </Text>
       {tab("mine", "my PRs")}
-      <Text dimColor>   tab switches</Text>
+      <Text dimColor> tab switches</Text>
     </Box>
   );
 }
@@ -195,17 +195,12 @@ export function App({
     (key: string | undefined) => setCursorKeys((c) => ({ ...c, [list]: key })),
     [list],
   );
-  const [view, setView] = useState<"list" | "help" | "denials" | "log">(
-    "list",
-  );
+  const [view, setView] = useState<"list" | "help" | "denials" | "log">("list");
   // Help is a detour, not a destination: esc goes back where it was opened.
   const [helpFrom, setHelpFrom] = useState<"list" | "denials" | "log">("list");
   // A counter, not a copy: the feed owns the lines, this only re-renders.
   const [feedTick, setFeedTick] = useState(0);
-  useEffect(
-    () => feed?.subscribe(() => setFeedTick((t) => t + 1)),
-    [feed],
-  );
+  useEffect(() => feed?.subscribe(() => setFeedTick((t) => t + 1)), [feed]);
   const job = feed?.job;
   const [status, setStatus] = useState<string | undefined>();
   // The `n` footer input; undefined = closed.
@@ -330,7 +325,9 @@ export function App({
   // open `n` input takes the same row.
   // A job running out of sight says so, and where to look.
   const jobHint =
-    job?.running && view !== "log" ? `${job.verb}… · l shows the log` : undefined;
+    job?.running && view !== "log"
+      ? `${job.verb}… · l shows the log`
+      : undefined;
   const footer =
     prInput !== undefined
       ? "input"
@@ -405,7 +402,8 @@ export function App({
   // The log pane's window: scroll counts up from the bottom, so the newest
   // line is on screen unless the user has scrolled away from it.
   const logPane = useMemo(
-    () => windowLines(feed?.lines ?? [], Math.max(1, height - fixedRows), scroll),
+    () =>
+      windowLines(feed?.lines ?? [], Math.max(1, height - fixedRows), scroll),
     // biome-ignore lint/correctness/useExhaustiveDependencies: feedTick is the invalidation signal for the feed's lines
     [feed, feedTick, height, scroll],
   );
@@ -687,7 +685,10 @@ export function App({
           {/* the bar names the row the panel belongs to, so the two regions
               read as queue-then-detail rather than one column of text */}
           <Bar label={current?.key ?? "no selection"} width={width} />
-          <Panel lines={panel} minHeight={Math.min(PANEL_HEIGHT, panelHeight)} />
+          <Panel
+            lines={panel}
+            minHeight={Math.min(PANEL_HEIGHT, panelHeight)}
+          />
         </>
       )}
       {/* the keys are a zone like the other two: a rule of their own, not a

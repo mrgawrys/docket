@@ -25,7 +25,11 @@ function scripted(rounds: Round[]): {
     const exited = new Promise<void>((res) => {
       quit = res;
     });
-    const m = { waitUntilExit: () => exited, unmount: () => quit(), clear() {} };
+    const m = {
+      waitUntilExit: () => exited,
+      unmount: () => quit(),
+      clear() {},
+    };
     mounts.push(m);
     queueMicrotask(() => act?.(request));
     return m;
