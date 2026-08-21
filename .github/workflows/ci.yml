@@ -11,6 +11,13 @@ jobs:
     # binaries. On Linux every `process.platform !== "darwin"` branch short-
     # circuits, so the tests that cover them pass without running anything.
     runs-on: macos-latest
+    strategy:
+      # One job per check, and neither may cancel the other: when these shared
+      # a job, a formatting nit aborted the run before `bun test` and hid a
+      # failing test on main for three commits.
+      fail-fast: false
+      matrix:
+        check: ["format:check", "test"]
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -19,5 +26,4 @@ jobs:
           # never met (1.4.0 broke the wizard's readline use). Bump on purpose.
           bun-version: "1.4.0"
       - run: bun install --frozen-lockfile
-      - run: bun run format:check
-      - run: bun test
+      - run: bun run ${{ matrix.check }}
