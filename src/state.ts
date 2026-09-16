@@ -52,9 +52,10 @@ export interface Entry {
   // Set when checkout_path is docket's own detached copy rather than the
   // user's checkout, with why the user's was passed over.
   checkout_fallback?: { reason: string };
-  // The PR head each detached copy was last handed, by path — a HEAD past it
-  // means a run committed work that lives nowhere else yet. Kept for as long
-  // as the copy stands, whatever later runs resolve to.
+  // The head each copy docket made was handed, by path — a detached fallback,
+  // a tracking worktree, one a visit created. A HEAD past it means someone
+  // committed work that lives nowhere else yet. Kept for as long as the copy
+  // stands, whatever later runs resolve to.
   fallback_bases?: Record<string, string>;
   // docket created the branch itself (`worktree add -b`), so the ref is
   // docket's to delete at cleanup. Written once; never derived from where a

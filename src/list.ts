@@ -68,15 +68,16 @@ export function buildResume(
 export function buildFreshChat(
   entry: Entry,
   cfg: Config,
+  path = entry.checkout_path,
 ): SuspendRequest | { error: string } {
-  if (!entry.checkout_path || !existsSync(entry.checkout_path)) {
+  if (!path || !existsSync(path)) {
     return { error: `no checkout yet (${entry.status}) — R resolves one` };
   }
   return {
     argv: [claudeBin(cfg)],
-    cwd: entry.checkout_path,
+    cwd: path,
     env: claudeEnv(cfg),
-    banner: `claude in ${entry.checkout_path}`,
+    banner: `claude in ${path}`,
     interactive: true,
   };
 }

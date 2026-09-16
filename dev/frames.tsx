@@ -61,6 +61,10 @@ export async function renderFrames(
         : undefined;
     const calls: string[] = [];
     const actions: TuiActions = {
+      visit: async (k) => {
+        calls.push(`visit:${k}`);
+        return { path: dirs.stateDir };
+      },
       retry: async (k) => {
         calls.push(`retry:${k}`);
         return { code: 0 };

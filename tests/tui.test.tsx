@@ -48,6 +48,10 @@ function mount(
   const calls: string[] = [];
   const requests: SuspendRequest[] = [];
   const actions: TuiActions = {
+    visit: async (k) => {
+      calls.push(`visit:${k}`);
+      return { path: dir };
+    },
     retry: async (k) => {
       calls.push(`retry:${k}`);
       return { code: 0 };

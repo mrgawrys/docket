@@ -1,12 +1,24 @@
-// Resolve the working copy for a PR branch: the user's clone, the user's
-// worktree, or one docket creates under checkoutsDir. A checkout holding the
-// PR head is used in place, unpushed commits and all; one of the user's that
-// cannot be used — dirty, diverged, or checked out nowhere — gets a detached
-// copy of docket's own at the PR head, never a second branch.
+// The working copy for a PR branch, under one of two policies.
+//
+// resolveCheckout is the *run* policy: an agent is about to edit here, so the
+// tree must be clean and at the PR head. The user's clone or worktree is used
+// when it qualifies; one that does not — dirty, diverged, or checked out
+// nowhere — gets a detached copy of docket's own at the PR head.
+//
+// visitCheckout is the *visit* policy: a human is about to walk in, so their
+// work wins however it looks. It never inspects, mutates or bypasses their
+// checkout, and creates one only when nothing local holds the branch — which
+// is also why it needs no PR head sha, and so no network.
 
 import { existsSync, realpathSync } from "node:fs";
 import { join, sep } from "node:path";
+import type { Paths } from "./config";
 import { parseWorktrees, type WorktreeInfo } from "./worktree";
+
+// Where docket-created checkouts for one repo live. Per-repo, so equal branch
+// names in different repos never collide.
+export const checkoutsDirFor = (paths: Paths, repo: string): string =>
+  join(paths.stateDir, "checkouts", repo.replace(/\//g, "-"));
 
 export type CheckoutResult =
   | {
@@ -16,6 +28,9 @@ export type CheckoutResult =
       // the one path that creates the branch (`worktree add -b`) — that ref
       // is docket's to delete at cleanup, wherever later runs end up
       ownsBranch?: boolean;
+      // the head a freshly created copy stands at, for the keep guard: a HEAD
+      // past it means someone committed work that lives nowhere else
+      created?: string;
       // set when path is docket's copy instead of the user's checkout: the PR
       // head it stands for, and why the user's was passed over
       fallback?: { base: string; reason: string };
@@ -40,7 +55,8 @@ function git(cwd: string, args: string[]): GitResult {
   };
 }
 
-const fail = (what: string, r: GitResult): CheckoutResult => ({
+// Narrower than either result union, so both policies can return it.
+const fail = (what: string, r: GitResult): { ok: false; reason: string } => ({
   ok: false,
   reason: `${what}: ${r.err || r.out || "git failed"}`,
 });
@@ -132,6 +148,11 @@ function fallbackWorktree(
   return done();
 }
 
+const headAt = (wt: string): string | undefined => {
+  const r = git(wt, ["rev-parse", "HEAD"]);
+  return r.ok ? r.out : undefined;
+};
+
 // A worktree whose directory is gone stays registered until pruned, and
 // `worktree add` refuses its path — prune first.
 function addWorktree(clone: string, args: string[]): GitResult {
@@ -219,5 +240,81 @@ export function resolveCheckout(
   if (!add.ok) return fail("git worktree add", add);
   // realpath, to match what `git worktree list` will report on the next call —
   // otherwise the same checkout gets recorded twice under two spellings.
-  return { ok: true, path: real(path), owned: true, ownsBranch: true };
+  return {
+    ok: true,
+    path: real(path),
+    owned: true,
+    ownsBranch: true,
+    created: headAt(path),
+  };
+}
+
+export type VisitResult =
+  | {
+      ok: true;
+      path: string;
+      // set when this call made the worktree: the head it stands at, and
+      // whether its branch is docket's to delete
+      created?: { base?: string; ownsBranch: boolean };
+    }
+  | { ok: false; reason: string };
+
+// The visit policy: take the user to this PR's work. Their checkout of the
+// branch wins whatever state it is in — dirty, diverged, behind — because a
+// keypress that inspected it would only ever refuse, and one that moved its
+// HEAD would rewrite work nobody asked it to touch.
+export function visitCheckout(
+  clone: string,
+  branch: string,
+  checkoutsDir: string,
+): VisitResult {
+  const list = git(clone, ["worktree", "list", "--porcelain"]);
+  if (!list.ok) return fail("git worktree list", list);
+  const worktrees = parseWorktrees(list.out).filter((w) => !w.prunable);
+
+  const found = worktrees.find((w) => w.branch === `refs/heads/${branch}`);
+  if (found) return { ok: true, path: found.path };
+
+  const path = slugPath(checkoutsDir, branch);
+  const leftover = worktrees.find((w) => real(w.path) === real(path));
+  if (leftover) {
+    // A detached copy an earlier receive run left here still holds this PR's
+    // work. A branch here is another PR's — slugPath folds `feat/x` and
+    // `feat-x` together — and walking the user into it would be a lie.
+    if (leftover.detached) return { ok: true, path: real(leftover.path) };
+    return {
+      ok: false,
+      reason: `${path} holds ${leftover.branch ?? "another branch"}, not a checkout of ${branch}`,
+    };
+  }
+
+  // The branch is the user's, checked out nowhere: give it a worktree rather
+  // than a detached copy of what GitHub has. Their commits are the point.
+  if (
+    git(clone, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]).ok
+  ) {
+    const add = addWorktree(clone, [path, branch]);
+    if (!add.ok) return fail("git worktree add", add);
+    return {
+      ok: true,
+      path: real(path),
+      created: { base: headAt(path), ownsBranch: false },
+    };
+  }
+
+  const fetch = git(clone, ["fetch", "origin", branch]);
+  if (!fetch.ok) return fail("git fetch", fetch);
+  const add = addWorktree(clone, [
+    "--track",
+    "-b",
+    branch,
+    path,
+    `origin/${branch}`,
+  ]);
+  if (!add.ok) return fail("git worktree add", add);
+  return {
+    ok: true,
+    path: real(path),
+    created: { base: headAt(path), ownsBranch: true },
+  };
 }
