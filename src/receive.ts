@@ -2,9 +2,8 @@
 // gate the automatic path, and resolve+record the checkout it runs in.
 
 import { existsSync } from "node:fs";
-import { join } from "node:path";
-import { resolveCheckout } from "./checkout";
-import { effectiveReceivePrompt, type Config, type Paths } from "./config";
+import { checkoutsDirFor, resolveCheckout } from "./checkout";
+import { effectiveReceivePrompt, type Config } from "./config";
 import { prMineInfo } from "./github";
 // type-only: receive.ts must not pull the runner in at runtime (reviewer.ts
 // imports this module for the mine RunPlan)
@@ -67,11 +66,6 @@ export function shouldAutoRun(
   return { ok: true };
 }
 
-// Where docket-created checkouts for one repo live. Per-repo, so equal branch
-// names in different repos never collide.
-export const checkoutsDirFor = (paths: Paths, repo: string): string =>
-  join(paths.stateDir, "checkouts", repo.replace(/\//g, "-"));
-
 export type PreparedCheckout =
   | { ok: true; path: string }
   | { ok: false; reason: string };
@@ -100,6 +94,10 @@ export function prepareCheckout(
     checkoutsDirFor(ctx.paths, repo),
   );
   if (!r.ok) return r;
+  // Fallback or tracking worktree alike, a copy docket made records the head
+  // it was handed: the keep guard tells one holding someone's commits from
+  // one holding nothing by whether its HEAD has moved off this.
+  const base = r.fallback?.base ?? r.created;
   patchEntry(ctx.paths.statePath, key, {
     checkout_path: r.path,
     local_path: clone,
@@ -107,13 +105,8 @@ export function prepareCheckout(
     // written every time, undefined included: a checkout that resolves in
     // place again must stop claiming its commits live somewhere else
     checkout_fallback: r.fallback && { reason: r.fallback.reason },
-    ...(r.fallback
-      ? {
-          fallback_bases: {
-            ...entry.fallback_bases,
-            [r.path]: r.fallback.base,
-          },
-        }
+    ...(base !== undefined
+      ? { fallback_bases: { ...entry.fallback_bases, [r.path]: base } }
       : {}),
     ...(r.ownsBranch ? { branch_owned: true } : {}),
     // worktrees[] means "paths docket may delete" — only a docket-created

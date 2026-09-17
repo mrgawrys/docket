@@ -183,10 +183,18 @@ export function resolveEntryWorktree(
 export function openerContext(
   key: string,
   entry: Entry,
-  deps: { exists?: (p: string) => boolean; git?: GitRunner } = {},
+  // worktree: a copy a visit just resolved, which the entry in hand may not
+  // name yet — the state write that records it and the render are two
+  // different moments.
+  deps: {
+    exists?: (p: string) => boolean;
+    git?: GitRunner;
+    worktree?: Worktree;
+  } = {},
 ): OpenerContext {
   const { repo, number } = splitKey(key);
-  const worktree = resolveEntryWorktree(key, entry, deps.exists);
+  const worktree =
+    deps.worktree ?? resolveEntryWorktree(key, entry, deps.exists);
   const git = deps.git ?? runGit;
   const base = "path" in worktree ? mergeBase(git, worktree.path) : null;
   return {

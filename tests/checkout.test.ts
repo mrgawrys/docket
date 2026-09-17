@@ -2,7 +2,11 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type CheckoutResult, resolveCheckout } from "../src/checkout";
+import {
+  type CheckoutResult,
+  resolveCheckout,
+  visitCheckout,
+} from "../src/checkout";
 
 function git(cwd: string, ...args: string[]): string {
   const p = Bun.spawnSync(
@@ -189,6 +193,9 @@ test("branch absent everywhere: created under checkoutsDir, tracking, owned", ()
   expect(realpathSync(r.path).startsWith(realpathSync(s.tmp))).toBe(true);
   expect(r.path).toBe(join(s.checkoutsDir, "feature"));
   expect(r.ownsBranch).toBe(true);
+  // the head it was created at, which is what keeps cleanup from deleting
+  // this worktree once someone has committed in it
+  expect(r.created).toBe(s.headSha);
   expect(git(r.path, "rev-parse", "HEAD")).toBe(s.headSha);
   expect(git(r.path, "rev-parse", "--abbrev-ref", "HEAD")).toBe("feature");
   // tracks the remote branch
@@ -303,4 +310,88 @@ test("a registered worktree whose directory is gone is pruned, not wedged on", (
     resolve(s),
     "branch feature exists locally but isn't checked out",
   );
+});
+
+// The visit policy. Where resolveCheckout protects the user's tree from an
+// agent, these protect the user's way into their own work: every case the run
+// policy walks away from, a keypress must walk into.
+
+const visit = (s: ReturnType<typeof scenario>) =>
+  visitCheckout(s.clone, "feature", s.checkoutsDir);
+
+test("visit: a dirty checkout is where the user is taken", () => {
+  const s = scenario();
+  const wt = join(s.tmp, "user-wt");
+  git(s.clone, "worktree", "add", "-q", wt, "feature");
+  writeFileSync(join(wt, "f.txt"), "uncommitted\n");
+  const r = visit(s);
+  if (!r.ok) throw new Error(r.reason);
+  expect(realpathSync(r.path)).toBe(realpathSync(wt));
+  expect(r.created).toBeUndefined();
+  // the same checkout, under the run policy, is the one it walks away from
+  const run = resolve(s);
+  if (!run.ok) throw new Error(run.reason);
+  expect(run.fallback?.reason).toContain("checkout dirty");
+});
+
+test("visit: a diverged checkout is not bypassed, and its HEAD stays put", () => {
+  const s = scenario();
+  const wt = join(s.tmp, "user-wt");
+  git(s.clone, "worktree", "add", "-q", wt, "feature");
+  git(wt, "reset", "-q", "--hard", "HEAD~1");
+  writeFileSync(join(wt, "f.txt"), "mine\n");
+  git(wt, "commit", "-qam", "my own history");
+  const before = git(wt, "rev-parse", "HEAD");
+  const r = visit(s);
+  if (!r.ok) throw new Error(r.reason);
+  expect(realpathSync(r.path)).toBe(realpathSync(wt));
+  expect(git(wt, "rev-parse", "HEAD")).toBe(before);
+});
+
+test("visit: a branch checked out nowhere gets a worktree on that branch", () => {
+  const s = scenario();
+  git(s.clone, "branch", "feature", "origin/feature");
+  const r = visit(s);
+  if (!r.ok) throw new Error(r.reason);
+  expect(r.path).toBe(realpathSync(join(s.checkoutsDir, "feature")));
+  // the user's branch, not a detached copy of what GitHub has
+  expect(git(r.path, "rev-parse", "--abbrev-ref", "HEAD")).toBe("feature");
+  // docket did not create the ref, so cleanup must never delete it
+  expect(r.created).toEqual({ base: s.headSha, ownsBranch: false });
+});
+
+test("visit: a branch only on the remote gets a tracking worktree docket owns", () => {
+  const s = scenario();
+  const r = visit(s);
+  if (!r.ok) throw new Error(r.reason);
+  expect(r.path).toBe(realpathSync(join(s.checkoutsDir, "feature")));
+  expect(git(r.path, "rev-parse", "--abbrev-ref", "HEAD")).toBe("feature");
+  expect(r.created).toEqual({ base: s.headSha, ownsBranch: true });
+});
+
+test("visit: a detached copy an earlier run left is reused", () => {
+  const s = scenario();
+  const copy = join(s.checkoutsDir, "feature");
+  git(s.clone, "worktree", "add", "-q", "--detach", copy, s.headSha);
+  const r = visit(s);
+  if (!r.ok) throw new Error(r.reason);
+  expect(r.path).toBe(realpathSync(copy));
+  expect(r.created).toBeUndefined();
+});
+
+test("visit: the slug path holding another branch is refused", () => {
+  const s = scenario();
+  git(s.clone, "branch", "other", "origin/main");
+  git(
+    s.clone,
+    "worktree",
+    "add",
+    "-q",
+    join(s.checkoutsDir, "feature"),
+    "other",
+  );
+  const r = visit(s);
+  expect(r.ok).toBe(false);
+  if (r.ok) return;
+  expect(r.reason).toContain("not a checkout of feature");
 });

@@ -1,6 +1,7 @@
 import { Box, render, Text, useApp, useInput, useWindowSize } from "ink";
-import { readFileSync, watch } from "node:fs";
+import { openSync, readFileSync, watch } from "node:fs";
 import { dirname } from "node:path";
+import { ReadStream } from "node:tty";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type Feed, windowLines } from "../activity";
 import { readAssessment } from "../assessment";
@@ -28,6 +29,7 @@ import {
   openerContext,
   resolveOpeners,
   resolveEntryWorktree,
+  type Worktree,
   type ResolvedOpeners,
 } from "../openers";
 import { selfArgs } from "../proc";
@@ -63,6 +65,11 @@ export interface TuiActions {
   receive(key: string, note?: string): Promise<ActionResult>;
   poll(): Promise<ActionResult>;
   sync(): Promise<ActionResult>;
+  // Mine rows only: where this PR's work lives. Resolves the user's checkout
+  // of the branch whatever state it is in, and creates one when nothing local
+  // holds the branch — so a PR with nothing to receive yet still has a shell,
+  // a diff and a claude to walk into.
+  visit(key: string): Promise<{ path: string } | { reason: string }>;
   // Both return what to tell the user: their own output goes to the console,
   // which Ink displaces above the frame where nobody is looking.
   dismiss(key: string): string;
@@ -284,22 +291,34 @@ export function App({
   const unavailable = useMemo(() => {
     const u: Record<string, string> = {};
     if (!current) return u;
+    const { repo } = splitKey(current.key);
+    // A mine row has no checkout until a key asks for one, so a missing one
+    // greys nothing there: only a clone that was never mapped leaves the verb
+    // with nowhere to go. A review row still depends on what its run made.
+    const noClone = !current.entry.local_path && !(repo in liveCfg.repos);
+    const wt = resolveEntryWorktree(current.key, current.entry);
+    const noCopy =
+      kind === "mine"
+        ? noClone
+          ? NO_CLONE_REASON
+          : undefined
+        : "missing" in wt
+          ? wt.missing
+          : undefined;
     const resume = buildResume(current.entry, cfg, kind);
     // Not greyed when enter resolves: it still opens claude, just on the
     // denials rather than on a session that was never written. In the mine
-    // view a fresh chat in the checkout is the second fallback.
+    // view a fresh chat in the row's working copy is the second fallback.
     if ("error" in resume && !enterResolves) {
       if (kind !== "mine" || isLiveReview(current.entry)) {
         u.claude = resume.error;
-      } else {
-        const fresh = buildFreshChat(current.entry, cfg);
-        if ("error" in fresh) u.claude = fresh.error;
+      } else if (noCopy) {
+        u.claude = noCopy;
       }
     }
-    const wt = resolveEntryWorktree(current.key, current.entry);
     for (const verb of ["shell", "diff"]) {
       if (!resolved[verb]) u[verb] = `no ${verb} opener found on PATH`;
-      else if ("missing" in wt) u[verb] = wt.missing;
+      else if (noCopy) u[verb] = noCopy;
     }
     // browse wants no worktree — only the url the entry was tracked with.
     if (!resolved.browse) u.browse = "no browse opener found on PATH";
@@ -308,8 +327,7 @@ export function App({
       // Only the statically known reasons grey R: a dirty/ahead checkout is
       // found out by the trigger flow (probing git per row per render is too
       // heavy) and lands in the panel as skipped + reason.
-      const { repo } = splitKey(current.key);
-      if (!current.entry.local_path && !(repo in liveCfg.repos)) {
+      if (noClone) {
         u.receive = NO_CLONE_REASON;
       } else if (isLiveReview(current.entry)) {
         u.receive = "a run is already in flight — w watches it";
@@ -466,17 +484,47 @@ export function App({
     });
   };
 
-  const open = (verb: "shell" | "diff") => {
+  // The working copy a terminal verb should open. A review row carries the
+  // worktree its run made; a mine row may have none yet — a draft nobody has
+  // reviewed never triggered a receive — so the keypress resolves one, and
+  // creates it when nothing local holds the branch. git work runs one at a
+  // time: a second press would race a `worktree add` against itself.
+  const visiting = useRef(false);
+  const workingCopy = async (row: Row): Promise<Worktree | null> => {
+    if (entryKind(row.key) !== "mine")
+      return resolveEntryWorktree(row.key, row.entry);
+    if (visiting.current) return null;
+    visiting.current = true;
+    setStatus(`${row.key}: finding your checkout…`);
+    try {
+      const r = await actions.visit(row.key);
+      if ("reason" in r) {
+        setStatus(`${row.key}: ${r.reason}`);
+        return null;
+      }
+      setStatus(undefined);
+      return { path: r.path };
+    } finally {
+      visiting.current = false;
+    }
+  };
+
+  const open = async (verb: "shell" | "diff") => {
     if (!current) return;
+    // Pinned: the await below is long enough for a reload to move the cursor,
+    // and a shell must open on the row the key was pressed on.
+    const row = current;
+    const worktree = await workingCopy(row);
+    if (!worktree) return;
     const r = buildOpener(
       verb,
       resolved,
-      openerContext(current.key, current.entry),
+      openerContext(row.key, row.entry, { worktree }),
     );
     if ("unavailable" in r) return setStatus(`${verb}: ${r.unavailable}`);
     request({
       ...r,
-      banner: `${verb}: ${current.key} in ${r.cwd}`,
+      banner: `${verb}: ${row.key} in ${r.cwd}`,
       interactive: verb === "shell",
     });
   };
@@ -599,9 +647,15 @@ export function App({
         // about to produce the session, and an empty claude in the same
         // checkout only looks like it.
         if (kind === "mine" && !isLiveReview(current.entry)) {
-          const fresh = buildFreshChat(current.entry, cfg);
-          if (!("error" in fresh)) return request(fresh);
-          return setStatus(`${current.key} ${fresh.error}`);
+          const row = current;
+          void (async () => {
+            const worktree = await workingCopy(row);
+            if (!worktree || "missing" in worktree) return;
+            const fresh = buildFreshChat(row.entry, cfg, worktree.path);
+            if ("error" in fresh) return setStatus(`${row.key} ${fresh.error}`);
+            request(fresh);
+          })();
+          return;
         }
         return setStatus(`${current.key} ${r.error}`);
       }
@@ -626,10 +680,10 @@ export function App({
       return setView("denials");
     }
     if (input === "o") return browse();
-    if (input === "s") return open("shell");
+    if (input === "s") return void open("shell");
     // ink reports ctrl+letter as the bare letter, and Ctrl+D is muscle memory
     // for EOF — it must not hand the terminal to the diff opener.
-    if (input === "d" && !key.ctrl) return open("diff");
+    if (input === "d" && !key.ctrl) return void open("diff");
     if (input === "w") {
       request({
         argv: selfArgs("watch", current.key),
@@ -763,8 +817,9 @@ export function runTui(
   // The frame is sized to the terminal, so it starts at the top of a cleared
   // screen rather than wherever the shell prompt left the cursor.
   if (process.stdout.isTTY) process.stdout.write("\x1b[2J\x1b[H");
-  return suspendLoop((request, notice) =>
-    render(
+  return suspendLoop((request, notice) => {
+    const reader = mountReader();
+    const ink = render(
       <App
         cfg={ctx.cfg}
         paths={ctx.paths}
@@ -779,6 +834,32 @@ export function runTui(
           selected = key;
         }}
       />,
-    ),
-  );
+      { stdin: reader.stream },
+    );
+    return {
+      waitUntilExit: () => ink.waitUntilExit(),
+      unmount: () => ink.unmount(),
+      clear: () => ink.clear(),
+      release: reader.release,
+    };
+  });
+}
+
+// Ink reads the keyboard through a stream this mount owns rather than
+// process.stdin, because a hand-off to a shell destroys whichever reader was
+// armed at the time (see spawnInherit) — and a reader the next mount opens
+// fresh is one nothing else misses. /dev/tty is the same terminal by another
+// file descriptor, so closing it leaves stdin itself untouched.
+function mountReader(): { stream: NodeJS.ReadStream; release: () => void } {
+  try {
+    const stream = new ReadStream(
+      openSync("/dev/tty", "r"),
+    ) as unknown as NodeJS.ReadStream;
+    if (!stream.isTTY) throw new Error("/dev/tty is not a tty");
+    return { stream, release: () => stream.destroy() };
+  } catch {
+    // A tty on stdin with no controlling terminal to open by name: keep the
+    // old best effort, which at least stops a read not yet armed.
+    return { stream: process.stdin, release: () => process.stdin.pause() };
+  }
 }

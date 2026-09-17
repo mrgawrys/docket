@@ -141,8 +141,13 @@ unresolved, where a review row shows its issue count; with
 feedback triggers a headless receive run in that PR's checkout — it addresses
 the feedback with edits and local commits only, never a push — and `enter` resumes the
 resulting session where you inspect and push yourself. `R` runs receive by
-hand (it works even with the automatic path off), `s`/`d` open the PR
-branch's checkout, and `n` here starts a receive run for a pasted PR.
+hand (it works even with the automatic path off), and `n` here starts a
+receive run for a pasted PR. `s`, `d` and `enter` take you to your checkout
+of the PR branch in whatever state it is in — dirty or ahead, and never
+fast-forwarded — and make one when nothing local holds the branch, so a draft
+with nothing to receive yet still opens. A receive run is stricter: rather
+than touch a checkout holding your uncommitted work, it runs in a copy at the
+PR head.
 
 The rest of the CLI:
 

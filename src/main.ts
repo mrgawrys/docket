@@ -30,6 +30,7 @@ import {
 } from "./state";
 import { logCommand, statusCommand, watchCommand } from "./status";
 import { reconcile, startReceive } from "./sync";
+import { visitEntry } from "./visit";
 import { runTui, type ActionResult } from "./tui/app";
 import { childOwnsTerminal } from "./tui/suspend";
 import { promptCommand } from "./wizard/prompt";
@@ -485,6 +486,14 @@ async function main(): Promise<number> {
               collected((out) => receiveKey(ctx, key, note, out)),
             poll: () => job("poll"),
             sync: () => job("sync"),
+            // Synchronous git, awaited by the caller: it is local work, and a
+            // freshly cloned worktree is the slowest it gets.
+            visit: async (key) => {
+              const entry = loadState(ctx.paths.statePath)[key];
+              if (!entry) return { reason: "no such entry" };
+              const r = visitEntry(ctx, key, entry);
+              return r.ok ? { path: r.path } : { reason: r.reason };
+            },
             dismiss: (key) => dismissKey(ctx, key),
             kill: (key) => killEntry(ctx, key).message,
           },

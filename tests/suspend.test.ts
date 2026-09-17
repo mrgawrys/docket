@@ -15,9 +15,11 @@ function scripted(rounds: Round[]): {
   mount: Mount;
   mounts: Mounted[];
   notices: (string | undefined)[];
+  events: string[];
 } {
   const mounts: Mounted[] = [];
   const notices: (string | undefined)[] = [];
+  const events: string[] = [];
   const mount: Mount = (request, notice) => {
     notices.push(notice);
     const act = rounds[mounts.length];
@@ -29,12 +31,13 @@ function scripted(rounds: Round[]): {
       waitUntilExit: () => exited,
       unmount: () => quit(),
       clear() {},
+      release: () => events.push("release"),
     };
     mounts.push(m);
     queueMicrotask(() => act?.(request));
     return m;
   };
-  return { mount, mounts, notices };
+  return { mount, mounts, notices, events };
 }
 
 const req = (bin: string): SuspendRequest => ({ argv: [bin], cwd: "/tmp" });
@@ -117,4 +120,21 @@ test("suspendLoop exits without spawning when the TUI just quits", async () => {
   await quitLater(mounts, 0);
   expect(await loop).toBe(0);
   expect(spawns).toBe(0);
+});
+
+test("a mount's reader is off the terminal before the child runs", async () => {
+  // A read still in flight when a shell takes the terminal comes back as
+  // SIGTTIN and stops the whole process group — the queue freezes and the
+  // user's shell reports docket stopped. Releasing after the spawn is too late.
+  const { mount, mounts, events } = scripted([
+    (request) => request(req("/bin/fish")),
+    () => {},
+  ]);
+  const loop = suspendLoop(mount, async () => {
+    events.push("spawn");
+    return { code: 0 };
+  });
+  await quitLater(mounts, 1);
+  await loop;
+  expect(events).toEqual(["release", "spawn", "release"]);
 });

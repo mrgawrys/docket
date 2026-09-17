@@ -145,9 +145,11 @@ const headOf = (wt: string): string | null => {
   return p.exitCode === 0 ? p.stdout.toString().trim() : null;
 };
 
-// Remove one worktree, or say what it left standing. A fallback whose HEAD has
-// moved off the PR head it was last handed holds commits that exist nowhere
-// else until the author cherry-picks them: that one is kept, not removed.
+// Remove one worktree, or say what it left standing. A copy whose HEAD has
+// moved off the head it was created at holds commits that exist nowhere else
+// until the author cherry-picks them: that one is kept, not removed. Which
+// makes a worktree the user has been working in via `s` as safe as a
+// fallback the agent committed to.
 function removeWorktree(
   ctx: Ctx,
   clone: string,
