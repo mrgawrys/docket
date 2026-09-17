@@ -26,6 +26,9 @@ export interface Mounted {
   unmount(): void;
   // Erases the rendered frame; unmount alone leaves it on screen.
   clear(): void;
+  // Takes this mount's reader off the terminal before a child takes it over —
+  // see spawnInherit for what an armed read costs. Absent in tests.
+  release?(): void;
 }
 
 export type Mount = (
@@ -40,11 +43,17 @@ let childCount = 0;
 export const childOwnsTerminal = (): boolean => childCount > 0;
 
 export const spawnInherit: Spawner = async (req) => {
-  // An interactive child (a shell, claude) takes the terminal's foreground
-  // process group, which leaves our own reader reading from the background:
-  // that read fails with EIO and kills stdin for good. Unmounting Ink is not
-  // enough — it drops raw mode but not Bun's reader — so pause it explicitly.
-  process.stdin.pause();
+  // A login shell puts itself in a process group of its own and takes the
+  // terminal, which leaves us in the background — and a read of ours still in
+  // flight on the tty is then answered with SIGTTIN, stopping the whole
+  // process group: the queue freezes and the user's shell says "docket has
+  // stopped". That read cannot be called off (pause() and destroy() both
+  // leave it parked in the kernel), so it is caught instead: the read fails,
+  // the reader that owned it is already released, and the next mount opens
+  // its own. SIGTTOU covers the same for a terminal write.
+  const swallow = () => {};
+  process.on("SIGTTIN", swallow);
+  process.on("SIGTTOU", swallow);
   // Ctrl+C reaches the whole foreground process group, and the child shares
   // ours. `w` is meant to end that way, so the parent has to survive it — a JS
   // handler is reset to the default on exec, so the child still dies.
@@ -69,7 +78,8 @@ export const spawnInherit: Spawner = async (req) => {
   } finally {
     childCount--;
     process.off("SIGINT", ignore);
-    process.stdin.resume();
+    process.off("SIGTTIN", swallow);
+    process.off("SIGTTOU", swallow);
   }
 };
 
@@ -106,6 +116,9 @@ export async function suspendLoop(
       ui.unmount();
     }
     await ui.waitUntilExit();
+    // Before the banner, and before anything the child might do: nothing of
+    // ours may be reading the terminal it is about to own.
+    ui.release?.();
     if (!pending) return code;
 
     if (pending.banner) console.log(pending.banner);

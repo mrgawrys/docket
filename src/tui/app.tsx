@@ -1,6 +1,7 @@
 import { Box, render, Text, useApp, useInput, useWindowSize } from "ink";
-import { readFileSync, watch } from "node:fs";
+import { openSync, readFileSync, watch } from "node:fs";
 import { dirname } from "node:path";
+import { ReadStream } from "node:tty";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type Feed, windowLines } from "../activity";
 import { readAssessment } from "../assessment";
@@ -816,8 +817,9 @@ export function runTui(
   // The frame is sized to the terminal, so it starts at the top of a cleared
   // screen rather than wherever the shell prompt left the cursor.
   if (process.stdout.isTTY) process.stdout.write("\x1b[2J\x1b[H");
-  return suspendLoop((request, notice) =>
-    render(
+  return suspendLoop((request, notice) => {
+    const reader = mountReader();
+    const ink = render(
       <App
         cfg={ctx.cfg}
         paths={ctx.paths}
@@ -832,6 +834,32 @@ export function runTui(
           selected = key;
         }}
       />,
-    ),
-  );
+      { stdin: reader.stream },
+    );
+    return {
+      waitUntilExit: () => ink.waitUntilExit(),
+      unmount: () => ink.unmount(),
+      clear: () => ink.clear(),
+      release: reader.release,
+    };
+  });
+}
+
+// Ink reads the keyboard through a stream this mount owns rather than
+// process.stdin, because a hand-off to a shell destroys whichever reader was
+// armed at the time (see spawnInherit) — and a reader the next mount opens
+// fresh is one nothing else misses. /dev/tty is the same terminal by another
+// file descriptor, so closing it leaves stdin itself untouched.
+function mountReader(): { stream: NodeJS.ReadStream; release: () => void } {
+  try {
+    const stream = new ReadStream(
+      openSync("/dev/tty", "r"),
+    ) as unknown as NodeJS.ReadStream;
+    if (!stream.isTTY) throw new Error("/dev/tty is not a tty");
+    return { stream, release: () => stream.destroy() };
+  } catch {
+    // A tty on stdin with no controlling terminal to open by name: keep the
+    // old best effort, which at least stops a read not yet armed.
+    return { stream: process.stdin, release: () => process.stdin.pause() };
+  }
 }
