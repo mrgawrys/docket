@@ -142,6 +142,7 @@ const rev = (over: Partial<Review>): Review => ({
   state: "COMMENTED",
   body: "some feedback",
   submittedAt: "2026-02-01T00:00:00Z",
+  comments: 0,
   ...over,
 });
 const mineInfo = (
@@ -187,6 +188,11 @@ test("decideMineSync: actionable review states, bare vs with-body", () => {
   expect(fb(rev({ state: "APPROVED", body: "" }))).toEqual({ kind: "none" });
   expect(fb(rev({ state: "APPROVED", body: "   " }))).toEqual({ kind: "none" });
   expect(fb(rev({ state: "APPROVED", body: "nice, one nit" }))).toMatchObject({
+    kind: "feedback",
+    verdict: "approved",
+  });
+  // approve-with-nits left inline, top-level body empty
+  expect(fb(rev({ state: "APPROVED", body: "", comments: 3 }))).toMatchObject({
     kind: "feedback",
     verdict: "approved",
   });

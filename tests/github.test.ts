@@ -3,6 +3,7 @@ import { join } from "node:path";
 import {
   ghUser,
   myTeams,
+  prMineInfo,
   prView,
   reviewRequesters,
   searchReviewRequests,
@@ -24,6 +25,8 @@ afterEach(() => {
   delete process.env.GH_REVIEW_REQUESTS_JSON;
   delete process.env.GH_USER_TEAMS;
   delete process.env.GH_TEAMS_FAIL;
+  delete process.env.GH_PR_MINE_JSON;
+  delete process.env.GH_REVIEW_COMMENTS_JSON;
 });
 
 test("ghUser returns the login", () => {
@@ -84,4 +87,43 @@ test("myTeams parses org/slug lines; empty when none; null on failure", () => {
   expect(myTeams(ctx)).toEqual([]);
   process.env.GH_TEAMS_FAIL = "1";
   expect(myTeams(ctx)).toBeNull();
+});
+
+test("prMineInfo counts inline comments only for blank approvals", () => {
+  const review = (id: string, state: string, body: string) => ({
+    id,
+    author: { login: "colleague" },
+    state,
+    body,
+    submittedAt: "2026-09-28T12:56:27Z",
+  });
+  process.env.GH_REVIEW_COMMENTS_JSON = JSON.stringify({
+    data: {
+      repository: {
+        pullRequest: {
+          reviews: {
+            nodes: [
+              { id: "PRR_a", comments: { totalCount: 3 } },
+              { id: "PRR_b", comments: { totalCount: 2 } },
+            ],
+          },
+        },
+      },
+    },
+  });
+  const mine = (reviews: unknown[]) => {
+    process.env.GH_PR_MINE_JSON = JSON.stringify({
+      state: "OPEN",
+      isDraft: false,
+      headRefOid: "sha",
+      headRefName: "feature",
+      reviews,
+    });
+    return prMineInfo(ctx, "testorg/demo", "7")?.reviews.map((r) => r.comments);
+  };
+  expect(
+    mine([review("PRR_a", "APPROVED", ""), review("PRR_b", "COMMENTED", "x")]),
+  ).toEqual([3, 2]);
+  // no blank approval: the second call is skipped, counts stay 0
+  expect(mine([review("PRR_b", "COMMENTED", "x")])).toEqual([0]);
 });
