@@ -115,7 +115,7 @@ const VERDICT_STATES = new Set<string>([
 ]);
 
 // Actionable feedback on the user's PR: a review by someone else, newer than
-// the entry's cursor, that is not a bare comment-less approval.
+// the entry's cursor, that is not a bare approval (no body, no inline comments).
 export function decideMineSync(
   info: PrMineInfo,
   me: string,
@@ -130,7 +130,7 @@ export function decideMineSync(
       r.submittedAt > cursor &&
       (r.state === "CHANGES_REQUESTED" ||
         r.state === "COMMENTED" ||
-        (r.state === "APPROVED" && r.body.trim() !== "")),
+        (r.state === "APPROVED" && (r.body.trim() !== "" || r.comments > 0))),
   );
   if (actionable.length === 0) return { kind: "none" };
   // Verdict and reviewer both come from the worst review (newest of the worst

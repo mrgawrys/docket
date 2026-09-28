@@ -213,6 +213,7 @@ export interface PrMineInfo {
     state: string;
     body: string;
     submittedAt: string;
+    comments: number; // inline comments; filled only for blank approvals
   }[];
 }
 
@@ -227,6 +228,7 @@ export function prMineInfo(
     headRefOid?: string;
     headRefName?: string;
     reviews?: {
+      id?: string;
       author?: { login?: string };
       state?: string;
       body?: string;
@@ -234,18 +236,75 @@ export function prMineInfo(
     }[];
   }>(ctx, repo, number, "state,isDraft,headRefOid,headRefName,reviews");
   if (!raw) return null;
+  const reviews = raw.reviews ?? [];
+  // Only a blank approval's verdict hinges on its inline comments, so only
+  // then does the PR pay a second call.
+  const counts = reviews.some((r) => r.state === "APPROVED" && !r.body?.trim())
+    ? reviewCommentCounts(ctx, repo, number)
+    : null;
   return {
     state: raw.state ?? "",
     isDraft: raw.isDraft ?? false,
     headRefOid: raw.headRefOid ?? "",
     headRefName: raw.headRefName ?? "",
-    reviews: (raw.reviews ?? []).map((r) => ({
+    reviews: reviews.map((r) => ({
       author: r.author?.login ?? "",
       state: r.state ?? "",
       body: r.body ?? "",
       submittedAt: r.submittedAt ?? "",
+      comments: (r.id && counts?.get(r.id)) || 0,
     })),
   };
+}
+
+// `pr view --json reviews` has no inline-comment count; GraphQL does. Keyed
+// by review node id, which is the `id` pr view returns.
+export function reviewCommentCounts(
+  ctx: GhCtx,
+  repo: string,
+  number: string,
+): Map<string, number> | null {
+  const [owner, name] = repo.split("/");
+  const query =
+    "query($owner:String!,$name:String!,$number:Int!){" +
+    "repository(owner:$owner,name:$name){pullRequest(number:$number){" +
+    "reviews(first:100){nodes{id comments{totalCount}}}}}}";
+  const out = gh(ctx, [
+    "api",
+    "graphql",
+    "-f",
+    `query=${query}`,
+    "-F",
+    `owner=${owner}`,
+    "-F",
+    `name=${name}`,
+    "-F",
+    `number=${number}`,
+  ]);
+  if (out === null) return null;
+  try {
+    const nodes =
+      (
+        JSON.parse(out) as {
+          data?: {
+            repository?: {
+              pullRequest?: {
+                reviews?: {
+                  nodes?: { id?: string; comments?: { totalCount?: number } }[];
+                };
+              };
+            };
+          };
+        }
+      ).data?.repository?.pullRequest?.reviews?.nodes ?? [];
+    return new Map(
+      nodes.flatMap((n) =>
+        n.id ? [[n.id, n.comments?.totalCount ?? 0] as const] : [],
+      ),
+    );
+  } catch {
+    return null;
+  }
 }
 
 export interface ReviewRequesters {
