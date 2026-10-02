@@ -252,6 +252,19 @@ export async function doctorCommand(
   };
   checkSkillEntries(cfg.extra_allowed_tools ?? []);
 
+  // claude reads `X:*` as a literal prefix, so a `*` before it never matches
+  // and the rule silently allows nothing.
+  const checkDeadWildcards = (key: string, entries: string[]) => {
+    for (const entry of entries.filter((e) => /\*.*:\*\)$/.test(e))) {
+      const glob = entry.replace(/:\*\)$/, "");
+      fail(
+        `${key}: ${entry} never matches — a * inside a :* rule is literal`,
+        `replace it with ${glob})  and  ${glob} *)`,
+      );
+    }
+  };
+  checkDeadWildcards("extra_allowed_tools", cfg.extra_allowed_tools ?? []);
+
   // Only the automatic path is opt-in: `docket receive` and the TUI's R run
   // whatever receive_enabled says, on the same prompt and the same allowlist.
   // So these keys are checked whenever they are set — gating them on the flag
@@ -277,6 +290,10 @@ export async function doctorCommand(
     );
   }
   checkSkillEntries(cfg.extra_receive_allowed_tools ?? []);
+  checkDeadWildcards(
+    "extra_receive_allowed_tools",
+    cfg.extra_receive_allowed_tools ?? [],
+  );
 
   return failed === 0 ? 0 : 1;
 }

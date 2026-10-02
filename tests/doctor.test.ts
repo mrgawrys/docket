@@ -450,3 +450,22 @@ test("doctor: blank receive_prompt and receive Skill() entries are checked", () 
   expect(r.out).toMatch(/✗.*receive_prompt is set but blank/);
   expect(r.out).toContain("'dev-skills' not found");
 });
+
+test("doctor: a wildcard inside a :* rule fails with the glob form to use", () => {
+  const sb = makeSandbox();
+  sb.gitInitDemo();
+  sb.writeConfig({
+    orgs: ["testorg"],
+    repos: { "testorg/demo": sb.demoRepo },
+    claude_config_dir: claudeHome(sb, true),
+    extra_allowed_tools: ["Bash(bun test:*)"],
+    extra_receive_allowed_tools: ["Bash(gh api repos/*/pulls/*/files:*)"],
+  });
+  const r = sb.run(["doctor"]);
+  expect(r.code).toBe(1);
+  expect(r.out).not.toContain("bun test:*) never matches");
+  expect(r.out).toMatch(
+    /✗.*extra_receive_allowed_tools: Bash\(gh api repos\/\*\/pulls\/\*\/files:\*\) never matches/,
+  );
+  expect(r.out).toContain("Bash(gh api repos/*/pulls/*/files *)");
+});

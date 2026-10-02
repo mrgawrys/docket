@@ -16,6 +16,7 @@ import {
   claudeEnv,
   effectiveReceiveAllowedTools,
   effectiveReviewPrompt,
+  GH_API_WRITE_DENY,
   ghBin,
   runLogPath,
   type Config,
@@ -423,6 +424,8 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
       "dontAsk",
       "--allowedTools",
       plan.allowedTools.join(","),
+      "--disallowedTools",
+      GH_API_WRITE_DENY.join(","),
     ],
     { cwd: plan.cwd, env, stdout: "pipe", stderr: "pipe" },
   );
