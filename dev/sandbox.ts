@@ -120,6 +120,7 @@ echo run >>"\${CLAUDE_CALLS:?}"
 prev=""
 for a in "$@"; do
   [ "$prev" = --allowedTools ] && printf '%s' "$a" >"\${ALLOWED_CAPTURE:?}"
+  [ "$prev" = --disallowedTools ] && printf '%s' "$a" >"\${DISALLOWED_CAPTURE:?}"
   prev="$a"
 done
 printf '%s' "\${CLAUDE_CONFIG_DIR:-}" >"\${CFGDIR_CAPTURE:?}"
@@ -185,6 +186,7 @@ export function materialize(root: string): SandboxDirs {
     CLAUDE_CALLS: capture("claude-calls"),
     PROMPT_CAPTURE: capture("prompt-capture"),
     ALLOWED_CAPTURE: capture("allowed-capture"),
+    DISALLOWED_CAPTURE: capture("disallowed-capture"),
     CFGDIR_CAPTURE: capture("cfgdir-capture"),
     CWD_CAPTURE: capture("cwd-capture"),
     WATCHDOG_CAPTURE: capture("watchdog-capture"),

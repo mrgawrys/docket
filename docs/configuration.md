@@ -112,6 +112,14 @@ dropped from its proposal before you see it. That filter is best-effort, not
 a guarantee — allowlist entries are prefix patterns, so reading the proposal
 before accepting is the real gate. Empty = baseline only.
 
+A `*` inside a `:*` rule is literal: `Bash(gh api repos/*/pulls:*)` matches
+nothing. Wildcard paths take the glob form, bare and with arguments —
+`Bash(gh api repos/*/pulls)` plus `Bash(gh api repos/*/pulls *)` — and
+doctor fails on the dead form. Whatever the allowlist says, every run is
+passed `--disallowedTools` for `gh api`'s write flags (`-X`, `--method`,
+`-f`, `-F`, `--field`, `--raw-field`, `--input`), so a glob `gh api` read
+stays a GET.
+
 ## receive_enabled
 
 Turn on automatic **receive runs**: when someone leaves actionable feedback

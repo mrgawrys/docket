@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { existsSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+  ALLOWED_TOOLS,
   DEFAULT_RECEIVE_PROMPT,
   RECEIVE_ALLOWED_TOOLS,
   effectiveReceiveAllowedTools,
@@ -99,15 +100,14 @@ test("receive allowlist: edit + local git verbs, and never push or GitHub writes
   expect(RECEIVE_ALLOWED_TOOLS).toContain("Bash(git add:*)");
   expect(RECEIVE_ALLOWED_TOOLS).toContain("Bash(git commit:*)");
   // the feedback itself is readable — inline threads are not in `gh pr view`
-  expect(RECEIVE_ALLOWED_TOOLS).toContain(
-    "Bash(gh api repos/*/pulls/*/comments:*)",
-  );
-  expect(RECEIVE_ALLOWED_TOOLS).toContain(
-    "Bash(gh api repos/*/pulls/*/reviews:*)",
-  );
-  expect(RECEIVE_ALLOWED_TOOLS).toContain(
-    "Bash(gh api repos/*/issues/*/comments:*)",
-  );
+  for (const path of [
+    "repos/*/pulls/*/comments",
+    "repos/*/pulls/*/reviews",
+    "repos/*/issues/*/comments",
+  ]) {
+    expect(RECEIVE_ALLOWED_TOOLS).toContain(`Bash(gh api ${path})`);
+    expect(RECEIVE_ALLOWED_TOOLS).toContain(`Bash(gh api ${path} *)`);
+  }
   // but only those paths: graphql mutates, and a bare `gh api` is everything
   expect(joined).not.toContain("gh api graphql");
   expect(joined).not.toContain("Bash(gh api:*)");
@@ -135,6 +135,11 @@ test("receive allowlist: edit + local git verbs, and never push or GitHub writes
       bareCfg({ extra_receive_allowed_tools: ["Bash(bun test:*)"] }),
     ).at(-1),
   ).toBe("Bash(bun test:*)");
+});
+
+test("no baseline rule hides a wildcard inside a `:*` prefix, where it never matches", () => {
+  const rules = [...ALLOWED_TOOLS.split(","), ...RECEIVE_ALLOWED_TOOLS];
+  expect(rules.filter((r) => /\*.*:\*\)$/.test(r))).toEqual([]);
 });
 
 test("shouldAutoRun: requires receive_enabled and a non-draft PR", () => {
@@ -343,6 +348,11 @@ test("docket receive runs regardless of receive_enabled, keys under mine:", asyn
   );
   expect(e.title).toBe("Manual PR"); // fetched via gh pr view
   expect(e.note).toBeUndefined(); // consumed by the run it was given for
+  // the glob read rules take any arguments; these keep `gh api` a GET
+  const deny = sb.disallowedCapture().split(",");
+  expect(deny).toContain("Bash(gh api * -f*)");
+  expect(deny).toContain("Bash(gh api * -X*)");
+  expect(deny).toContain("Bash(gh api * --input*)");
   expect(sb.promptCapture()).toContain(
     "Additional context from the author: skip the wording nits",
   );
