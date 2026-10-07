@@ -382,3 +382,30 @@ test("ignored_teams: membership fetched at most once per poll cycle", () => {
     1,
   );
 });
+
+test("poll: records GitHub's last activity on new and already-known entries", async () => {
+  const sb = makeSandbox();
+  const mine = (updatedAt: string) =>
+    JSON.stringify([
+      {
+        number: 31,
+        title: "My feature",
+        url: "https://example.test/pr/31",
+        isDraft: false,
+        updatedAt,
+        repository: { nameWithOwner: "testorg/demo" },
+      },
+    ]);
+  let r = sb.run(["poll"], {
+    GH_MINE_SEARCH_JSON: mine("2026-10-01T10:00:00Z"),
+  });
+  expect(r.code).toBe(0);
+  expect(sb.state()["mine:testorg/demo#31"].pr_updated_at).toBe(
+    "2026-10-01T10:00:00Z",
+  );
+  r = sb.run(["poll"], { GH_MINE_SEARCH_JSON: mine("2026-10-02T09:00:00Z") });
+  expect(r.code).toBe(0);
+  expect(sb.state()["mine:testorg/demo#31"].pr_updated_at).toBe(
+    "2026-10-02T09:00:00Z",
+  );
+});

@@ -77,6 +77,9 @@ export interface Entry {
   // Parsed once from the run log too, for the same reason; absent when the
   // run had no denials.
   denials?: DenialGroup[];
+  // GitHub's last activity on the PR, refreshed by poll and sync. Distinct
+  // from updated_at, which is docket's own bookkeeping.
+  pr_updated_at?: string;
   updated_at: string;
 }
 
@@ -168,6 +171,24 @@ export function patchEntry(
         ...patch,
         updated_at: timestamp(),
       }) as Entry,
+  );
+}
+
+// Not a patchEntry: activity on GitHub is not a docket change, and stamping
+// updated_at would reset reconcileOrphans' grace period.
+export function recordActivity(
+  statePath: string,
+  key: string,
+  at: string | undefined,
+): void {
+  if (!at) return;
+  const e = loadState(statePath)[key];
+  if (!e || e.pr_updated_at === at) return;
+  // a key removed since the read stays removed: JSON drops the undefined
+  updateEntry(
+    statePath,
+    key,
+    (cur) => (cur && { ...cur, pr_updated_at: at }) as Entry,
   );
 }
 

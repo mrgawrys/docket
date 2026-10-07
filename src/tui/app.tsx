@@ -43,6 +43,7 @@ import {
   type Entry,
   type EntryKind,
 } from "../state";
+import { nextSortMode, orderRows, type SortMode } from "../order";
 import { PANEL_HEIGHT, panelLines } from "../panel";
 import { Help, Legend } from "./legend";
 import { Panel } from "./panel";
@@ -76,6 +77,12 @@ export interface TuiActions {
   kill(key: string): string;
 }
 
+const SORT_LABEL: Record<SortMode, string> = {
+  triage: "by need",
+  updated: "by last activity",
+  repo: "by repo",
+};
+
 export interface AppProps {
   cfg: Config;
   paths: Paths;
@@ -85,6 +92,8 @@ export interface AppProps {
   // Carried across a suspend so the cursor comes back where it was.
   initialKey?: string;
   onSelect?: (key: string) => void;
+  initialSort?: SortMode;
+  onSort?: (mode: SortMode) => void;
   notice?: string;
   // Broken setup, not a broken review: it belongs to no row, and a logged-out
   // poller writes no entries at all — so without this the queue looks exactly
@@ -158,6 +167,8 @@ export function App({
   request,
   initialKey,
   onSelect,
+  initialSort = "triage",
+  onSort,
   notice,
   authWarning,
   feed,
@@ -178,12 +189,13 @@ export function App({
   const [generation, setGeneration] = useState(0);
   const reload = useCallback(() => setGeneration((g) => g + 1), []);
   // The other list's count is read in the same pass: the tab strip shows both.
+  const [sort, setSort] = useState<SortMode>(initialSort);
   const { rows, counts } = useMemo(() => {
     const state = loadState(paths.statePath);
-    const rows: Row[] = pendingEntries(state, kind).map(([key, entry]) => ({
-      key,
-      entry,
-    }));
+    const rows = orderRows<Row>(
+      pendingEntries(state, kind).map(([key, entry]) => ({ key, entry })),
+      sort,
+    );
     const other = pendingEntries(state, kind === "mine" ? "review" : "mine");
     return {
       rows,
@@ -193,7 +205,7 @@ export function App({
       },
     };
     // generation is the invalidation signal for the state file's content
-  }, [paths.statePath, kind, generation]);
+  }, [paths.statePath, kind, sort, generation]);
   // Per-view cursors, so tabbing away and back lands where the user left.
   const [cursorKeys, setCursorKeys] = useState<
     Partial<Record<"queue" | "mine", string>>
@@ -361,9 +373,15 @@ export function App({
   // under. Fixed rows: the tab strip, four bars, the legend, the footer row,
   // and the row Ink must leave spare.
   const fixedRows = 8;
+  // A tall terminal gives the list everything but the panel's floor; a short
+  // one still shows ten rows before the panel starts to give way.
   const queueHeight = Math.max(
     1,
-    Math.min(rows.length || 1, 10, height - fixedRows - 1),
+    Math.min(
+      rows.length || 1,
+      Math.max(10, height - fixedRows - PANEL_HEIGHT - 1),
+      height - fixedRows - 1,
+    ),
   );
   const denials = current?.entry.denials;
   // Bounded, and it shrinks with the terminal — the panel never takes the
@@ -626,6 +644,12 @@ export function App({
     }
     if (key.tab) return setList(list === "queue" ? "mine" : "queue");
     if (input === "n") return setPrInput("");
+    if (input === "O") {
+      const next = nextSortMode(sort);
+      setSort(next);
+      onSort?.(next);
+      return setStatus(`sorted ${SORT_LABEL[next]}`);
+    }
     if (input === "j" || key.downArrow) return move(1);
     if (input === "k" || key.upArrow) return move(-1);
     if (input === "p") return startJob("poll", "polling", actions.poll);
@@ -714,7 +738,11 @@ export function App({
       {/* the tabs are the title: the bar under them carries only the position */}
       <Tabs list={list} counts={counts} />
       <Bar
-        right={rows.length ? `${cursor + 1}/${rows.length}` : "empty"}
+        right={
+          rows.length
+            ? `${SORT_LABEL[sort]} (O) · ${cursor + 1}/${rows.length}`
+            : "empty"
+        }
         width={width}
       />
       {view === "help" ? (
@@ -814,6 +842,7 @@ export function runTui(
       ? `claude is not logged in (${auth.dir}) — run: docket doctor`
       : undefined;
   let selected: string | undefined;
+  let sort: SortMode | undefined;
   // The frame is sized to the terminal, so it starts at the top of a cleared
   // screen rather than wherever the shell prompt left the cursor.
   if (process.stdout.isTTY) process.stdout.write("\x1b[2J\x1b[H");
@@ -832,6 +861,10 @@ export function runTui(
         initialKey={selected}
         onSelect={(key) => {
           selected = key;
+        }}
+        initialSort={sort}
+        onSort={(mode) => {
+          sort = mode;
         }}
       />,
       { stdin: reader.stream },

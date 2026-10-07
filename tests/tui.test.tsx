@@ -131,11 +131,11 @@ test("destructive verbs act on the highlighted row, not the first one", async ()
 test("the cursor holds its place when the row under it is dismissed", async () => {
   const ui = mount(
     {
-      "acme/one#1": entry({ title: "One", updated_at: "2026-01-01T00:00:00Z" }),
+      "acme/one#1": entry({ title: "One", updated_at: "2026-01-03T00:00:00Z" }),
       "acme/two#2": entry({ title: "Two", updated_at: "2026-01-02T00:00:00Z" }),
       "acme/three#3": entry({
         title: "Three",
-        updated_at: "2026-01-03T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
       }),
     },
     true,
@@ -178,7 +178,7 @@ test("a dead verb launches nothing and says why in the footer", async () => {
 
 test("the denials key opens the view only for a row that has denials", async () => {
   const ui = mount({
-    "acme/one#1": entry({ title: "One", updated_at: "2026-01-01T00:00:00Z" }),
+    "acme/one#1": entry({ title: "One", updated_at: "2026-01-03T00:00:00Z" }),
     "acme/two#2": entry({
       title: "Two",
       updated_at: "2026-01-02T00:00:00Z",
@@ -386,11 +386,13 @@ test("enter resolves denials only when there is no session to resume", async () 
     }),
   });
   await Bun.sleep(20);
+  ui.stdin.write("j"); // triage lists the failed run first
+  await Bun.sleep(20);
   ui.stdin.write("\r");
   await Bun.sleep(20);
   expect(ui.requests[0]?.banner).toContain("resuming acme/one#1");
 
-  ui.stdin.write("j");
+  ui.stdin.write("k");
   await Bun.sleep(20);
   // the panel says what enter will do before it is pressed
   expect(ui.lastFrame()).toContain("⏎ resolves these with claude");
@@ -404,7 +406,7 @@ test("enter resolves denials only when there is no session to resume", async () 
 
 test("hand-off carries every group, and r retries the PR the view was opened on", async () => {
   const ui = mount({
-    "acme/one#1": entry({ title: "One", updated_at: "2026-01-01T00:00:00Z" }),
+    "acme/one#1": entry({ title: "One", updated_at: "2026-01-03T00:00:00Z" }),
     "acme/two#2": entry({
       title: "Two",
       local_path: clone,
@@ -571,5 +573,22 @@ test("no row outgrows the terminal, however wide its columns want to be", async 
   // ink-testing-library renders at 100 columns
   const over = printed(ui.lastFrame() ?? "").filter((l) => l.length > 100);
   expect(over).toEqual([]);
+  ui.unmount();
+});
+
+test("re-sorting keeps the cursor on the same PR, so x still dismisses it", async () => {
+  const ui = mount({
+    "acme/b#1": entry({ title: "B", status: "failed", session_id: undefined }),
+    "acme/a#2": entry({ title: "A" }),
+  });
+  ui.stdin.write("j"); // acme/a#2: triage lists the failed run above it
+  await Bun.sleep(20);
+  ui.stdin.write("O"); // by last activity
+  await Bun.sleep(20);
+  ui.stdin.write("O"); // by repo: acme/a#2 is now row 1
+  await Bun.sleep(20);
+  ui.stdin.write("x");
+  await Bun.sleep(20);
+  expect(ui.calls).toEqual(["dismiss:acme/a#2"]);
   ui.unmount();
 });

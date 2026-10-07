@@ -10,7 +10,13 @@ import {
 } from "./github";
 import { notify } from "./notify";
 import { startReview, type Ctx } from "./reviewer";
-import { loadState, timestamp, updateEntry, type State } from "./state";
+import {
+  loadState,
+  recordActivity,
+  timestamp,
+  updateEntry,
+  type State,
+} from "./state";
 import { reconcile } from "./sync";
 
 // Should this candidate be skipped as "only requested via ignored teams"?
@@ -45,7 +51,10 @@ function discoverMine(ctx: Ctx, dry: boolean, known: State): void {
       if (seen.has(key)) continue;
       seen.add(key);
       if (!(c.repo in ctx.cfg.repos)) continue; // unmapped repo: not listed
-      if (known[key]) continue;
+      if (known[key]) {
+        if (!dry) recordActivity(ctx.paths.statePath, key, c.updatedAt);
+        continue;
+      }
       if (dry) {
         console.log(`would track (mine): ${key} — ${c.title}`);
         continue;
@@ -69,6 +78,7 @@ function discoverMine(ctx: Ctx, dry: boolean, known: State): void {
         review_at: timestamp(),
         ...(info?.headRefName ? { branch: info.headRefName } : {}),
         ...(c.isDraft ? { flags: ["draft"] } : {}),
+        ...(c.updatedAt ? { pr_updated_at: c.updatedAt } : {}),
         updated_at: timestamp(),
       }));
       ctx.log(`TRACK ${key}: authored PR — ${c.title}`);
@@ -111,7 +121,11 @@ export async function pollCycle(ctx: Ctx, dry: boolean): Promise<void> {
   for (const org of ctx.cfg.orgs) {
     for (const c of searchReviewRequests(ctx.gh, org)) {
       const key = `${c.repo}#${c.number}`;
-      if (known[key]) continue; // known PR — never re-review
+      if (known[key]) {
+        // known PR — never re-review, only note its latest activity
+        if (!dry) recordActivity(ctx.paths.statePath, key, c.updatedAt);
+        continue;
+      }
       if (ignored.length > 0) {
         me ??= { login: ghUser(ctx.gh), teams: myTeams(ctx.gh) };
         const req = reviewRequesters(ctx.gh, c.repo, String(c.number));
@@ -127,6 +141,7 @@ export async function pollCycle(ctx: Ctx, dry: boolean): Promise<void> {
         console.log(`would review: ${key} — ${c.title}`);
       } else {
         await startReview(ctx, key, c.repo, c.title, c.url);
+        recordActivity(ctx.paths.statePath, key, c.updatedAt);
       }
     }
   }

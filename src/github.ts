@@ -36,6 +36,7 @@ export interface Candidate {
   url: string;
   // Only searchMyPrs keeps drafts; searchReviewRequests filters them out.
   isDraft?: boolean;
+  updatedAt?: string;
 }
 
 function gh(ctx: GhCtx, args: string[]): string | null {
@@ -130,6 +131,7 @@ interface SearchRow {
   title: string;
   url: string;
   isDraft: boolean;
+  updatedAt?: string;
   repository: { nameWithOwner: string };
 }
 
@@ -144,7 +146,7 @@ export function searchReviewRequests(ctx: GhCtx, org: string): Candidate[] {
     "--limit",
     "100",
     "--json",
-    "number,title,url,isDraft,repository",
+    "number,title,url,isDraft,updatedAt,repository",
   ]);
   let rows: SearchRow[] | null = null;
   try {
@@ -163,6 +165,7 @@ export function searchReviewRequests(ctx: GhCtx, org: string): Candidate[] {
       number: r.number,
       title: r.title,
       url: r.url,
+      updatedAt: r.updatedAt,
     }));
 }
 
@@ -181,7 +184,7 @@ export function searchMyPrs(ctx: GhCtx, owner: string): Candidate[] {
     "--limit",
     "100",
     "--json",
-    "number,title,url,isDraft,repository",
+    "number,title,url,isDraft,updatedAt,repository",
   ]);
   let rows: SearchRow[] | null = null;
   try {
@@ -199,6 +202,7 @@ export function searchMyPrs(ctx: GhCtx, owner: string): Candidate[] {
     title: r.title,
     url: r.url,
     isDraft: r.isDraft,
+    updatedAt: r.updatedAt,
   }));
 }
 
@@ -208,6 +212,7 @@ export interface PrMineInfo {
   isDraft: boolean;
   headRefOid: string;
   headRefName: string;
+  updatedAt?: string;
   reviews: {
     author: string;
     state: string;
@@ -227,6 +232,7 @@ export function prMineInfo(
     isDraft?: boolean;
     headRefOid?: string;
     headRefName?: string;
+    updatedAt?: string;
     reviews?: {
       id?: string;
       author?: { login?: string };
@@ -234,7 +240,12 @@ export function prMineInfo(
       body?: string;
       submittedAt?: string;
     }[];
-  }>(ctx, repo, number, "state,isDraft,headRefOid,headRefName,reviews");
+  }>(
+    ctx,
+    repo,
+    number,
+    "state,isDraft,headRefOid,headRefName,updatedAt,reviews",
+  );
   if (!raw) return null;
   const reviews = raw.reviews ?? [];
   // Only a blank approval's verdict hinges on its inline comments, so only
@@ -247,6 +258,7 @@ export function prMineInfo(
     isDraft: raw.isDraft ?? false,
     headRefOid: raw.headRefOid ?? "",
     headRefName: raw.headRefName ?? "",
+    updatedAt: raw.updatedAt,
     reviews: reviews.map((r) => ({
       author: r.author?.login ?? "",
       state: r.state ?? "",
