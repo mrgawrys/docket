@@ -12,6 +12,7 @@ import {
   markReviewed,
   normalizeKey,
   pendingEntries,
+  recordActivity,
   saveState,
   setStatus,
   splitKey,
@@ -164,4 +165,22 @@ test("statusLabel renames the run states for mine entries only", () => {
   expect(statusLabel("mine:o/r#1", "approved")).toBe("approved");
   expect(statusLabel("o/r#1", "reviewing")).toBe("reviewing");
   expect(statusLabel("o/r#1", "ready")).toBe("ready");
+});
+
+test("recordActivity stores GitHub activity without restamping docket's updated_at", () => {
+  const p = statePath();
+  saveState(p, {
+    "o/r#1": { status: "reviewing", updated_at: "2026-01-01T00:00:00Z" },
+  });
+  recordActivity(p, "o/r#1", "2026-10-01T12:00:00Z");
+  // updated_at feeds the orphan grace period; activity elsewhere must not reset it
+  expect(loadState(p)["o/r#1"]).toEqual({
+    status: "reviewing",
+    updated_at: "2026-01-01T00:00:00Z",
+    pr_updated_at: "2026-10-01T12:00:00Z",
+  });
+  recordActivity(p, "o/r#404", "2026-10-01T12:00:00Z");
+  recordActivity(p, "o/r#1", undefined);
+  expect(Object.keys(loadState(p))).toEqual(["o/r#1"]);
+  expect(loadState(p)["o/r#1"].pr_updated_at).toBe("2026-10-01T12:00:00Z");
 });

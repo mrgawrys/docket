@@ -21,6 +21,7 @@ import {
   markDone,
   markReviewed,
   patchEntry,
+  recordActivity,
   splitKey,
   type Entry,
   type Verdict,
@@ -35,6 +36,7 @@ export interface PrSyncInfo {
   }[];
   reviewRequests?: { login?: string }[];
   commits?: { committedDate?: string }[];
+  updatedAt?: string;
 }
 
 export type SyncDecision =
@@ -216,6 +218,7 @@ async function syncMine(
     ctx.log(`SYNC ${key}: gh pr view failed, leaving entry as-is`);
     return;
   }
+  recordActivity(statePath, key, info.updatedAt);
   const d = decideMineSync(info, me, entry);
   if (d.kind === "done") {
     await retire(ctx, key, info.state === "MERGED" ? "merged" : "closed");
@@ -325,12 +328,13 @@ export async function reconcile(
       ctx.gh,
       repo,
       number,
-      "state,latestReviews,reviewRequests,commits",
+      "state,latestReviews,reviewRequests,commits,updatedAt",
     );
     if (!info) {
       ctx.log(`SYNC ${key}: gh pr view failed, leaving entry as-is`);
       continue;
     }
+    recordActivity(statePath, key, info.updatedAt);
     const d = decideSync(info, me);
     if (d.kind === "done") {
       await retire(ctx, key, d.reason);
