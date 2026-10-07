@@ -15,6 +15,7 @@ export type KeymapView = "queue" | "mine" | "denials" | "log";
 export const QUEUE_KEYS: Binding[] = [
   { keys: "j/k ↑/↓", label: "move" },
   { keys: "tab", label: "my PRs" },
+  { keys: "O", label: "sort — by need, last activity, repo" },
   { keys: "enter", label: "claude", verb: "claude" },
   { keys: "s", label: "shell", verb: "shell" },
   { keys: "d", label: "diff", verb: "diff" },
@@ -37,6 +38,7 @@ export const QUEUE_KEYS: Binding[] = [
 export const MINE_KEYS: Binding[] = [
   { keys: "j/k ↑/↓", label: "move" },
   { keys: "tab", label: "queue" },
+  { keys: "O", label: "sort — by need, last activity, repo" },
   { keys: "enter", label: "claude", verb: "claude" },
   { keys: "s", label: "shell", verb: "shell" },
   { keys: "d", label: "diff", verb: "diff" },
@@ -85,8 +87,8 @@ const KEYMAPS: Record<KeymapView, Binding[]> = {
 };
 
 // The one-line footer: the verbs that differ between the two lists, plus the
-// way to the rest. `tab` is not here — the tab strip shows it, where the thing
-// it switches is.
+// way to the rest. `tab` and `O` are not here — the tab strip and the bar under
+// it show them, next to what they change.
 const FOOTER: Record<KeymapView, string[]> = {
   queue: ["enter", "s", "d", "o", "D", "w", "n", "?"],
   mine: ["enter", "s", "d", "o", "R", "D", "n", "?"],

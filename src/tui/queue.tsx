@@ -28,10 +28,12 @@ function windowStart(cursor: number, count: number, height: number): number {
 
 export function Queue({
   rows,
+  bands = [],
   cursor,
   height,
 }: {
   rows: Row[];
+  bands?: { label: string; start: number }[];
   cursor: number;
   height: number;
 }) {
@@ -44,7 +46,15 @@ export function Queue({
       </Box>
     );
   }
-  const start = windowStart(cursor, rows.length, height);
+  // Headers scroll with the rows, so the window is over lines, not rows.
+  const lines: ({ band: string } | { row: Row; index: number })[] = [];
+  rows.forEach((row, index) => {
+    const band = bands.find((b) => b.start === index);
+    if (band) lines.push({ band: band.label });
+    lines.push({ row, index });
+  });
+  const cursorLine = lines.findIndex((l) => "row" in l && l.index === cursor);
+  const start = windowStart(cursorLine, lines.length, height);
   const keyWidth = Math.min(34, Math.max(...rows.map((r) => r.key.length)) + 1);
   // The other chips hold their column whether or not the row fills it, so the
   // grid stays a grid. This one is rarer than it is wide: with nothing in the
@@ -52,8 +62,16 @@ export function Queue({
   const anyDenials = rows.some((r) => r.entry.denials?.length);
   return (
     <Box flexDirection="column">
-      {rows.slice(start, start + height).map(({ key, entry }, i) => {
-        const index = start + i;
+      {lines.slice(start, start + height).map((line) => {
+        if ("band" in line) {
+          return (
+            <Box key={`band:${line.band}`} flexShrink={0}>
+              <Text dimColor>{`  ── ${line.band} ──`}</Text>
+            </Box>
+          );
+        }
+        const { row, index } = line;
+        const { key, entry } = row;
         const selected = index === cursor;
         const flags = (entry.flags ?? []).map((f) => `+${f}`).join(" ");
         // A PR of the user's own counts its unresolved threads where a review

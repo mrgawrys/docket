@@ -114,8 +114,15 @@ j/k ↑/↓  move         tab  other list       enter  claude         s  shell
 d  diff               o  open on GitHub     D  denials            w  watch live
 r  retry              n  review by hand     x  dismiss            K  kill
 p  poll               S  sync               l  log                ?  help
-q  quit
+O  sort               q  quit
 ```
+
+Both lists open sorted by need, in labelled bands: on your own PRs,
+approved ones first (merge them), then feedback waiting on you, runs in
+flight, PRs waiting on reviewers, and drafts last; in the queue, failed
+runs, then reviews ready to read. Within a band the PR with the latest
+activity on GitHub leads. `O` cycles to a flat list by last activity, then
+by repo, and back.
 
 `enter` resumes the Claude session where the review ran, with full context —
 ask follow-ups, push back, dig into a finding. `s` and `d` open the PR's

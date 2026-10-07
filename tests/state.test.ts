@@ -182,5 +182,5 @@ test("recordActivity stores GitHub activity without restamping docket's updated_
   recordActivity(p, "o/r#404", "2026-10-01T12:00:00Z");
   recordActivity(p, "o/r#1", undefined);
   expect(Object.keys(loadState(p))).toEqual(["o/r#1"]);
-  expect(loadState(p)["o/r#1"].pr_updated_at).toBe("2026-10-01T12:00:00Z");
+  expect(loadState(p)["o/r#1"]?.pr_updated_at).toBe("2026-10-01T12:00:00Z");
 });
