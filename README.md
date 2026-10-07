@@ -117,11 +117,10 @@ p  poll               S  sync               l  log                ?  help
 O  sort               q  quit
 ```
 
-Both lists open sorted by need, in labelled bands: on your own PRs,
-approved ones first (merge them), then feedback waiting on you, runs in
-flight, PRs waiting on reviewers, and drafts last; in the queue, failed
-runs, then reviews ready to read. Within a band the PR with the latest
-activity on GitHub leads. `O` cycles to a flat list by last activity, then
+Both lists open sorted by need: on your own PRs, approved ones first
+(merge them), then feedback waiting on you, runs in flight, PRs waiting on
+reviewers, and drafts last; in the queue, failed runs, then reviews ready
+to read. Among PRs in the same state, the latest activity on GitHub leads. `O` cycles to a flat list by last activity, then
 by repo, and back.
 
 `enter` resumes the Claude session where the review ran, with full context —

@@ -190,16 +190,15 @@ export function App({
   const reload = useCallback(() => setGeneration((g) => g + 1), []);
   // The other list's count is read in the same pass: the tab strip shows both.
   const [sort, setSort] = useState<SortMode>(initialSort);
-  const { rows, bands, counts } = useMemo(() => {
+  const { rows, counts } = useMemo(() => {
     const state = loadState(paths.statePath);
-    const { rows, bands } = orderRows<Row>(
+    const rows = orderRows<Row>(
       pendingEntries(state, kind).map(([key, entry]) => ({ key, entry })),
       sort,
     );
     const other = pendingEntries(state, kind === "mine" ? "review" : "mine");
     return {
       rows,
-      bands,
       counts: {
         queue: kind === "mine" ? other.length : rows.length,
         mine: kind === "mine" ? rows.length : other.length,
@@ -379,7 +378,7 @@ export function App({
   const queueHeight = Math.max(
     1,
     Math.min(
-      rows.length + bands.length || 1,
+      rows.length || 1,
       Math.max(10, height - fixedRows - PANEL_HEIGHT - 1),
       height - fixedRows - 1,
     ),
@@ -786,12 +785,7 @@ export function App({
         </>
       ) : (
         <>
-          <Queue
-            rows={rows}
-            bands={bands}
-            cursor={cursor}
-            height={queueHeight}
-          />
+          <Queue rows={rows} cursor={cursor} height={queueHeight} />
           {/* the bar names the row the panel belongs to, so the two regions
               read as queue-then-detail rather than one column of text */}
           <Bar label={current?.key ?? "no selection"} width={width} />

@@ -12,7 +12,7 @@ const row = (
 });
 
 test("triage puts the user's own PRs in need order, drafts last whatever their state", () => {
-  const { rows, bands } = orderRows(
+  const rows = orderRows(
     [
       row("mine:o/a#1", "open"),
       row("mine:o/a#2", "changes-requested", { flags: ["draft"] }),
@@ -33,17 +33,10 @@ test("triage puts the user's own PRs in need order, drafts last whatever their s
     "mine:o/a#1",
     "mine:o/a#2",
   ]);
-  expect(bands).toEqual([
-    { label: "ready to merge", start: 0 },
-    { label: "needs you", start: 1 },
-    { label: "in flight", start: 4 },
-    { label: "waiting on reviewers", start: 5 },
-    { label: "drafts", start: 6 },
-  ]);
 });
 
 test("triage puts broken review runs above prepped ones in the queue", () => {
-  const { rows, bands } = orderRows(
+  const rows = orderRows(
     [
       row("o/a#1", "skipped"),
       row("o/a#2", "ready"),
@@ -53,15 +46,10 @@ test("triage puts broken review runs above prepped ones in the queue", () => {
     "triage",
   );
   expect(rows.map((r) => r.key)).toEqual(["o/a#4", "o/a#2", "o/a#3", "o/a#1"]);
-  expect(bands.map((b) => b.label)).toEqual([
-    "needs you",
-    "you reviewed",
-    "not run",
-  ]);
 });
 
 test("within a status the most recent GitHub activity leads, docket's stamp as the fallback", () => {
-  const { rows } = orderRows(
+  const rows = orderRows(
     [
       row("mine:o/a#1", "open", { pr_updated_at: "2026-10-01T00:00:00Z" }),
       row("mine:o/a#2", "open", { updated_at: "2026-10-03T00:00:00Z" }),
@@ -76,17 +64,19 @@ test("within a status the most recent GitHub activity leads, docket's stamp as t
   ]);
 });
 
-test("flat modes drop the bands: newest activity first, or repo then PR number", () => {
+test("the other modes ignore state: newest activity first, or repo then PR number", () => {
   const input = [
     row("o/b#9", "ready", { pr_updated_at: "2026-10-01T00:00:00Z" }),
     row("o/a#10", "open", { pr_updated_at: "2026-10-03T00:00:00Z" }),
     row("o/a#9", "failed", { pr_updated_at: "2026-10-02T00:00:00Z" }),
   ];
-  const updated = orderRows(input, "updated");
-  expect(updated.rows.map((r) => r.key)).toEqual(["o/a#10", "o/a#9", "o/b#9"]);
-  expect(updated.bands).toEqual([]);
+  expect(orderRows(input, "updated").map((r) => r.key)).toEqual([
+    "o/a#10",
+    "o/a#9",
+    "o/b#9",
+  ]);
   // numeric, not string: #9 before #10
-  expect(orderRows(input, "repo").rows.map((r) => r.key)).toEqual([
+  expect(orderRows(input, "repo").map((r) => r.key)).toEqual([
     "o/a#9",
     "o/a#10",
     "o/b#9",
