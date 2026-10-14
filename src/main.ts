@@ -33,6 +33,7 @@ import { reconcile, startReceive } from "./sync";
 import { visitEntry } from "./visit";
 import { runTui, type ActionResult } from "./tui/app";
 import { childOwnsTerminal } from "./tui/suspend";
+import { hooksCommand } from "./hookscmd";
 import { promptCommand } from "./wizard/prompt";
 import { resolveConfig } from "./wizard/trigger";
 
@@ -53,6 +54,8 @@ Usage:
   docket dismiss <key>      mark done + remove the PR worktree
   docket doctor             check setup: config, clones, gh, claude, code-review plugin
   docket prompt             set the review task (and the tools it needs)
+  docket hooks [sub]        lifecycle hooks for your PRs: list, payload <pr>,
+                            test <pr> [--event E], edit [pr]
   docket status             poller state, live poll, state counts
   docket log [n]            last n log lines (default 20)
   docket watch [pr]         follow the log live; with a PR (org/repo#N or
@@ -422,6 +425,7 @@ const watch: Command = (args) =>
     if (!key) return 1;
     return watchCommand(ctx, key);
   });
+const hooks: Command = (args) => withCtx((ctx) => hooksCommand(ctx, args));
 const on: Command = () => withCtx((ctx) => onCommand(ctx));
 const off: Command = async () => offCommand();
 
@@ -436,6 +440,7 @@ const commands: Record<string, Command> = {
   dismiss,
   doctor,
   prompt,
+  hooks,
   status,
   log,
   watch,

@@ -498,3 +498,24 @@ test("doctor: a wildcard inside a :* rule fails with the glob form to use", () =
   );
   expect(r.out).toContain("Bash(gh api repos/*/pulls/*/files *)");
 });
+
+test("doctor: a hook that isn't executable fails, an executable one passes", () => {
+  const sb = makeSandbox();
+  sb.gitInitDemo();
+  sb.writeConfig({
+    orgs: ["testorg"],
+    repos: { "testorg/demo": sb.demoRepo },
+    claude_config_dir: claudeHome(sb, true),
+  });
+  const dir = join(sb.configDir, "hooks");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "opened"), "#!/bin/sh\n");
+  chmodSync(join(dir, "opened"), 0o755);
+  writeFileSync(join(dir, "merged"), "#!/bin/sh\n");
+  writeFileSync(join(dir, "notes.md"), "not a hook");
+  const r = sb.run(["doctor"]);
+  expect(r.code).toBe(1);
+  expect(r.out).toContain("✓ hook: opened");
+  expect(r.out).toContain("✗ hook: merged is not executable");
+  expect(r.out).not.toContain("notes.md");
+});

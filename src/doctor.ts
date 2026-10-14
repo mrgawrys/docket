@@ -1,3 +1,4 @@
+import { hooksDir, isExecutable, listHooks } from "./hooks";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { authDir, claudeAuth } from "./auth";
@@ -324,6 +325,12 @@ export async function doctorCommand(
     "extra_receive_allowed_tools",
     cfg.extra_receive_allowed_tools ?? [],
   );
+
+  for (const event of listHooks(p)) {
+    const path = join(hooksDir(p), event);
+    if (isExecutable(path)) pass(`hook: ${event}`);
+    else fail(`hook: ${event} is not executable`, `chmod +x ${path}`);
+  }
 
   return failed === 0 ? 0 : 1;
 }
