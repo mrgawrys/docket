@@ -9,6 +9,7 @@ import {
   parseAfterMerge,
   parseHookOutput,
   runHook,
+  tickTodo,
   type HookPayload,
 } from "../src/hooks";
 import type { Entry } from "../src/state";
@@ -132,7 +133,13 @@ test("runHook: non-zero exit and timeout are failures", async () => {
   expect(bad.ok).toBe(false);
   expect(bad.error).toBe("exit 3: nope");
 
-  const slow = await runHook(script("sleep 5"), payload, tmpdir(), {}, 200);
+  const slow = await runHook(
+    script("sleep 5; echo late"),
+    payload,
+    tmpdir(),
+    {},
+    200,
+  );
   expect(slow.ok).toBe(false);
   expect(slow.error).toContain("timed out");
 });
@@ -226,4 +233,25 @@ test("sync: opened fires once for a new entry, never for one tracked before hook
   expect(s[KEY].hooks.opened).toMatchObject({ ok: true, attempts: 1 });
   expect(s["mine:testorg/demo#8"].hooks.opened).toMatchObject({ none: true });
   expect(Bun.file(calls).size).toBe(2); // one "x\n"
+});
+
+test("tickTodo: toggles one to-do; ticking the last open one retires the entry", () => {
+  const sb = makeSandbox();
+  sb.writeState({
+    [KEY]: {
+      status: "finished",
+      todos: [
+        { text: "a", source: "note" },
+        { text: "b", source: "hook" },
+      ],
+      updated_at: "2026-01-01T00:00:00Z",
+    },
+  });
+  expect(tickTodo(sb.statePath, KEY, 0)).toBe("done: a");
+  expect(sb.state()[KEY].status).toBe("finished");
+  expect(tickTodo(sb.statePath, KEY, 0)).toBe("reopened: a");
+  tickTodo(sb.statePath, KEY, 0);
+  expect(tickTodo(sb.statePath, KEY, 1)).toBe(`${KEY}: all done`);
+  expect(sb.state()[KEY].status).toBe("done");
+  expect(tickTodo(sb.statePath, KEY, 5)).toBe(`${KEY}: no to-do 6`);
 });

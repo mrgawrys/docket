@@ -297,7 +297,49 @@ export const scenarios: Record<string, Scenario> = {
         updated_at: "2026-08-19T19:00:00Z",
       }),
     },
-    hint: "tab toggles between the review queue and your PRs",
+    hint: "tab cycles the review queue, your PRs and finished",
+  },
+  finished: {
+    description:
+      "merged PRs with follow-ups: hook to-dos with ticket links, After-merge notes, a failed hook",
+    config: cfg({ "testorg/api": "repos/api", "testorg/web": "repos/web" }),
+    state: {
+      "mine:testorg/api#71": entry({
+        status: "finished",
+        session_id: undefined,
+        done_reason: "merged",
+        title: "Keep AI content out of Sentry CU-123abc",
+        url: "https://example.test/api/pull/71",
+        local_path: "repos/api",
+        hooks: {
+          opened: { at: "2026-08-18T09:00:00Z", ok: true, attempts: 1, did: ["CU-123abc → in review"] },
+          merged: { at: "2026-08-19T10:00:00Z", ok: true, attempts: 1, did: ["CU-123abc → ready for qa"] },
+        },
+        todos: [
+          { text: "tell Patrick it's on staging", source: "note" },
+          { text: "Decide what's next for CU-123abc", link: "https://app.clickup.com/t/123abc", source: "hook" },
+          { text: "smoke-test on staging", source: "note", done: true },
+        ],
+        updated_at: "2026-08-19T10:00:00Z",
+      }),
+      "mine:testorg/web#99": entry({
+        status: "finished",
+        session_id: undefined,
+        done_reason: "merged",
+        title: "New empty state for the survey list",
+        url: "https://example.test/web/pull/99",
+        local_path: "repos/web",
+        hooks: {
+          merged: { at: "2026-08-19T11:00:00Z", ok: false, attempts: 3, error: "exit 1: ClickUp 401" },
+        },
+        todos: [
+          { text: "Create the translation task", link: "https://app.clickup.com/t/999", source: "hook" },
+          { text: "merged hook failed (exit 1: ClickUp 401) — docket hooks test testorg/web#99 --event merged", source: "hook" },
+        ],
+        updated_at: "2026-08-19T11:00:00Z",
+      }),
+    },
+    hint: "tab to finished · 1-9 ticks a to-do · o opens the first link",
   },
 };
 

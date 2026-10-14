@@ -10,7 +10,7 @@ export interface Binding {
   verb?: string;
 }
 
-export type KeymapView = "queue" | "mine" | "denials" | "log";
+export type KeymapView = "queue" | "mine" | "finished" | "denials" | "log";
 
 export const QUEUE_KEYS: Binding[] = [
   { keys: "j/k ↑/↓", label: "move" },
@@ -37,7 +37,7 @@ export const QUEUE_KEYS: Binding[] = [
 // as the run verb, and every working verb aimed at the PR branch's checkout.
 export const MINE_KEYS: Binding[] = [
   { keys: "j/k ↑/↓", label: "move" },
-  { keys: "tab", label: "queue" },
+  { keys: "tab", label: "finished" },
   { keys: "O", label: "sort — by need, last activity, repo" },
   { keys: "enter", label: "claude", verb: "claude" },
   { keys: "s", label: "shell", verb: "shell" },
@@ -60,6 +60,26 @@ export const MINE_KEYS: Binding[] = [
 // The denials view is a mode, not a panel: its own keys, its own way out. The
 // verbs are spelled out in full in the view's action block; what the legend
 // adds is how to move and how to leave.
+export const FINISHED_KEYS: Binding[] = [
+  { keys: "j/k ↑/↓", label: "move" },
+  { keys: "tab", label: "queue" },
+  {
+    keys: "1-9",
+    label: "tick a to-do (the last one clears the row)",
+    short: "tick",
+  },
+  {
+    keys: "o",
+    label: "open the first to-do's link, else the PR",
+    short: "open",
+    verb: "browse",
+  },
+  { keys: "x", label: "dismiss" },
+  { keys: "l", label: "log" },
+  { keys: "?", label: "more" },
+  { keys: "q", label: "quit" },
+];
+
 export const DENIAL_KEYS: Binding[] = [
   { keys: "enter", label: "hand all of it to claude", verb: "handoff" },
   { keys: "a", label: "add every safe rule to your config" },
@@ -82,6 +102,7 @@ export const LOG_KEYS: Binding[] = [
 const KEYMAPS: Record<KeymapView, Binding[]> = {
   queue: QUEUE_KEYS,
   mine: MINE_KEYS,
+  finished: FINISHED_KEYS,
   denials: DENIAL_KEYS,
   log: LOG_KEYS,
 };
@@ -92,6 +113,7 @@ const KEYMAPS: Record<KeymapView, Binding[]> = {
 const FOOTER: Record<KeymapView, string[]> = {
   queue: ["enter", "s", "d", "o", "D", "w", "n", "?"],
   mine: ["enter", "s", "d", "o", "R", "D", "n", "?"],
+  finished: ["1-9", "o", "x", "?"],
   denials: ["j/k ↑/↓", "esc D", "?", "q"],
   log: ["j/k ↑/↓", "esc l", "?", "q"],
 };
@@ -160,6 +182,11 @@ export function Help({ unavailable }: { unavailable: Record<string, string> }) {
       <Keys
         title="my PRs view"
         bindings={MINE_KEYS}
+        unavailable={unavailable}
+      />
+      <Keys
+        title="finished view"
+        bindings={FINISHED_KEYS}
         unavailable={unavailable}
       />
       <Keys

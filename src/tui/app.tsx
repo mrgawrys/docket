@@ -44,7 +44,8 @@ import {
   type EntryKind,
 } from "../state";
 import { nextSortMode, orderRows, type SortMode } from "../order";
-import { PANEL_HEIGHT, panelLines } from "../panel";
+import { firstOpenLink, tickTodo } from "../hooks";
+import { finishedLines, PANEL_HEIGHT, panelLines } from "../panel";
 import { Help, Legend } from "./legend";
 import { Panel } from "./panel";
 import { Queue, type Row } from "./queue";
@@ -133,14 +134,17 @@ function Bar({
 
 // Both lists named, with their counts, the open one filled in. This is where
 // `tab` lives: the key is shown next to what it switches, not in the verb list.
+type ListName = "queue" | "mine" | "finished";
+const LISTS: ListName[] = ["queue", "mine", "finished"];
+
 function Tabs({
   list,
   counts,
 }: {
-  list: "queue" | "mine";
-  counts: Record<"queue" | "mine", number>;
+  list: ListName;
+  counts: Record<ListName, number>;
 }) {
-  const tab = (name: "queue" | "mine", label: string) =>
+  const tab = (name: ListName, label: string) =>
     list === name ? (
       <Text backgroundColor="cyan" color="black" bold>
         {` ${label} ${counts[name]} `}
@@ -154,6 +158,8 @@ function Tabs({
       {tab("queue", "queue")}
       <Text> </Text>
       {tab("mine", "my PRs")}
+      <Text> </Text>
+      {tab("finished", "finished")}
       <Text dimColor> tab switches</Text>
     </Box>
   );
@@ -180,10 +186,12 @@ export function App({
 
   // Which of the two entry worlds is on screen. A mine initialKey (the cursor
   // riding across a suspend) means the suspend happened in the mine view.
-  const [list, setList] = useState<"queue" | "mine">(
-    initialKey && entryKind(initialKey) === "mine" ? "mine" : "queue",
-  );
-  const kind: EntryKind = list === "mine" ? "mine" : "review";
+  const [list, setList] = useState<ListName>(() => {
+    if (!initialKey || entryKind(initialKey) !== "mine") return "queue";
+    const e = loadState(paths.statePath)[initialKey];
+    return e?.status === "finished" ? "finished" : "mine";
+  });
+  const kind: EntryKind = list === "queue" ? "review" : "mine";
   // Rows are derived, not held: switching views must swap the rows in the
   // same render, or the old world's rows flash under the new view's legend.
   const [generation, setGeneration] = useState(0);
@@ -192,23 +200,25 @@ export function App({
   const [sort, setSort] = useState<SortMode>(initialSort);
   const { rows, counts } = useMemo(() => {
     const state = loadState(paths.statePath);
+    const of = (l: ListName) =>
+      pendingEntries(state, l === "queue" ? "review" : l);
     const rows = orderRows<Row>(
-      pendingEntries(state, kind).map(([key, entry]) => ({ key, entry })),
+      of(list).map(([key, entry]) => ({ key, entry })),
       sort,
     );
-    const other = pendingEntries(state, kind === "mine" ? "review" : "mine");
     return {
       rows,
       counts: {
-        queue: kind === "mine" ? other.length : rows.length,
-        mine: kind === "mine" ? rows.length : other.length,
+        queue: of("queue").length,
+        mine: of("mine").length,
+        finished: of("finished").length,
       },
     };
     // generation is the invalidation signal for the state file's content
-  }, [paths.statePath, kind, sort, generation]);
+  }, [paths.statePath, list, sort, generation]);
   // Per-view cursors, so tabbing away and back lands where the user left.
   const [cursorKeys, setCursorKeys] = useState<
-    Partial<Record<"queue" | "mine", string>>
+    Partial<Record<ListName, string>>
   >(initialKey ? { [list]: initialKey } : {});
   const cursorKey = cursorKeys[list];
   const setCursorKey = useCallback(
@@ -397,17 +407,21 @@ export function App({
   );
   const panel = useMemo(
     () =>
-      panelLines({
-        summary,
-        assessment,
-        denials,
-        cfg: liveCfg,
-        kind,
-        enterResolves,
-        width: width - 2,
-        height: panelHeight,
-      }),
+      list === "finished" && current
+        ? finishedLines(current.entry)
+        : panelLines({
+            summary,
+            assessment,
+            denials,
+            cfg: liveCfg,
+            kind,
+            enterResolves,
+            width: width - 2,
+            height: panelHeight,
+          }),
     [
+      list,
+      current,
       summary,
       assessment,
       denials,
@@ -551,14 +565,18 @@ export function App({
   // checkout yet — and never suspends: the queue stays on screen.
   const browse = () => {
     if (!current) return;
+    // A finished row's next step is usually its ticket, not the merged PR.
+    const url =
+      (list === "finished" && firstOpenLink(current.entry)) ||
+      current.entry.url;
     const r = buildOpener(
       "browse",
       resolved,
-      openerContext(current.key, current.entry),
+      openerContext(current.key, { ...current.entry, url }),
     );
     if ("unavailable" in r) return setStatus(`browse: ${r.unavailable}`);
     const err = launchDetached(r.argv, r.cwd);
-    setStatus(err ?? `opening ${current.entry.url} in your browser`);
+    setStatus(err ?? `opening ${url} in your browser`);
   };
 
   // The `n` submit: parse, then hand to the view's verb — review a PR from
@@ -642,7 +660,27 @@ export function App({
       setHelpFrom("list");
       return setView("help");
     }
-    if (key.tab) return setList(list === "queue" ? "mine" : "queue");
+    if (key.tab)
+      return setList(LISTS[(LISTS.indexOf(list) + 1) % LISTS.length]!);
+    if (list === "finished") {
+      if (input === "j" || key.downArrow) return move(1);
+      if (input === "k" || key.upArrow) return move(-1);
+      if (input === "l") {
+        setScroll(0);
+        return setView("log");
+      }
+      if (!current) return;
+      if (/^[1-9]$/.test(input)) {
+        setStatus(tickTodo(paths.statePath, current.key, Number(input) - 1));
+        return reload();
+      }
+      if (input === "o") return browse();
+      if (input === "x") {
+        setStatus(actions.dismiss(current.key));
+        return reload();
+      }
+      return;
+    }
     if (input === "n") return setPrInput("");
     if (input === "O") {
       const next = nextSortMode(sort);

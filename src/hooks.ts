@@ -189,6 +189,28 @@ export function mergeTodos(
 export const openTodos = (e: Entry): Todo[] =>
   (e.todos ?? []).filter((t) => !t.done);
 
+export function toggleTodo(todos: Todo[], i: number): Todo[] {
+  return todos.map((t, j) => (j === i ? { ...t, done: !t.done } : t));
+}
+
+export const firstOpenLink = (e: Entry): string | undefined =>
+  openTodos(e).find((t) => t.link)?.link;
+
+// Tick or untick to-do i (0-based); the last one ticked retires the entry.
+export function tickTodo(statePath: string, key: string, i: number): string {
+  const e = loadState(statePath)[key];
+  const todo = e?.todos?.[i];
+  if (!e || !todo) return `${key}: no to-do ${i + 1}`;
+  const todos = toggleTodo(e.todos!, i);
+  const left = todos.filter((t) => !t.done).length;
+  patchEntry(statePath, key, {
+    todos,
+    ...(left === 0 ? { status: "done" as const } : {}),
+  });
+  if (left === 0) return `${key}: all done`;
+  return `${todo.done ? "reopened" : "done"}: ${todo.text}`;
+}
+
 export async function runHook(
   path: string,
   payload: HookPayload,
@@ -211,21 +233,31 @@ export async function runHook(
   }
   proc.stdin.write(JSON.stringify(payload));
   await proc.stdin.end();
-  let timedOut = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
-    proc.kill("SIGKILL");
-  }, timeoutMs);
-  const [stdout, stderr, code] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
+  // Race, not await: a hook's own children can hold stdout open long after
+  // the hook itself is killed.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const result = await Promise.race([
+    Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]),
+    new Promise<"timeout">((r) => {
+      timer = setTimeout(() => r("timeout"), timeoutMs);
+    }),
   ]);
   clearTimeout(timer);
+  if (result === "timeout") {
+    proc.kill("SIGKILL");
+    return {
+      ok: false,
+      output: empty,
+      error: `timed out after ${timeoutMs / 1000}s`,
+    };
+  }
+  const [stdout, stderr, code] = result;
   const output = parseHookOutput(stdout);
   if (stderr.trim()) output.log.push(...stderr.trimEnd().split("\n"));
-  if (timedOut)
-    return { ok: false, output, error: `timed out after ${timeoutMs / 1000}s` };
   if (code !== 0) {
     const last = stderr.trim().split("\n").at(-1);
     return {

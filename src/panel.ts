@@ -2,7 +2,7 @@ import type { Assessment } from "./assessment";
 import type { Config } from "./config";
 import type { DenialGroup } from "./denials";
 import { denialTeaser, TEASER_HEIGHT } from "./denialview";
-import type { EntryKind } from "./state";
+import type { Entry, EntryKind } from "./state";
 import type { Summary } from "./summary";
 
 // Wrap here rather than letting the terminal do it: the panel is bounded, and a
@@ -67,6 +67,21 @@ export interface PanelInput {
   enterResolves?: boolean;
   width: number;
   height?: number;
+}
+
+export function finishedLines(e: Entry): PanelLine[] {
+  const out: PanelLine[] = (e.todos ?? []).map((t, i) => ({
+    text: `${t.done ? "✓" : "☐"} ${i + 1}  ${t.text}${t.link ? `  ${t.link}` : ""}`,
+    ...(t.done ? { dim: true } : {}),
+  }));
+  for (const [event, rec] of Object.entries(e.hooks ?? {})) {
+    if (!rec || rec.none) continue;
+    for (const d of rec.did ?? [])
+      out.push({ text: `${event}: ${d}`, dim: true });
+    for (const w of rec.warn ?? [])
+      out.push({ text: `${event}: ${w}`, color: "yellow" });
+  }
+  return out;
 }
 
 export function panelLines({
