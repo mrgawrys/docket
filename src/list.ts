@@ -12,6 +12,7 @@ import { isAllowed, isWriteShaped, type DenialGroup } from "./denials";
 import { handoffPrompt } from "./handoff";
 import { cleanupEntry, type Ctx, type Kept } from "./reviewer";
 import {
+  bareKey,
   isLiveReview,
   loadState,
   normalizeKey,
@@ -78,6 +79,50 @@ export function buildFreshChat(
     cwd: path,
     env: claudeEnv(cfg),
     banner: `claude in ${path}`,
+    interactive: true,
+  };
+}
+
+export function finishedPrompt(key: string, e: Entry): string {
+  const todos = (e.todos ?? []).map(
+    (t, i) =>
+      `${i + 1}. [${t.done ? "x" : " "}] ${t.text}${t.link ? ` (${t.link})` : ""}`,
+  );
+  const ran = Object.entries(e.hooks ?? {}).flatMap(([event, rec]) =>
+    rec && !rec.none
+      ? [
+          ...(rec.did ?? []),
+          ...(rec.warn ?? []).map((w) => `warning: ${w}`),
+        ].map((l) => `- ${event}: ${l}`)
+      : [],
+  );
+  return [
+    `My PR ${bareKey(key)} merged: ${e.title ?? ""} ${e.url ?? ""}`.trim(),
+    "",
+    "Its follow-ups, tracked in docket:",
+    ...todos,
+    ...(ran.length ? ["", "What docket's hooks already did:", ...ran] : []),
+    "",
+    "Help me work through the open follow-ups — start by asking which one.",
+    "`gh pr view` has the PR's details. When one is done, tell me its number so I tick it.",
+  ].join("\n");
+}
+
+// Claude on a finished row: the PR's checkout is gone by now, so it starts in
+// the clone, primed with the follow-ups.
+export function buildFinishedChat(
+  key: string,
+  entry: Entry,
+  cfg: Config,
+): SuspendRequest | { error: string } {
+  const cwd = entry.local_path;
+  if (!cwd || !existsSync(cwd))
+    return { error: `no local clone for ${bareKey(key)}` };
+  return {
+    argv: [claudeBin(cfg), finishedPrompt(key, entry)],
+    cwd,
+    env: claudeEnv(cfg),
+    banner: `claude on ${bareKey(key)}'s follow-ups`,
     interactive: true,
   };
 }

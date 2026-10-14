@@ -16,6 +16,7 @@ import {
 import { applySuggestion, type DenialGroup } from "../denials";
 import { addable, denialTitle, denialView, TEASER_HEIGHT } from "../denialview";
 import {
+  buildFinishedChat,
   buildFreshChat,
   buildHandoff,
   buildResume,
@@ -226,6 +227,9 @@ export function App({
     [list],
   );
   const [view, setView] = useState<"list" | "help" | "denials" | "log">("list");
+  // Finished view: the to-do the cursor is on while walking them; undefined
+  // while j/k move between rows.
+  const [todoFocus, setTodoFocus] = useState<number | undefined>();
   // Help is a detour, not a destination: esc goes back where it was opened.
   const [helpFrom, setHelpFrom] = useState<"list" | "denials" | "log">("list");
   // A counter, not a copy: the feed owns the lines, this only re-renders.
@@ -268,6 +272,10 @@ export function App({
     found >= 0 ? found : Math.min(lastIndex.current, rows.length - 1);
   lastIndex.current = Math.max(0, cursor);
   const current = rows[cursor];
+  // A walk belongs to one row: a reload or tab that moves the cursor ends it.
+  const currentKey = current?.key;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset on change
+  useEffect(() => setTodoFocus(undefined), [currentKey, list]);
   useEffect(() => {
     if (!current) return;
     setCursorKey(current.key); // re-anchor after the row it named disappeared
@@ -408,7 +416,7 @@ export function App({
   const panel = useMemo(
     () =>
       list === "finished" && current
-        ? finishedLines(current.entry)
+        ? finishedLines(current.entry, todoFocus)
         : panelLines({
             summary,
             assessment,
@@ -422,6 +430,7 @@ export function App({
     [
       list,
       current,
+      todoFocus,
       summary,
       assessment,
       denials,
@@ -567,7 +576,10 @@ export function App({
     if (!current) return;
     // A finished row's next step is usually its ticket, not the merged PR.
     const url =
-      (list === "finished" && firstOpenLink(current.entry)) ||
+      (list === "finished" &&
+        (todoFocus !== undefined
+          ? current.entry.todos?.[todoFocus]?.link
+          : firstOpenLink(current.entry))) ||
       current.entry.url;
     const r = buildOpener(
       "browse",
@@ -660,6 +672,20 @@ export function App({
       setHelpFrom("list");
       return setView("help");
     }
+    if (list === "finished" && todoFocus !== undefined && current) {
+      const n = current.entry.todos?.length ?? 0;
+      if (key.escape || key.leftArrow) return setTodoFocus(undefined);
+      if (input === "j" || key.downArrow)
+        return setTodoFocus(Math.min(n - 1, todoFocus + 1));
+      if (input === "k" || key.upArrow)
+        return setTodoFocus(Math.max(0, todoFocus - 1));
+      if (key.return) {
+        setStatus(tickTodo(paths.statePath, current.key, todoFocus));
+        return reload();
+      }
+      if (input === "o") return browse();
+      return;
+    }
     if (key.tab)
       return setList(LISTS[(LISTS.indexOf(list) + 1) % LISTS.length]!);
     if (list === "finished") {
@@ -670,6 +696,15 @@ export function App({
         return setView("log");
       }
       if (!current) return;
+      if (key.return) {
+        const r = buildFinishedChat(current.key, current.entry, cfg);
+        if ("error" in r) return setStatus(`${current.key}: ${r.error}`);
+        return request(r);
+      }
+      if ((input === "t" || key.rightArrow) && current.entry.todos?.length) {
+        const firstOpen = current.entry.todos.findIndex((t) => !t.done);
+        return setTodoFocus(Math.max(0, firstOpen));
+      }
       if (/^[1-9]$/.test(input)) {
         setStatus(tickTodo(paths.statePath, current.key, Number(input) - 1));
         return reload();
@@ -784,7 +819,16 @@ export function App({
         width={width}
       />
       {view === "help" ? (
-        <Help unavailable={unavailable} />
+        <Help
+          view={
+            helpFrom !== "list"
+              ? helpFrom
+              : todoFocus !== undefined
+                ? "todos"
+                : list
+          }
+          unavailable={unavailable}
+        />
       ) : view === "log" ? (
         <>
           <Bar
@@ -837,7 +881,13 @@ export function App({
           blank row, is what sets them off from the panel's prose */}
       <Bar label="keys" width={width} />
       <Legend
-        view={view === "denials" || view === "log" ? view : list}
+        view={
+          view === "denials" || view === "log"
+            ? view
+            : todoFocus !== undefined
+              ? "todos"
+              : list
+        }
         unavailable={unavailable}
       />
       {prInput !== undefined ? (

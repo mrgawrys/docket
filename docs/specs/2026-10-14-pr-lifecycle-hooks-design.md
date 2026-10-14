@@ -102,9 +102,16 @@ A third tab beside the review queue and my PRs, listing `finished` entries.
 The panel shows the highlighted row's to-dos (numbered, with links) and the
 hook's `did`/`warn` lines. Keys:
 
-- `1`–`9` toggle that to-do; when every to-do is ticked the entry goes `done`
-- `o` opens the highlighted row's first open to-do link, else the PR
+- `enter` opens claude in the PR's clone, primed with the PR, its to-dos and
+  what the hooks did
+- `t` / `→` walks the to-dos: `j`/`k` move, `enter` ticks or unticks, `o`
+  opens that to-do's link, `esc` / `←` goes back to the rows
+- `1`–`9` tick a to-do directly
+- `o` opens the first open to-do's link, else the PR
 - `x` dismisses the row (→ `done`)
+
+When every to-do is ticked the entry goes `done`. `?` shows only the keys of
+the screen it was opened from.
 
 Ticks live in docket's state only; docket never writes to GitHub.
 

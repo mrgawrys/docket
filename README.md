@@ -184,9 +184,10 @@ keep the follow-up work on screen until it's done.
   up to 3 times, so hooks must be safe to run twice.
 - **After-merge notes**: unchecked task-list items under an `After merge`
   heading in the PR description become to-dos when the PR merges.
-- **The Finished tab** (`tab`) lists merged PRs with open to-dos. `1`–`9`
-  ticks one, `o` opens the first to-do's link (else the PR), `x` dismisses.
-  The last tick clears the row.
+- **The Finished tab** (`tab`) lists merged PRs with open to-dos. `enter`
+  opens claude primed with the PR and its follow-ups; `t` walks the to-dos
+  (`enter` ticks one); `1`–`9` tick directly; `o` opens the first to-do's
+  link (else the PR); `x` dismisses. The last tick clears the row.
 
 `docket hooks edit [pr]` opens claude in the hooks directory with the contract
 and a real payload, to write the hooks with you. `docket hooks test <pr>

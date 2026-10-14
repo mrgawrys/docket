@@ -69,10 +69,11 @@ export interface PanelInput {
   height?: number;
 }
 
-export function finishedLines(e: Entry): PanelLine[] {
+// focus: the to-do the cursor is on while the user walks the list.
+export function finishedLines(e: Entry, focus?: number): PanelLine[] {
   const out: PanelLine[] = (e.todos ?? []).map((t, i) => ({
-    text: `${t.done ? "✓" : "☐"} ${i + 1}  ${t.text}${t.link ? `  ${t.link}` : ""}`,
-    ...(t.done ? { dim: true } : {}),
+    text: `${i === focus ? "▸" : " "} ${t.done ? "✓" : "☐"} ${i + 1}  ${t.text}${t.link ? `  ${t.link}` : ""}`,
+    ...(i === focus ? { color: "cyan" } : t.done ? { dim: true } : {}),
   }));
   for (const [event, rec] of Object.entries(e.hooks ?? {})) {
     if (!rec || rec.none) continue;

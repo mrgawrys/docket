@@ -10,7 +10,13 @@ export interface Binding {
   verb?: string;
 }
 
-export type KeymapView = "queue" | "mine" | "finished" | "denials" | "log";
+export type KeymapView =
+  | "queue"
+  | "mine"
+  | "finished"
+  | "todos"
+  | "denials"
+  | "log";
 
 export const QUEUE_KEYS: Binding[] = [
   { keys: "j/k ↑/↓", label: "move" },
@@ -64,6 +70,16 @@ export const FINISHED_KEYS: Binding[] = [
   { keys: "j/k ↑/↓", label: "move" },
   { keys: "tab", label: "queue" },
   {
+    keys: "enter",
+    label: "claude, primed with the follow-ups",
+    short: "claude",
+  },
+  {
+    keys: "t →",
+    label: "walk the to-dos (enter ticks there)",
+    short: "to-dos",
+  },
+  {
     keys: "1-9",
     label: "tick a to-do (the last one clears the row)",
     short: "tick",
@@ -77,6 +93,15 @@ export const FINISHED_KEYS: Binding[] = [
   { keys: "x", label: "dismiss" },
   { keys: "l", label: "log" },
   { keys: "?", label: "more" },
+  { keys: "q", label: "quit" },
+];
+
+export const TODO_KEYS: Binding[] = [
+  { keys: "j/k ↑/↓", label: "move between to-dos", short: "move" },
+  { keys: "enter", label: "tick / untick", short: "tick" },
+  { keys: "o", label: "open this to-do's link", short: "open" },
+  { keys: "esc ←", label: "back to the list", short: "back" },
+  { keys: "?", label: "help" },
   { keys: "q", label: "quit" },
 ];
 
@@ -103,6 +128,7 @@ const KEYMAPS: Record<KeymapView, Binding[]> = {
   queue: QUEUE_KEYS,
   mine: MINE_KEYS,
   finished: FINISHED_KEYS,
+  todos: TODO_KEYS,
   denials: DENIAL_KEYS,
   log: LOG_KEYS,
 };
@@ -113,7 +139,8 @@ const KEYMAPS: Record<KeymapView, Binding[]> = {
 const FOOTER: Record<KeymapView, string[]> = {
   queue: ["enter", "s", "d", "o", "D", "w", "n", "?"],
   mine: ["enter", "s", "d", "o", "R", "D", "n", "?"],
-  finished: ["1-9", "o", "x", "?"],
+  finished: ["enter", "t →", "1-9", "o", "x", "?"],
+  todos: ["j/k ↑/↓", "enter", "o", "esc ←", "?"],
   denials: ["j/k ↑/↓", "esc D", "?", "q"],
   log: ["j/k ↑/↓", "esc l", "?", "q"],
 };
@@ -175,26 +202,29 @@ function Keys({
   );
 }
 
-export function Help({ unavailable }: { unavailable: Record<string, string> }) {
+const TITLES: Record<KeymapView, string> = {
+  queue: "queue",
+  mine: "my PRs",
+  finished: "finished",
+  todos: "to-dos",
+  denials: "denials view",
+  log: "log pane",
+};
+
+export function Help({
+  view,
+  unavailable,
+}: {
+  view: KeymapView;
+  unavailable: Record<string, string>;
+}) {
   return (
     <Box flexDirection="column" paddingX={1}>
-      <Keys title="queue" bindings={QUEUE_KEYS} unavailable={unavailable} />
       <Keys
-        title="my PRs view"
-        bindings={MINE_KEYS}
+        title={TITLES[view]}
+        bindings={KEYMAPS[view]}
         unavailable={unavailable}
       />
-      <Keys
-        title="finished view"
-        bindings={FINISHED_KEYS}
-        unavailable={unavailable}
-      />
-      <Keys
-        title="denials view"
-        bindings={DENIAL_KEYS}
-        unavailable={unavailable}
-      />
-      <Keys title="log pane" bindings={LOG_KEYS} unavailable={unavailable} />
       <Text dimColor>? or esc closes this</Text>
     </Box>
   );
