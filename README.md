@@ -186,7 +186,7 @@ keep the follow-up work on screen until it's done.
   heading in the PR description become to-dos when the PR merges.
 - **The Finished tab** (`tab`) lists merged PRs with open to-dos. `enter`
   opens claude primed with the PR and its follow-ups; `t` walks the to-dos
-  (`enter` ticks one, `a` adds one); `1`–`9` tick directly; `o` opens the first to-do's
+  (`enter` ticks one); `a` adds one; `1`–`9` tick directly; `o` opens the first to-do's
   link (else the PR); `x` dismisses. The last tick clears the row.
 
 `H` in the my PRs or Finished tab — or `docket hooks edit [pr]` — opens claude in the hooks directory with the contract

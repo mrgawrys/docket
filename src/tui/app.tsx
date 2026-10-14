@@ -629,7 +629,8 @@ export function App({
         const text = todoInput.trim();
         if (!text || !current) return;
         setStatus(addTodo(paths.statePath, current.key, text));
-        setTodoFocus(current.entry.todos?.length ?? 0);
+        if (todoFocus !== undefined)
+          setTodoFocus(current.entry.todos?.length ?? 0);
         return reload();
       }
       if (key.backspace || key.delete)
@@ -751,6 +752,7 @@ export function App({
         const firstOpen = current.entry.todos.findIndex((t) => !t.done);
         return setTodoFocus(Math.max(0, firstOpen));
       }
+      if (input === "a") return setTodoInput("");
       if (/^[1-9]$/.test(input)) {
         setStatus(tickTodo(paths.statePath, current.key, Number(input) - 1));
         return reload();

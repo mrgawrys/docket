@@ -84,6 +84,7 @@ export const FINISHED_KEYS: Binding[] = [
     label: "walk the to-dos (enter ticks there)",
     short: "to-dos",
   },
+  { keys: "a", label: "add a to-do", short: "add" },
   {
     keys: "1-9",
     label: "tick a to-do (the last one clears the row)",
@@ -150,7 +151,7 @@ const KEYMAPS: Record<KeymapView, Binding[]> = {
 const FOOTER: Record<KeymapView, string[]> = {
   queue: ["enter", "s", "d", "o", "D", "w", "n", "?"],
   mine: ["enter", "s", "d", "o", "R", "D", "n", "?"],
-  finished: ["enter", "t →", "1-9", "o", "x", "H", "?"],
+  finished: ["enter", "t →", "a", "o", "x", "H", "?"],
   todos: ["j/k ↑/↓", "enter", "a", "o", "esc ←", "?"],
   denials: ["j/k ↑/↓", "esc D", "?", "q"],
   log: ["j/k ↑/↓", "esc l", "?", "q"],

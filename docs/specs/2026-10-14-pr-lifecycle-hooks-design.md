@@ -106,7 +106,8 @@ hook's `did`/`warn` lines. Keys:
   what the hooks did
 - `t` / `→` walks the to-dos: `j`/`k` move, `enter` ticks or unticks, `a`
   adds one, `o` opens that to-do's link, `esc` / `←` goes back to the rows
-- `1`–`9` tick a to-do directly
+- `a` adds a to-do (also inside the walk)
+- `1`–`9` tick a to-do directly (listed under `?`, not in the footer)
 - `o` opens the first open to-do's link, else the PR
 - `x` dismisses the row (→ `done`)
 - `H` (here and in my PRs) runs `docket hooks edit` on the highlighted PR;
