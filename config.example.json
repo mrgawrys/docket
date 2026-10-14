@@ -8,6 +8,7 @@
   "claude_bin": "claude",
   "claude_config_dir": "",
   "claude_env": {},
+  "permission_mode": "dontAsk",
   "gh_account": "",
   "ignored_teams": [],
   "notifications": true,

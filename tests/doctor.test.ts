@@ -269,6 +269,35 @@ test("doctor: claude_env configured → ✓ names the variables", () => {
   expect(r.out).toMatch(/✓.*claude env extras: CLAUDE_BASH_WATCHDOG_SECONDS/);
 });
 
+test("doctor: managed-only permission rules with dontAsk → ✗ pointing at auto", () => {
+  const sb = makeSandbox();
+  sb.gitInitDemo();
+  const home = claudeHome(sb, true);
+  writeFileSync(
+    join(home, "remote-settings.json"),
+    JSON.stringify({ allowManagedPermissionRulesOnly: true }),
+  );
+  sb.writeConfig({
+    orgs: ["testorg"],
+    repos: { "testorg/demo": sb.demoRepo },
+    claude_config_dir: home,
+  });
+  let r = sb.run(["doctor"]);
+  expect(r.code).toBe(1);
+  expect(r.out).toMatch(/✗ permission mode: dontAsk denies every tool call/);
+  expect(r.out).toContain('"permission_mode": "auto"');
+
+  sb.writeConfig({
+    orgs: ["testorg"],
+    repos: { "testorg/demo": sb.demoRepo },
+    claude_config_dir: home,
+    permission_mode: "auto",
+  });
+  r = sb.run(["doctor"]);
+  expect(r.code).toBe(0);
+  expect(r.out).toContain("✓ permission mode: auto");
+});
+
 test("doctor: malformed extra_allowed_tools fails the config check", () => {
   const sb = makeSandbox();
   sb.gitInitDemo();

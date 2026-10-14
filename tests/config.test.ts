@@ -330,6 +330,27 @@ test("loadConfig: the receive keys are validated", async () => {
   expect((await loadConfig(p)).receive_enabled).toBe(true);
 });
 
+test("loadConfig: permission_mode accepts dontAsk and auto only", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "rv-cfg-"));
+  const p = paths({
+    DOCKET_CONFIG_DIR: dir,
+    DOCKET_STATE_DIR: dir,
+  } as NodeJS.ProcessEnv);
+  const write = (permission_mode: unknown) =>
+    writeFileSync(
+      join(dir, "config.json"),
+      JSON.stringify({
+        orgs: ["o"],
+        repos: { "o/r": "/tmp" },
+        permission_mode,
+      }),
+    );
+  write("bypassPermissions");
+  await expect(loadConfig(p)).rejects.toThrow(/permission_mode/);
+  write("auto");
+  expect((await loadConfig(p)).permission_mode).toBe("auto");
+});
+
 test("loadConfig: claude_env must be an object of string values", async () => {
   const dir = mkdtempSync(join(tmpdir(), "rv-cfg-"));
   const p = paths({

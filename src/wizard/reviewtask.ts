@@ -12,6 +12,7 @@ import {
   DEFAULT_REVIEW_PROMPT,
   claudeBin,
   claudeEnv,
+  permissionMode,
 } from "../config";
 import {
   type StepResult,
@@ -346,7 +347,7 @@ export function makeDerive(
         "--output-format",
         "text",
         "--permission-mode",
-        "dontAsk",
+        permissionMode(cfg),
         "--allowedTools",
         "Read,Grep,Glob",
       ],

@@ -232,6 +232,22 @@ test("no extra_allowed_tools → claude gets exactly the baseline allowlist", as
   expect(sb.allowedCapture()).toBe(ALLOWED_TOOLS);
 });
 
+test("permission_mode picks claude's --permission-mode, dontAsk when unset", async () => {
+  const sb = makeSandbox();
+  expect(sb.run(["review", "testorg/demo#7"]).code).toBe(0);
+  await sb.waitEntry("testorg/demo#7", (x) => x.status === "ready");
+  expect(sb.permModeCapture()).toBe("dontAsk");
+
+  sb.writeConfig({
+    orgs: ["testorg"],
+    repos: { "testorg/demo": sb.demoRepo },
+    permission_mode: "auto",
+  });
+  expect(sb.run(["review", "testorg/demo#8"]).code).toBe(0);
+  await sb.waitEntry("testorg/demo#8", (x) => x.status === "ready");
+  expect(sb.permModeCapture()).toBe("auto");
+});
+
 test("scenario 9: missing config seeds a starter one and errors", () => {
   const sb = makeSandbox();
   const dir = sb.tmp + "/nonexistent";

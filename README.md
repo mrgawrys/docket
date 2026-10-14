@@ -244,6 +244,8 @@ Everything lives in `~/.config/docket/config.json`. Beyond `orgs` and
   really reviewing for
 - `claude_env` / `claude_config_dir` — control the environment every claude
   invocation runs with
+- `permission_mode` — `"auto"` for a workplace whose managed Claude settings
+  make claude ignore docket's tool allowlist
 
 The full reference, with semantics and defaults for every key, is in
 [docs/configuration.md](docs/configuration.md).

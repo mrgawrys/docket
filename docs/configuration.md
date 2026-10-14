@@ -43,6 +43,18 @@ would otherwise fire from unattended review sessions. If both this and
 `claude_config_dir` set `CLAUDE_CONFIG_DIR`, `claude_config_dir` wins.
 Empty = none.
 
+## permission_mode
+
+The `--permission-mode` headless runs use. Default `"dontAsk"`: anything
+outside the tool allowlist is denied.
+
+Set `"auto"` when your organisation's managed Claude settings turn on
+`allowManagedPermissionRulesOnly`. Claude then ignores docket's allowlist,
+`extra_allowed_tools` and the `gh api` write block, so `dontAsk` denies every
+call. In `auto`, Claude's own classifier decides each call instead, and the
+"never write to GitHub" guarantee rests on it and the prompt. `docket doctor`
+fails when it finds that setting while this is still `dontAsk`.
+
 ## gh_account
 
 Pin all GitHub access to this `gh` account (its token is resolved via

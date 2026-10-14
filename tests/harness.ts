@@ -36,6 +36,7 @@ export interface Sandbox {
   promptCapture(): string;
   allowedCapture(): string;
   disallowedCapture(): string;
+  permModeCapture(): string;
   cfgdirCapture(): string;
   cwdCapture(): string;
   watchdogCapture(): string;
@@ -118,6 +119,7 @@ export function makeSandbox(): Sandbox {
     promptCapture: () => readFileSync(env.PROMPT_CAPTURE!, "utf8"),
     allowedCapture: () => readFileSync(env.ALLOWED_CAPTURE!, "utf8"),
     disallowedCapture: () => readFileSync(env.DISALLOWED_CAPTURE!, "utf8"),
+    permModeCapture: () => readFileSync(env.PERMMODE_CAPTURE!, "utf8"),
     cfgdirCapture: () => readFileSync(env.CFGDIR_CAPTURE!, "utf8"),
     cwdCapture: () => readFileSync(env.CWD_CAPTURE!, "utf8"),
     watchdogCapture: () => readFileSync(env.WATCHDOG_CAPTURE!, "utf8"),

@@ -33,6 +33,7 @@ export interface Config {
   claude_bin?: string;
   claude_config_dir?: string;
   claude_env?: Record<string, string>;
+  permission_mode?: PermissionMode;
   gh_account?: string;
   ignored_teams?: string[];
   notifications?: boolean;
@@ -325,6 +326,12 @@ export function configProblem(cfg: Config, where: string): string | null {
   ) {
     return `invalid config at ${where} — "receive_prompt" must be a string`;
   }
+  if (
+    cfg.permission_mode !== undefined &&
+    !PERMISSION_MODES.includes(cfg.permission_mode)
+  ) {
+    return `invalid config at ${where} — "permission_mode" must be one of ${PERMISSION_MODES.map((m) => `"${m}"`).join(", ")}`;
+  }
   return null;
 }
 
@@ -385,6 +392,15 @@ export const claudeBin = (
   cfg: Config,
   env: NodeJS.ProcessEnv = process.env,
 ): string => env.CLAUDE_BIN ?? cfg.claude_bin ?? "claude";
+
+// auto exists for setups whose managed settings set
+// allowManagedPermissionRulesOnly: claude then ignores --allowedTools, and
+// dontAsk denies every call.
+export const PERMISSION_MODES = ["dontAsk", "auto"] as const;
+export type PermissionMode = (typeof PERMISSION_MODES)[number];
+
+export const permissionMode = (cfg: Config): PermissionMode =>
+  cfg.permission_mode ?? "dontAsk";
 
 export const ghBin = (env: NodeJS.ProcessEnv = process.env): string =>
   env.GH_BIN ?? "gh";

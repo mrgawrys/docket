@@ -121,6 +121,7 @@ prev=""
 for a in "$@"; do
   [ "$prev" = --allowedTools ] && printf '%s' "$a" >"\${ALLOWED_CAPTURE:?}"
   [ "$prev" = --disallowedTools ] && printf '%s' "$a" >"\${DISALLOWED_CAPTURE:?}"
+  [ "$prev" = --permission-mode ] && printf '%s' "$a" >"\${PERMMODE_CAPTURE:?}"
   prev="$a"
 done
 printf '%s' "\${CLAUDE_CONFIG_DIR:-}" >"\${CFGDIR_CAPTURE:?}"
@@ -187,6 +188,7 @@ export function materialize(root: string): SandboxDirs {
     PROMPT_CAPTURE: capture("prompt-capture"),
     ALLOWED_CAPTURE: capture("allowed-capture"),
     DISALLOWED_CAPTURE: capture("disallowed-capture"),
+    PERMMODE_CAPTURE: capture("permmode-capture"),
     CFGDIR_CAPTURE: capture("cfgdir-capture"),
     CWD_CAPTURE: capture("cwd-capture"),
     WATCHDOG_CAPTURE: capture("watchdog-capture"),

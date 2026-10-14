@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { authDir, claudeAuth } from "./auth";
 import {
@@ -9,6 +9,7 @@ import {
   effectiveReviewPrompt,
   ghBin,
   loadConfig,
+  permissionMode,
   paths as resolvePaths,
   placeholderEntries,
   seedExampleConfig,
@@ -34,6 +35,25 @@ function runs(cmd: string[], extraEnv: Record<string, string> = {}): RunResult {
   } catch {
     return { ok: false, out: "" };
   }
+}
+
+// The managed settings file that turns on allowManagedPermissionRulesOnly, or
+// undefined when none does.
+function managedRulesOnlySource(claudeHome: string): string | undefined {
+  const candidates = [
+    join(claudeHome, "remote-settings.json"),
+    "/Library/Application Support/ClaudeCode/managed-settings.json",
+  ];
+  return candidates.find((path) => {
+    try {
+      return (
+        JSON.parse(readFileSync(path, "utf8"))
+          .allowManagedPermissionRulesOnly === true
+      );
+    } catch {
+      return false;
+    }
+  });
 }
 
 // Walks the dependency chain a review run needs, one ✓/✗ line per check.
@@ -216,6 +236,16 @@ export async function doctorCommand(
   }
   const installed = (plugin: string) =>
     registryKeys.some((k) => k.startsWith(`${plugin}@`));
+
+  const managedOnly = managedRulesOnlySource(claudeHome);
+  if (managedOnly && permissionMode(cfg) === "dontAsk") {
+    fail(
+      `permission mode: dontAsk denies every tool call — ${managedOnly} sets allowManagedPermissionRulesOnly, so claude ignores docket's allowlist`,
+      'set "permission_mode": "auto" in config.json',
+    );
+  } else if (permissionMode(cfg) === "auto") {
+    pass("permission mode: auto");
+  }
 
   // The plugin is only a dependency when the effective prompt runs /code-review.
   if (effectiveReviewPrompt(cfg).includes("/code-review")) {
