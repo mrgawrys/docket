@@ -5,6 +5,14 @@ import {
   prView,
   type PrMineInfo,
 } from "./github";
+import {
+  fireEvent,
+  isDue,
+  mergeTodos,
+  openedDue,
+  openTodos,
+  type Todo,
+} from "./hooks";
 import { feedbackNotification, notify } from "./notify";
 import { prepareCheckout, shouldAutoRun } from "./receive";
 import {
@@ -23,6 +31,7 @@ import {
   patchEntry,
   recordActivity,
   splitKey,
+  timestamp,
   type Entry,
   type Verdict,
 } from "./state";
@@ -221,8 +230,22 @@ async function syncMine(
   recordActivity(statePath, key, info.updatedAt);
   const d = decideMineSync(info, me, entry);
   if (d.kind === "done") {
+    if (info.state === "MERGED" && !(await fireMerged(ctx, key, entry))) return;
     await retire(ctx, key, info.state === "MERGED" ? "merged" : "closed");
     return;
+  }
+
+  if (entry.hooks === undefined) {
+    // Tracked before hooks existed: its PR opened long ago, so opened must
+    // never fire for it. merged still will.
+    patchEntry(statePath, key, {
+      hooks: { opened: { at: timestamp(), ok: true, attempts: 0, none: true } },
+    });
+    entry = loadState(statePath)[key] ?? entry;
+  } else if (openedDue(entry, info)) {
+    const f = await fireEvent(ctx, key, "opened");
+    if (f.todos.length) addTodos(ctx, key, mergeTodos([], f.todos));
+    entry = loadState(statePath)[key] ?? entry;
   }
 
   // Drafts flip to ready-for-review, and a force-recreated PR can change its
@@ -280,19 +303,51 @@ async function syncMine(
   await trigger(ctx, key, loadState(statePath)[key] ?? entry);
 }
 
-// The PR is over: mark the entry done and retire what the review left on
-// disk. A copy kept for its commits is the one thing the user must hear about
+function addTodos(ctx: Ctx, key: string, todos: Todo[]): void {
+  const cur = loadState(ctx.paths.statePath)[key]?.todos ?? [];
+  patchEntry(ctx.paths.statePath, key, { todos: [...cur, ...todos] });
+}
+
+// false: the hook wants another attempt, so the entry must stay active.
+async function fireMerged(
+  ctx: Ctx,
+  key: string,
+  entry: Entry,
+): Promise<boolean> {
+  if (!isDue(entry, "merged")) return true;
+  const f = await fireEvent(ctx, key, "merged");
+  if (!f.settled) return false;
+  const todos = mergeTodos(f.notes, f.todos);
+  if (f.error)
+    todos.push({
+      text: `merged hook failed (${f.error}) — docket hooks test ${bareKey(key)} --event merged`,
+      source: "hook",
+    });
+  if (todos.length) addTodos(ctx, key, todos);
+  return true;
+}
+
+// The PR is over: mark the entry done — or finished, while to-dos remain —
+// and retire what the review left on disk. A copy kept for its commits is the one thing the user must hear about
 // now — the entry is about to leave every list they look at.
 async function retire(
   ctx: Ctx,
   key: string,
   reason: "merged" | "closed",
 ): Promise<void> {
-  markDone(ctx.paths.statePath, key, reason);
+  const e = loadState(ctx.paths.statePath)[key];
+  if (e && reason === "merged" && openTodos(e).length)
+    patchEntry(ctx.paths.statePath, key, {
+      status: "finished",
+      done_reason: reason,
+    });
+  else markDone(ctx.paths.statePath, key, reason);
   const held = cleanupEntry(ctx, key, "SYNC")
     .filter((k) => k.reason === "has-commits")
     .map((k) => k.path);
-  ctx.log(`SYNC ${key}: PR ${reason} — marked done`);
+  ctx.log(
+    `SYNC ${key}: PR ${reason} — marked ${loadState(ctx.paths.statePath)[key]?.status ?? "done"}`,
+  );
   if (held.length)
     await notify(
       ctx.cfg,
@@ -308,7 +363,10 @@ export async function reconcile(
 ): Promise<void> {
   const { statePath } = ctx.paths;
   const active = Object.entries(loadState(statePath)).filter(
-    ([, e]) => e.status !== "done" && e.status !== "reviewing",
+    ([, e]) =>
+      e.status !== "done" &&
+      e.status !== "reviewing" &&
+      e.status !== "finished",
   );
   if (active.length === 0) return;
 

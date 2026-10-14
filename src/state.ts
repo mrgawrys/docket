@@ -9,6 +9,7 @@ import {
 } from "node:fs";
 import { dirname } from "node:path";
 import type { DenialGroup } from "./denials";
+import type { HookEvent, HookRecord, Todo } from "./hooks";
 import type { Logger } from "./log";
 import { pidAlive } from "./proc";
 import type { Summary } from "./summary";
@@ -22,11 +23,14 @@ export type Status =
   | "skipped"
   | "done"
   | "open"
+  | "finished"
   | Verdict;
 
 // Which world an entry belongs to: "review" — a PR awaiting the user's review
 // (bare org/repo#N keys); "mine" — a PR the user authored ("mine:" prefix).
 export type EntryKind = "review" | "mine";
+// What a TUI tab lists: an entry kind, or merged mine entries with to-dos left.
+export type View = EntryKind | "finished";
 
 export interface Entry {
   status: Status;
@@ -80,6 +84,10 @@ export interface Entry {
   // GitHub's last activity on the PR, refreshed by poll and sync. Distinct
   // from updated_at, which is docket's own bookkeeping.
   pr_updated_at?: string;
+  // Mine entries: lifecycle hooks fired so far, one record per event.
+  hooks?: Partial<Record<HookEvent, HookRecord>>;
+  // Mine entries: follow-up work from the After-merge notes and hooks.
+  todos?: Todo[];
   updated_at: string;
 }
 
@@ -243,10 +251,14 @@ export function liveRunners(s: State): string[] {
     .map(([k]) => k);
 }
 
-export function pendingEntries(s: State, kind?: EntryKind): [string, Entry][] {
+export function pendingEntries(s: State, view?: View): [string, Entry][] {
   return Object.entries(s)
     .filter(([, e]) => e.status !== "done")
-    .filter(([k]) => kind === undefined || entryKind(k) === kind)
+    .filter(([k, e]) => {
+      if (view === undefined) return true;
+      if (view === "finished") return e.status === "finished";
+      return entryKind(k) === view && e.status !== "finished";
+    })
     .sort(([, a], [, b]) => a.updated_at.localeCompare(b.updated_at));
 }
 

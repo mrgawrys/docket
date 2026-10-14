@@ -79,6 +79,7 @@ function discoverMine(ctx: Ctx, dry: boolean, known: State): void {
         ...(info?.headRefName ? { branch: info.headRefName } : {}),
         ...(c.isDraft ? { flags: ["draft"] } : {}),
         ...(c.updatedAt ? { pr_updated_at: c.updatedAt } : {}),
+        hooks: {},
         updated_at: timestamp(),
       }));
       ctx.log(`TRACK ${key}: authored PR — ${c.title}`);

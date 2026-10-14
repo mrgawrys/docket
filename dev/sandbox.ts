@@ -8,7 +8,7 @@ import { join } from "node:path";
 
 // Same shims as tests/tests.sh, knobs included: GH_PR_STATUS_JSON,
 // GH_PR_VIEW_FAIL, GH_AUTH_STATUS_TEXT, GH_ORG_LIST, GH_ORG_LIST_FAIL,
-// GH_MINE_SEARCH_JSON, GH_PR_MINE_JSON, GH_PR_HEADREF_JSON, GH_THREADS_JSON,
+// GH_MINE_SEARCH_JSON, GH_PR_MINE_JSON, GH_PR_HOOK_JSON, GH_PR_HEADREF_JSON, GH_THREADS_JSON,
 // GH_REVIEW_COMMENTS_JSON,
 // CLAUDE_FAIL, CLAUDE_EMIT_DENIAL, CLAUDE_LOGGED_OUT. The gh shim logs every
 // invocation (with the GH_TOKEN it saw) to GH_CALLS; the claude shim records
@@ -56,6 +56,13 @@ if [ "$1" = pr ] && [ "$2" = view ]; then
     if [ "$a" = headRefName ]; then
       [ "\${GH_PR_VIEW_FAIL:-0}" = 1 ] && { echo "boom" >&2; exit 1; }
       echo "\${GH_PR_HEADREF_JSON:-{\\"headRefName\\":\\"feature\\"}}"
+      exit 0
+    fi
+    if [[ "$a" == number,url,title,body* ]]; then
+      [ "\${GH_PR_VIEW_FAIL:-0}" = 1 ] && { echo "boom" >&2; exit 1; }
+      json="\${GH_PR_HOOK_JSON:-}"
+      [ -n "$json" ] || json='{"number":7,"url":"https://example.test/pr/7","title":"Demo PR","body":"","headRefName":"feature","baseRefName":"main","isDraft":false,"labels":[],"mergedAt":null,"files":[],"comments":[]}'
+      echo "$json"
       exit 0
     fi
     if [[ "$a" == state,isDraft* ]]; then
