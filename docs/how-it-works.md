@@ -37,6 +37,12 @@ or `commented` — with `+re-requested` / `+new-commits` flags when the author
 re-requests your review or pushes after it. Flagged entries are acted on
 manually (`r` in the queue, or `docket review` with a note).
 
+Your own PRs (`mine:` entries) can also end as `finished`: merged, with
+to-dos left from the PR's After-merge notes or the `merged` hook. They leave
+reconcile and wait in the Finished tab until the last to-do is ticked or the
+row is dismissed. Each entry records which hooks fired (`hooks`), so an event
+runs at most once per PR.
+
 ## Where things live
 
 Statuses, per-review logs, and the lock live in `~/.local/state/docket/`

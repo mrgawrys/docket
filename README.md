@@ -170,6 +170,31 @@ The rest of the CLI:
 | `docket on` / `off` / `status` | manage the launchd poller |
 | `docket log [N]` | tail the poller log |
 
+## After merge: hooks and the Finished tab
+
+docket can run your own scripts when one of your PRs opens or merges, and
+keep the follow-up work on screen until it's done.
+
+- **Hooks** are executables at `~/.config/docket/hooks/opened` and
+  `~/.config/docket/hooks/merged`. Each gets the PR as JSON on stdin and prints
+  JSON lines: `{"todo": "…", "link": "…"}`, `{"did": "…"}`, `{"warn": "…"}`.
+  Use them for the deterministic part — moving a ticket, say. docket itself
+  knows no tracker; the hook does, and holds its own secrets (the macOS
+  Keychain works under launchd). A failed hook is retried on the next poll,
+  up to 3 times, so hooks must be safe to run twice.
+- **After-merge notes**: unchecked task-list items under an `After merge`
+  heading in the PR description become to-dos when the PR merges.
+- **The Finished tab** (`tab`) lists merged PRs with open to-dos. `1`–`9`
+  ticks one, `o` opens the first to-do's link (else the PR), `x` dismisses.
+  The last tick clears the row.
+
+`docket hooks edit [pr]` opens claude in the hooks directory with the contract
+and a real payload, to write the hooks with you. `docket hooks test <pr>
+[--event merged]` dry-runs one against a real PR; `docket hooks payload <pr>`
+prints what it would get. PRs docket already tracked when you upgrade never
+fire `opened`. Full contract:
+[`docs/specs/2026-10-14-pr-lifecycle-hooks-design.md`](docs/specs/2026-10-14-pr-lifecycle-hooks-design.md).
+
 ## Denied permissions
 
 Reviews run headless on a read-only tool allowlist, so a call outside it is
