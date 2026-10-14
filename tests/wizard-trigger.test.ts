@@ -292,6 +292,11 @@ test("the wizard prompt carries the real config path and no sandbox rules", () =
   expect(prompt).toContain("gh auth switch");
   // a `find -type d -name .git` misses linked worktrees, which carry a file
   expect(prompt).not.toContain("-type d -name .git");
+  // hooks are offered, and tested only after the config they need exists
+  expect(prompt).toContain("/c/docket/hooks/<event>");
+  expect(prompt.indexOf("Write the config")).toBeLessThan(
+    prompt.indexOf("docket hooks test"),
+  );
 });
 
 test("the claude wizard reports back whether a config actually appeared", async () => {

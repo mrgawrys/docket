@@ -13,6 +13,8 @@ import {
 } from "../config";
 import { selfArgs } from "../proc";
 import { type WizardOutcome, cleanEnv } from "./flow";
+import { hooksDir } from "../hooks";
+import { hookContract } from "../hookscmd";
 import PROMPT from "./claude-prompt.md" with { type: "text" };
 
 // The prompt tells claude to run doctor at the end, so it needs the command
@@ -28,8 +30,11 @@ export const doctorInvocation = (): string =>
 // wizard writes them into the prompt, so nothing about the session depends on
 // an environment claude may or may not inherit.
 export function claudeWizardPrompt(p: Paths, doctorCmd: string): string {
+  const cli = doctorCmd.replace(/ doctor$/, "");
   return PROMPT.replaceAll("{{CONFIG_PATH}}", p.configPath)
     .replaceAll("{{CONFIG_DIR}}", p.configDir)
+    .replaceAll("{{HOOKS_DIR}}", hooksDir(p))
+    .replaceAll("{{HOOK_CONTRACT}}", hookContract(hooksDir(p), cli))
     .replaceAll("{{DOCTOR_CMD}}", doctorCmd);
 }
 

@@ -6,7 +6,8 @@ the user through it, then prove it works by running doctor.
 ## What you may touch
 
 - The config you are here to write is `{{CONFIG_PATH}}`. That file, and the
-  directory `{{CONFIG_DIR}}` around it, are yours to create and write.
+  directory `{{CONFIG_DIR}}` around it — `{{HOOKS_DIR}}` included — are yours
+  to create and write.
 - Everything else is read-only. You may list the user's clones and read their
   git remotes; never modify a repository, and never change the user's `gh`
   state.
@@ -191,7 +192,25 @@ show the user the finished file.
 If a config is already there, read it first and keep any keys you did not
 determine yourself; the user may have set them by hand.
 
-## Step 7 — Verify
+## Step 7 — After merge (optional)
+
+docket can also run the user's own scripts when one of **their** PRs opens or
+merges — move a ticket to "in review" or "ready for QA", say — and keep the
+follow-up work as to-dos in its Finished tab. Ask whether they want that.
+No means skip this step; nothing is written.
+
+If yes, ask what should happen on each event and what decides it (often the
+ticket id in the branch name, and which board the ticket lives on). Then write
+the hooks:
+
+{{HOOK_CONTRACT}}
+
+Test against one of the user's real PRs before moving on. If the user hasn't
+got a secret the hook needs yet (an API token), write the hook to read it and
+tell them the exact command to store it; don't block on it. Hooks are files,
+not config keys — the config step above is already done.
+
+## Step 8 — Verify
 
 Run doctor and show the user its output verbatim:
 

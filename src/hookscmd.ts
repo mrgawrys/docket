@@ -56,16 +56,16 @@ function payloadFor(
   return p ?? `cannot fetch ${key} from GitHub (does the PR exist?)`;
 }
 
-export const HOOKS_BRIEF = (dir: string, sample: HookPayload | null): string =>
-  `You are writing docket lifecycle hooks in ${dir}.
-
-docket runs ${dir}/<event> (any executable; events: ${HOOK_EVENTS.join(", ")})
+// Shared by `docket hooks edit` and the claude-guided setup wizard.
+export const hookContract = (dir: string, cli = "docket"): string =>
+  `docket runs ${dir}/<event> (any executable; events: ${HOOK_EVENTS.join(", ")})
 once per PR the user authored:
 - opened: the PR is first seen non-draft, or flips draft → ready
 - merged: the PR merged
 
 Contract:
-- stdin: one JSON payload (shape below). cwd is ${dir}; timeout ${HOOK_TIMEOUT_MS / 1000}s.
+- stdin: one JSON payload — \`${cli} hooks payload <pr> --event <event>\`
+  prints a real one. cwd is ${dir}; timeout ${HOOK_TIMEOUT_MS / 1000}s.
 - stdout: JSON lines — {"todo": "...", "link": "..."} adds a to-do to the PR's
   row in docket's Finished tab; {"did": "..."} and {"warn": "..."} are shown
   as what happened. Other lines go to docket's log.
@@ -74,11 +74,16 @@ Contract:
 - dry_run: true means print what you would do and change nothing.
 - The payload's "notes" are the PR's unchecked "After merge" items; docket
   already turns them into to-dos — don't echo them back.
-- Secrets are the hook's job; docket runs under launchd without your shell
-  env. Prefer the macOS Keychain (security find-generic-password -w -s NAME).
+- Secrets are the hook's job; docket runs under launchd without the user's
+  shell env. Prefer the macOS Keychain (security find-generic-password -w -s NAME).
 
-Test every change with: docket hooks test <pr> --event <event>
-(a dry run against a real PR). Make the files executable.
+Test every change with \`${cli} hooks test <pr> --event <event>\` (a dry run
+against a real PR). Make the files executable.`;
+
+export const HOOKS_BRIEF = (dir: string, sample: HookPayload | null): string =>
+  `You are writing docket lifecycle hooks in ${dir}.
+
+${hookContract(dir)}
 
 Ask the user what should happen on each event before writing anything.
 ${sample ? `\nA real payload:\n${JSON.stringify(sample, null, 2)}\n` : ""}`;
