@@ -110,6 +110,7 @@ export const TODO_KEYS: Binding[] = [
   { keys: "j/k ↑/↓", label: "move between to-dos", short: "move" },
   { keys: "enter", label: "tick / untick", short: "tick" },
   { keys: "o", label: "open this to-do's link", short: "open" },
+  { keys: "a", label: "add a to-do", short: "add" },
   { keys: "esc ←", label: "back to the list", short: "back" },
   { keys: "?", label: "help" },
   { keys: "q", label: "quit" },
@@ -150,7 +151,7 @@ const FOOTER: Record<KeymapView, string[]> = {
   queue: ["enter", "s", "d", "o", "D", "w", "n", "?"],
   mine: ["enter", "s", "d", "o", "R", "D", "n", "?"],
   finished: ["enter", "t →", "1-9", "o", "x", "H", "?"],
-  todos: ["j/k ↑/↓", "enter", "o", "esc ←", "?"],
+  todos: ["j/k ↑/↓", "enter", "a", "o", "esc ←", "?"],
   denials: ["j/k ↑/↓", "esc D", "?", "q"],
   log: ["j/k ↑/↓", "esc l", "?", "q"],
 };

@@ -8,6 +8,7 @@ import {
   openedDue,
   parseAfterMerge,
   parseHookOutput,
+  addTodo,
   runHook,
   tickTodo,
   type HookPayload,
@@ -254,4 +255,20 @@ test("tickTodo: toggles one to-do; ticking the last open one retires the entry",
   expect(tickTodo(sb.statePath, KEY, 1)).toBe(`${KEY}: all done`);
   expect(sb.state()[KEY].status).toBe("done");
   expect(tickTodo(sb.statePath, KEY, 5)).toBe(`${KEY}: no to-do 6`);
+});
+
+test("addTodo: appends a manual to-do to the row", () => {
+  const sb = makeSandbox();
+  sb.writeState({
+    [KEY]: {
+      status: "finished",
+      todos: [{ text: "a", source: "note" }],
+      updated_at: "2026-01-01T00:00:00Z",
+    },
+  });
+  expect(addTodo(sb.statePath, KEY, "ping QA")).toBe("added: ping QA");
+  expect(sb.state()[KEY].todos).toEqual([
+    { text: "a", source: "note" },
+    { text: "ping QA", source: "manual" },
+  ]);
 });

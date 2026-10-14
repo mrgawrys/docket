@@ -104,8 +104,8 @@ hook's `did`/`warn` lines. Keys:
 
 - `enter` opens claude in the PR's clone, primed with the PR, its to-dos and
   what the hooks did
-- `t` / `→` walks the to-dos: `j`/`k` move, `enter` ticks or unticks, `o`
-  opens that to-do's link, `esc` / `←` goes back to the rows
+- `t` / `→` walks the to-dos: `j`/`k` move, `enter` ticks or unticks, `a`
+  adds one, `o` opens that to-do's link, `esc` / `←` goes back to the rows
 - `1`–`9` tick a to-do directly
 - `o` opens the first open to-do's link, else the PR
 - `x` dismisses the row (→ `done`)
@@ -119,6 +119,8 @@ Ticks live in docket's state only; docket never writes to GitHub.
 
 ## Authoring and testing hooks
 
+- The claude-guided first-run setup offers hooks as an optional step, after
+  the config is written (the quick route does not).
 - `docket hooks payload <pr> --event <e>` prints the JSON a hook would get.
 - `docket hooks test <pr> --event <e>` runs the hook with `dry_run: true` and
   prints parsed output.

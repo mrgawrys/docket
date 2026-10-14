@@ -33,7 +33,7 @@ export interface Todo {
   text: string;
   link?: string;
   done?: boolean;
-  source: "note" | "hook";
+  source: "note" | "hook" | "manual";
 }
 
 export interface HookOutput {
@@ -195,6 +195,15 @@ export function toggleTodo(todos: Todo[], i: number): Todo[] {
 
 export const firstOpenLink = (e: Entry): string | undefined =>
   openTodos(e).find((t) => t.link)?.link;
+
+export function addTodo(statePath: string, key: string, text: string): string {
+  const e = loadState(statePath)[key];
+  if (!e) return `${key}: gone`;
+  patchEntry(statePath, key, {
+    todos: [...(e.todos ?? []), { text, source: "manual" }],
+  });
+  return `added: ${text}`;
+}
 
 // Tick or untick to-do i (0-based); the last one ticked retires the entry.
 export function tickTodo(statePath: string, key: string, i: number): string {

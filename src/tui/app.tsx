@@ -46,7 +46,7 @@ import {
   type EntryKind,
 } from "../state";
 import { nextSortMode, orderRows, type SortMode } from "../order";
-import { firstOpenLink, listHooks, tickTodo } from "../hooks";
+import { addTodo, firstOpenLink, listHooks, tickTodo } from "../hooks";
 import { finishedLines, PANEL_HEIGHT, panelLines } from "../panel";
 import { Help, Legend } from "./legend";
 import { Panel } from "./panel";
@@ -242,6 +242,8 @@ export function App({
   const [status, setStatus] = useState<string | undefined>();
   // The `n` footer input; undefined = closed.
   const [prInput, setPrInput] = useState<string | undefined>();
+  // The `a` footer input in the to-do walk; undefined = closed.
+  const [todoInput, setTodoInput] = useState<string | undefined>();
   // The PR the denials view is reading, pinned when D opened it. Its verbs act
   // on this key and never on the queue cursor, which a finishing poll can move.
   const [denialKey, setDenialKey] = useState<string | undefined>();
@@ -384,7 +386,7 @@ export function App({
       ? `${job.verb}… · l shows the log`
       : undefined;
   const footer =
-    prInput !== undefined
+    prInput !== undefined || todoInput !== undefined
       ? "input"
       : (status ?? jobHint ?? notice ?? authWarning);
   const footerColor =
@@ -620,6 +622,22 @@ export function App({
   };
 
   useInput((input, key) => {
+    if (todoInput !== undefined) {
+      if (key.escape) return setTodoInput(undefined);
+      if (key.return) {
+        setTodoInput(undefined);
+        const text = todoInput.trim();
+        if (!text || !current) return;
+        setStatus(addTodo(paths.statePath, current.key, text));
+        setTodoFocus(current.entry.todos?.length ?? 0);
+        return reload();
+      }
+      if (key.backspace || key.delete)
+        return setTodoInput(todoInput.slice(0, -1));
+      if (input && !key.ctrl && !key.meta)
+        return setTodoInput(todoInput + input);
+      return;
+    }
     if (prInput !== undefined) {
       // The footer input owns the keyboard while it is open.
       if (key.escape) return setPrInput(undefined);
@@ -698,6 +716,7 @@ export function App({
         return reload();
       }
       if (input === "o") return browse();
+      if (input === "a") return setTodoInput("");
       return;
     }
     if (input === "H" && list !== "queue") {
@@ -928,7 +947,12 @@ export function App({
         }
         unavailable={unavailable}
       />
-      {prInput !== undefined ? (
+      {todoInput !== undefined ? (
+        <Text color="cyan" wrap="truncate-end">
+          add to-do ▸ {todoInput}█{" "}
+          <Text dimColor>(enter adds, esc cancels)</Text>
+        </Text>
+      ) : prInput !== undefined ? (
         <Text color="cyan" wrap="truncate-end">
           {list === "mine" ? "receive" : "review"} PR ▸ {prInput}█{" "}
           <Text dimColor>
