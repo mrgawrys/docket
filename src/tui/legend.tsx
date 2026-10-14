@@ -54,6 +54,11 @@ export const MINE_KEYS: Binding[] = [
   { keys: "w", label: "watch live" },
   { keys: "r", label: "retry" },
   { keys: "n", label: "receive a PR by hand", short: "receive by hand" },
+  {
+    keys: "H",
+    label: "hooks — set up or change what runs when your PRs open or merge",
+    short: "hooks",
+  },
   { keys: "x", label: "dismiss" },
   { keys: "K", label: "kill" },
   { keys: "p", label: "poll — find new PRs and review them" },
@@ -83,6 +88,11 @@ export const FINISHED_KEYS: Binding[] = [
     keys: "1-9",
     label: "tick a to-do (the last one clears the row)",
     short: "tick",
+  },
+  {
+    keys: "H",
+    label: "hooks — set up or change what runs when your PRs open or merge",
+    short: "hooks",
   },
   {
     keys: "o",
@@ -139,7 +149,7 @@ const KEYMAPS: Record<KeymapView, Binding[]> = {
 const FOOTER: Record<KeymapView, string[]> = {
   queue: ["enter", "s", "d", "o", "D", "w", "n", "?"],
   mine: ["enter", "s", "d", "o", "R", "D", "n", "?"],
-  finished: ["enter", "t →", "1-9", "o", "x", "?"],
+  finished: ["enter", "t →", "1-9", "o", "x", "H", "?"],
   todos: ["j/k ↑/↓", "enter", "o", "esc ←", "?"],
   denials: ["j/k ↑/↓", "esc D", "?", "q"],
   log: ["j/k ↑/↓", "esc l", "?", "q"],

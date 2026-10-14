@@ -189,7 +189,7 @@ keep the follow-up work on screen until it's done.
   (`enter` ticks one); `1`–`9` tick directly; `o` opens the first to-do's
   link (else the PR); `x` dismisses. The last tick clears the row.
 
-`docket hooks edit [pr]` opens claude in the hooks directory with the contract
+`H` in the my PRs or Finished tab — or `docket hooks edit [pr]` — opens claude in the hooks directory with the contract
 and a real payload, to write the hooks with you. `docket hooks test <pr>
 [--event merged]` dry-runs one against a real PR; `docket hooks payload <pr>`
 prints what it would get. PRs docket already tracked when you upgrade never

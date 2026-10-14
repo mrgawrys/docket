@@ -109,6 +109,8 @@ hook's `did`/`warn` lines. Keys:
 - `1`–`9` tick a to-do directly
 - `o` opens the first open to-do's link, else the PR
 - `x` dismisses the row (→ `done`)
+- `H` (here and in my PRs) runs `docket hooks edit` on the highlighted PR;
+  with no hooks set up, the empty tab and the panel say so and point at `H`
 
 When every to-do is ticked the entry goes `done`. `?` shows only the keys of
 the screen it was opened from.

@@ -30,17 +30,17 @@ export function Queue({
   rows,
   cursor,
   height,
+  empty = "No pending reviews — p polls GitHub, S syncs, q quits.",
 }: {
   rows: Row[];
   cursor: number;
   height: number;
+  empty?: string;
 }) {
   if (rows.length === 0) {
     return (
       <Box paddingX={1}>
-        <Text dimColor>
-          No pending reviews — p polls GitHub, S syncs, q quits.
-        </Text>
+        <Text dimColor>{empty}</Text>
       </Box>
     );
   }

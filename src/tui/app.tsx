@@ -36,6 +36,7 @@ import {
 import { selfArgs } from "../proc";
 import type { Ctx } from "../reviewer";
 import {
+  bareKey,
   entryKind,
   isLiveReview,
   loadState,
@@ -45,7 +46,7 @@ import {
   type EntryKind,
 } from "../state";
 import { nextSortMode, orderRows, type SortMode } from "../order";
-import { firstOpenLink, tickTodo } from "../hooks";
+import { firstOpenLink, listHooks, tickTodo } from "../hooks";
 import { finishedLines, PANEL_HEIGHT, panelLines } from "../panel";
 import { Help, Legend } from "./legend";
 import { Panel } from "./panel";
@@ -197,6 +198,8 @@ export function App({
   // same render, or the old world's rows flash under the new view's legend.
   const [generation, setGeneration] = useState(0);
   const reload = useCallback(() => setGeneration((g) => g + 1), []);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: generation re-reads after H
+  const hookCount = useMemo(() => listHooks(paths).length, [paths, generation]);
   // The other list's count is read in the same pass: the tab strip shows both.
   const [sort, setSort] = useState<SortMode>(initialSort);
   const { rows, counts } = useMemo(() => {
@@ -416,7 +419,17 @@ export function App({
   const panel = useMemo(
     () =>
       list === "finished" && current
-        ? finishedLines(current.entry, todoFocus)
+        ? [
+            ...finishedLines(current.entry, todoFocus),
+            ...(hookCount
+              ? []
+              : [
+                  {
+                    text: "no hooks set up yet — H writes them with claude",
+                    color: "yellow",
+                  },
+                ]),
+          ]
         : panelLines({
             summary,
             assessment,
@@ -431,6 +444,7 @@ export function App({
       list,
       current,
       todoFocus,
+      hookCount,
       summary,
       assessment,
       denials,
@@ -686,6 +700,19 @@ export function App({
       if (input === "o") return browse();
       return;
     }
+    if (input === "H" && list !== "queue") {
+      request({
+        argv: selfArgs(
+          "hooks",
+          "edit",
+          ...(current ? [bareKey(current.key)] : []),
+        ),
+        cwd: process.cwd(),
+        banner: "editing your hooks with claude",
+        interactive: true,
+      });
+      return;
+    }
     if (key.tab)
       return setList(LISTS[(LISTS.indexOf(list) + 1) % LISTS.length]!);
     if (list === "finished") {
@@ -867,7 +894,18 @@ export function App({
         </>
       ) : (
         <>
-          <Queue rows={rows} cursor={cursor} height={queueHeight} />
+          <Queue
+            rows={rows}
+            cursor={cursor}
+            height={queueHeight}
+            empty={
+              list !== "finished"
+                ? undefined
+                : hookCount
+                  ? "Nothing to follow up — merged PRs with to-dos land here. H changes your hooks."
+                  : "No hooks yet — H sets up what happens when your PRs open or merge, with claude."
+            }
+          />
           {/* the bar names the row the panel belongs to, so the two regions
               read as queue-then-detail rather than one column of text */}
           <Bar label={current?.key ?? "no selection"} width={width} />
