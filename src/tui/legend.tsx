@@ -30,6 +30,11 @@ export const QUEUE_KEYS: Binding[] = [
   { keys: "w", label: "watch live" },
   { keys: "r", label: "retry" },
   { keys: "n", label: "review a PR by hand", short: "review by hand" },
+  {
+    keys: "N",
+    label: "name this PR (shown instead of its key)",
+    short: "name",
+  },
   { keys: "x", label: "dismiss" },
   { keys: "K", label: "kill" },
   { keys: "p", label: "poll — find new PRs and review them" },
@@ -54,6 +59,11 @@ export const MINE_KEYS: Binding[] = [
   { keys: "w", label: "watch live" },
   { keys: "r", label: "retry" },
   { keys: "n", label: "receive a PR by hand", short: "receive by hand" },
+  {
+    keys: "N",
+    label: "name this PR (shown instead of its key)",
+    short: "name",
+  },
   {
     keys: "H",
     label: "hooks — set up or change what runs when your PRs open or merge",
@@ -85,6 +95,11 @@ export const FINISHED_KEYS: Binding[] = [
     short: "to-dos",
   },
   { keys: "a", label: "add a to-do", short: "add" },
+  {
+    keys: "N",
+    label: "name this PR (shown instead of its key)",
+    short: "name",
+  },
   {
     keys: "1-9",
     label: "tick a to-do (the last one clears the row)",

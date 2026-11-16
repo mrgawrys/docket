@@ -10,6 +10,7 @@ import {
   loadState,
   markDone,
   markReviewed,
+  nameEntry,
   normalizeKey,
   pendingEntries,
   recordActivity,
@@ -165,6 +166,29 @@ test("statusLabel renames the run states for mine entries only", () => {
   expect(statusLabel("mine:o/r#1", "approved")).toBe("approved");
   expect(statusLabel("o/r#1", "reviewing")).toBe("reviewing");
   expect(statusLabel("o/r#1", "ready")).toBe("ready");
+});
+
+test("nameEntry sets, trims and clears a name without reordering the queue", () => {
+  const p = statePath();
+  const stamp = "2026-01-01T00:00:00Z";
+  saveState(p, { "mine:o/r#1": { status: "open", updated_at: stamp } });
+
+  nameEntry(p, "mine:o/r#1", "  login fix ");
+  expect(loadState(p)["mine:o/r#1"]).toEqual({
+    status: "open",
+    updated_at: stamp,
+    name: "login fix",
+  });
+
+  // blank clears the field, so the row falls back to its key
+  nameEntry(p, "mine:o/r#1", "   ");
+  expect(loadState(p)["mine:o/r#1"]).toEqual({
+    status: "open",
+    updated_at: stamp,
+  });
+
+  expect(nameEntry(p, "o/r#404", "x")).toMatch(/gone/);
+  expect(Object.keys(loadState(p))).toEqual(["mine:o/r#1"]);
 });
 
 test("recordActivity stores GitHub activity without restamping docket's updated_at", () => {

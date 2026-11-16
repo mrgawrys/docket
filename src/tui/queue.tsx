@@ -45,7 +45,11 @@ export function Queue({
     );
   }
   const start = windowStart(cursor, rows.length, height);
-  const keyWidth = Math.min(34, Math.max(...rows.map((r) => r.key.length)) + 1);
+  const label = (r: Row) => r.entry.name?.slice(0, 33) ?? r.key;
+  const keyWidth = Math.min(
+    34,
+    Math.max(...rows.map((r) => label(r).length)) + 1,
+  );
   // The other chips hold their column whether or not the row fills it, so the
   // grid stays a grid. This one is rarer than it is wide: with nothing in the
   // queue to show, its six columns go back to the title.
@@ -74,7 +78,9 @@ export function Queue({
             <Box flexShrink={0}>
               <Text color="cyan">{selected ? "▸ " : "  "}</Text>
               <Text dimColor>{String(index + 1).padStart(2)} </Text>
-              <Text bold={selected}>{key.padEnd(keyWidth)}</Text>
+              <Text bold={selected}>
+                {label({ key, entry }).padEnd(keyWidth)}
+              </Text>
             </Box>
             <Box width={18} flexShrink={0}>
               <Text color={STATUS_COLOR[entry.status]} wrap="truncate-end">

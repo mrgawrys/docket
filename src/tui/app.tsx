@@ -40,6 +40,7 @@ import {
   entryKind,
   isLiveReview,
   loadState,
+  nameEntry,
   pendingEntries,
   splitKey,
   type Entry,
@@ -244,6 +245,8 @@ export function App({
   const [prInput, setPrInput] = useState<string | undefined>();
   // The `a` footer input in the to-do walk; undefined = closed.
   const [todoInput, setTodoInput] = useState<string | undefined>();
+  // The `N` footer input, prefilled with the row's name; undefined = closed.
+  const [nameInput, setNameInput] = useState<string | undefined>();
   // The PR the denials view is reading, pinned when D opened it. Its verbs act
   // on this key and never on the queue cursor, which a finishing poll can move.
   const [denialKey, setDenialKey] = useState<string | undefined>();
@@ -386,7 +389,7 @@ export function App({
       ? `${job.verb}… · l shows the log`
       : undefined;
   const footer =
-    prInput !== undefined || todoInput !== undefined
+    prInput !== undefined || todoInput !== undefined || nameInput !== undefined
       ? "input"
       : (status ?? jobHint ?? notice ?? authWarning);
   const footerColor =
@@ -622,6 +625,20 @@ export function App({
   };
 
   useInput((input, key) => {
+    if (nameInput !== undefined) {
+      if (key.escape) return setNameInput(undefined);
+      if (key.return) {
+        setNameInput(undefined);
+        if (!current) return;
+        setStatus(nameEntry(paths.statePath, current.key, nameInput));
+        return reload();
+      }
+      if (key.backspace || key.delete)
+        return setNameInput(nameInput.slice(0, -1));
+      if (input && !key.ctrl && !key.meta)
+        return setNameInput(nameInput + input);
+      return;
+    }
     if (todoInput !== undefined) {
       if (key.escape) return setTodoInput(undefined);
       if (key.return) {
@@ -735,6 +752,7 @@ export function App({
     }
     if (key.tab)
       return setList(LISTS[(LISTS.indexOf(list) + 1) % LISTS.length]!);
+    if (input === "N" && current) return setNameInput(current.entry.name ?? "");
     if (list === "finished") {
       if (input === "j" || key.downArrow) return move(1);
       if (input === "k" || key.upArrow) return move(-1);
@@ -949,7 +967,12 @@ export function App({
         }
         unavailable={unavailable}
       />
-      {todoInput !== undefined ? (
+      {nameInput !== undefined ? (
+        <Text color="cyan" wrap="truncate-end">
+          name {current ? bareKey(current.key) : ""} ▸ {nameInput}█{" "}
+          <Text dimColor>(enter saves, empty clears, esc cancels)</Text>
+        </Text>
+      ) : todoInput !== undefined ? (
         <Text color="cyan" wrap="truncate-end">
           add to-do ▸ {todoInput}█{" "}
           <Text dimColor>(enter adds, esc cancels)</Text>

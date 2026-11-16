@@ -34,6 +34,8 @@ export type View = EntryKind | "finished";
 
 export interface Entry {
   status: Status;
+  // The user's own label for the row, shown in place of the key.
+  name?: string;
   title?: string;
   url?: string;
   local_path?: string;
@@ -198,6 +200,22 @@ export function recordActivity(
     key,
     (cur) => (cur && { ...cur, pr_updated_at: at }) as Entry,
   );
+}
+
+// Not a patchEntry, for recordActivity's reason. A blank name clears it.
+export function nameEntry(
+  statePath: string,
+  key: string,
+  name: string,
+): string {
+  if (!loadState(statePath)[key]) return `${key}: gone`;
+  const trimmed = name.trim();
+  updateEntry(statePath, key, (cur) => {
+    if (!cur) return cur as unknown as Entry;
+    const { name: _, ...rest } = cur;
+    return trimmed ? { ...rest, name: trimmed } : rest;
+  });
+  return trimmed ? `named ${bareKey(key)}: ${trimmed}` : `${key}: name cleared`;
 }
 
 export function setStatus(
