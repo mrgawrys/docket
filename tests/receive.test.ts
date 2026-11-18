@@ -66,6 +66,7 @@ test("receivePrompt: one self-contained section per point, before the summary, w
   }
   expect(RECEIVE_REPORT_INSTRUCTION).toContain("in its own section");
   expect(RECEIVE_REPORT_INSTRUCTION).toContain("quoted in full");
+  expect(RECEIVE_REPORT_INSTRUCTION).toContain("diff_hunk");
   expect(RECEIVE_REPORT_INSTRUCTION).toContain("draft reply");
 });
 

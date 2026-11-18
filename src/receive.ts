@@ -19,6 +19,9 @@ export const RECEIVE_REPORT_INSTRUCTION =
   `stands on its own:\n` +
   `- a heading that says what came of the point (fixed, declined, deferred, ` +
   `needs your call);\n` +
+  `- for a comment on a line, the code it is on, the way GitHub shows it ` +
+  `above the thread: the last few lines of the comment's \`diff_hunk\`, ` +
+  `ending at the commented line, in a \`diff\` fence;\n` +
   `- the reviewer's comment quoted in full, with who wrote it and the file ` +
   `and line it is on;\n` +
   `- enough context to judge it without opening an editor: what the code ` +
