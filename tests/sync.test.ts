@@ -1,7 +1,12 @@
 import { expect, test } from "bun:test";
 import type { PrMineInfo } from "../src/github";
 import type { Entry } from "../src/state";
-import { decideMineSync, decideSync, mineStanding } from "../src/sync";
+import {
+  decideMineSync,
+  decideSync,
+  mineStanding,
+  threadsSettled,
+} from "../src/sync";
 import { makeSandbox } from "./harness";
 
 test("decideSync: merged/closed/no-review/verdicts/flags", () => {
@@ -434,4 +439,79 @@ test("sync: mine entry — draft flag refreshed, merged goes done, gh failure le
   const e = sb.state()["mine:testorg/demo#7"];
   expect(e.status).toBe("done");
   expect(e.done_reason).toBe("merged");
+});
+
+test("threadsSettled: only some-unresolved → none fires", () => {
+  expect(
+    threadsSettled({ unresolved: 2, total: 3 }, { unresolved: 0, total: 3 }),
+  ).toBe(true);
+  expect(
+    threadsSettled({ unresolved: 0, total: 3 }, { unresolved: 0, total: 4 }),
+  ).toBe(false);
+  expect(
+    threadsSettled({ unresolved: 2, total: 3 }, { unresolved: 1, total: 3 }),
+  ).toBe(false);
+  expect(threadsSettled(undefined, { unresolved: 0, total: 3 })).toBe(false);
+});
+
+test("sync: a ready mine row whose threads all get resolved lands on the standing", () => {
+  const threadsJson = (resolved: boolean[]) =>
+    JSON.stringify({
+      data: {
+        repository: {
+          pullRequest: {
+            reviewThreads: {
+              totalCount: resolved.length,
+              nodes: resolved.map((isResolved) => ({ isResolved })),
+            },
+          },
+        },
+      },
+    });
+  const pr = JSON.stringify({
+    state: "OPEN",
+    isDraft: false,
+    headRefOid: "sha1",
+    headRefName: "feature",
+    reviews: [
+      {
+        author: { login: "colleague" },
+        state: "APPROVED",
+        body: "",
+        submittedAt: "2026-07-19T10:00:00Z",
+      },
+    ],
+  });
+  const ready = (threads: Entry["threads"]): Entry => ({
+    status: "ready",
+    title: "My PR",
+    url: "u",
+    branch: "feature",
+    review_at: "2026-08-01T00:00:00Z",
+    threads,
+    updated_at: "2026-08-01T00:00:00Z",
+  });
+  const sb = makeSandbox();
+  sb.writeState({
+    "mine:testorg/demo#7": ready({ unresolved: 2, total: 3 }),
+  });
+  sb.run(["sync"], {
+    GH_PR_MINE_JSON: pr,
+    GH_THREADS_JSON: threadsJson([true, true, true]),
+  });
+  let e = sb.state()["mine:testorg/demo#7"];
+  expect(e.status).toBe("approved");
+  expect(e.reviewer).toBe("colleague");
+
+  // already all resolved before: a new resolved thread does not clear ready
+  sb.writeState({
+    "mine:testorg/demo#7": ready({ unresolved: 0, total: 3 }),
+  });
+  sb.run(["sync"], {
+    GH_PR_MINE_JSON: pr,
+    GH_THREADS_JSON: threadsJson([true, true, true, true]),
+  });
+  e = sb.state()["mine:testorg/demo#7"];
+  expect(e.status).toBe("ready");
+  expect(e.threads).toEqual({ unresolved: 0, total: 4 });
 });
