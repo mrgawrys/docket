@@ -47,6 +47,10 @@ You'll also need:
   rule, whenever the keys are set: `docket receive` and `R` run them whether
   or not `receive_enabled` is on
 
+- runs call back into docket to report their summary, under the same
+  command that started them — nothing to install, but a moved or deleted
+  binary breaks it
+
 `docket doctor` checks all of this and prints a fix for anything missing.
 
 ## Quickstart
@@ -146,7 +150,9 @@ unresolved, where a review row shows its issue count; with
 [`receive_enabled`](docs/configuration.md#receive_enabled), actionable
 feedback triggers a headless receive run in that PR's checkout — it addresses
 the feedback with edits and local commits only, never a push — and `enter` resumes the
-resulting session where you inspect and push yourself. `R` runs receive by
+resulting session where you inspect and push yourself. The row leaves
+`ready` when you tell the agent there that it's dealt with, or when every
+review thread on the PR is resolved. `R` runs receive by
 hand (it works even with the automatic path off), and `n` here starts a
 receive run for a pasted PR. `s`, `d` and `enter` take you to your checkout
 of the PR branch in whatever state it is in — dirty or ahead, and never
@@ -165,6 +171,7 @@ The rest of the CLI:
 | `docket poll [--dry-run]` | one full cycle: sync, then find PRs newly awaiting you and review them (this is what the poller runs) |
 | `docket sync` | reconcile with GitHub now: merged/closed PRs are dismissed, PRs you already reviewed show your verdict; never starts a review |
 | `docket dismiss ORG/REPO#N` | mark an entry done without reviewing it |
+| `docket handled mine:ORG/REPO#N` | your PR's review is dealt with: the row leaves `ready` for the reviewers' verdict (the receive agent runs this for you) |
 | `docket doctor` | check the whole setup and print fixes |
 | `docket prompt` | set the review task, and derive the tools it needs |
 | `docket on` / `off` / `status` | manage the launchd poller |

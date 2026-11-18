@@ -87,12 +87,13 @@ only the task in between:
   the main working copy. The agent picks *where* the worktree goes
   (following your own worktree conventions in CLAUDE.md, if any); docket
   discovers it afterwards and removes it on dismiss.
-- Every run is asked to end its final message with a fenced `json` block,
-  `{"headline": …, "issues": …, "risk": "low"|"medium"|"high"}`, which is
-  what the queue renders per row. A prompt that cannot answer a field omits
-  it: one that never hunts for issues reports no count rather than a
-  misleading zero, and the row simply shows less. A run that ignores the
-  block falls back to the first lines of its prose, so nothing breaks.
+- Every run is asked to finish by calling back into docket —
+  `docket report KEY --headline … --issues N --risk low|medium|high` — which
+  is what the queue renders per row; the run's allowlist carries that one
+  command. A prompt that cannot answer a field leaves its flag out: one that
+  never hunts for issues reports no count rather than a misleading zero, and
+  the row simply shows less. A run that never reports falls back to the
+  first lines of its prose, so nothing breaks.
 
 Tokens `{number}` and `{repo}` (org/repo) are substituted; a prompt with no
 token is used as-is. A prompt that doesn't run `/code-review` needs no
@@ -175,10 +176,14 @@ GitHub; where the feedback is (inline thread comments, review bodies and
 conversation comments, each a read-only `gh api` path) and an instruction to
 stop rather than invent work if none of it can be read; a report with one
 self-contained section per review point (the code it is on, the comment
-quoted, the context, the
-change or the reason not to, a draft reply to post); and a closing summary
-block of its own — `headline`, `addressed`, `deferred` — which the mine view
-shows as `3 addressed · 1 deferred` where a review row shows risk.
+quoted, the context, the change or the reason not to, a draft reply to
+post); a closing `docket report` call of its own — `--headline`,
+`--addressed`, `--deferred` — which the mine view shows as
+`3 addressed · 1 deferred` where a review row shows risk; and, for later in
+the resumed session, `docket handled KEY` once you have pushed or settled
+every point, after the agent re-reads the feedback for anything new. That
+moves the row off `ready` to the reviewers' verdict; so does sync, when
+every review thread on the PR goes from unresolved to resolved.
 
 This key is also where a skill invocation goes if you have a review-receiving
 skill you'd rather run — e.g. `Run /my-receive-skill on PR {number}.` — with
