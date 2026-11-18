@@ -9,7 +9,11 @@ import {
   effectiveReceivePrompt,
   type Config,
 } from "../src/config";
-import { receivePrompt, shouldAutoRun } from "../src/receive";
+import {
+  RECEIVE_REPORT_INSTRUCTION,
+  receivePrompt,
+  shouldAutoRun,
+} from "../src/receive";
 import type { Entry } from "../src/state";
 import { makeSandbox, type Sandbox } from "./harness";
 
@@ -47,6 +51,22 @@ test("receivePrompt: fixed preamble — checkout only, commits yes, push and Git
   expect(p).toContain('"addressed"');
   expect(p).toContain('"deferred"');
   expect(p).not.toContain('"risk"');
+});
+
+test("receivePrompt: one self-contained section per point, before the summary, whatever the body", () => {
+  for (const cfg of [
+    bareCfg(),
+    bareCfg({ receive_prompt: "Run /my-skill on {number}." }),
+  ]) {
+    const p = receivePrompt(cfg, "mine:acme/widgets#12", entry());
+    expect(p).toContain(RECEIVE_REPORT_INSTRUCTION);
+    expect(p.indexOf(RECEIVE_REPORT_INSTRUCTION)).toBeLessThan(
+      p.indexOf("```json"),
+    );
+  }
+  expect(RECEIVE_REPORT_INSTRUCTION).toContain("in its own section");
+  expect(RECEIVE_REPORT_INSTRUCTION).toContain("quoted in full");
+  expect(RECEIVE_REPORT_INSTRUCTION).toContain("draft reply");
 });
 
 test("receivePrompt: custom body substituted, preamble still fixed, note appended", () => {

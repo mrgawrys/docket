@@ -11,6 +11,23 @@ import type { Ctx } from "./reviewer";
 import { patchEntry, splitKey, type Entry } from "./state";
 import { RECEIVE_SUMMARY_INSTRUCTION } from "./summary";
 
+// The author opens the session to review each point in turn, so the report is
+// fixed like the summary: a custom receive_prompt changes the work, not this.
+export const RECEIVE_REPORT_INSTRUCTION =
+  `Report each review point in its own section, in the order the feedback ` +
+  `was given, so the author can read them one at a time. Each section ` +
+  `stands on its own:\n` +
+  `- a heading that says what came of the point (fixed, declined, deferred, ` +
+  `needs your call);\n` +
+  `- the reviewer's comment quoted in full, with who wrote it and the file ` +
+  `and line it is on;\n` +
+  `- enough context to judge it without opening an editor: what the code ` +
+  `did, and whether the reviewer was right;\n` +
+  `- what you changed, as before-and-after code with the commit, or why ` +
+  `you left it;\n` +
+  `- a draft reply for that thread, for the author to post themselves, or ` +
+  `a note that none is needed.`;
+
 // Fixed checkout hygiene wraps a configurable task body, exactly like the
 // review prompt: the preamble (stay in the checkout, no push, no GitHub
 // writes) and the summary demand are NOT configurable; only the middle is.
@@ -48,7 +65,7 @@ export function receivePrompt(
     `\`gh api repos/${repo}/issues/${number}/comments\`. ` +
     `If none of them can be read, stop and say so — do not go looking for ` +
     `other work to do instead.\n\n` +
-    `${body}\n\n${RECEIVE_SUMMARY_INSTRUCTION}`;
+    `${body}\n\n${RECEIVE_REPORT_INSTRUCTION}\n\n${RECEIVE_SUMMARY_INSTRUCTION}`;
   if (note) p += `\n\nAdditional context from the author: ${note}`;
   return p;
 }

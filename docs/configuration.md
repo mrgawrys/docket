@@ -173,7 +173,9 @@ The wrapper around the task is fixed and not configurable: work only in the
 PR's checkout, edits and local commits allowed, never push, never write to
 GitHub; where the feedback is (inline thread comments, review bodies and
 conversation comments, each a read-only `gh api` path) and an instruction to
-stop rather than invent work if none of it can be read; and a closing summary
+stop rather than invent work if none of it can be read; a report with one
+self-contained section per review point (the comment quoted, the context, the
+change or the reason not to, a draft reply to post); and a closing summary
 block of its own — `headline`, `addressed`, `deferred` — which the mine view
 shows as `3 addressed · 1 deferred` where a review row shows risk.
 
