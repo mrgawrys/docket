@@ -51,9 +51,10 @@ test("doctor: all checks green → exit 0, one ✓ per check", () => {
   });
   const r = sb.run(["doctor"]);
   expect(r.code).toBe(0);
-  expect(r.out.match(/✓/g)?.length).toBe(10);
+  expect(r.out.match(/✓/g)?.length).toBe(11);
   expect(r.out).not.toContain("✗");
   expect(r.out).toContain("code-review plugin");
+  expect(r.out).toContain("✓ runs can call docket back:");
 });
 
 test("doctor: gh_account not set → that check is not run", () => {
@@ -66,7 +67,7 @@ test("doctor: gh_account not set → that check is not run", () => {
   });
   const r = sb.run(["doctor"]);
   expect(r.code).toBe(0);
-  expect(r.out.match(/✓/g)?.length).toBe(9);
+  expect(r.out.match(/✓/g)?.length).toBe(10);
 });
 
 test("doctor: missing config → ✗ with a seeded config to edit, later checks skipped, exit 1", () => {
@@ -460,7 +461,11 @@ test("doctor: a config with no receive keys says nothing about receive", () => {
   });
   const r = sb.run(["doctor"]);
   expect(r.code).toBe(0);
-  expect(r.out).not.toContain("receive");
+  // the callback line prints docket's own path, which may name a checkout
+  const lines = r.out
+    .split("\n")
+    .filter((l) => !l.includes("call docket back"));
+  expect(lines.join("\n")).not.toContain("receive");
 });
 
 test("doctor: blank receive_prompt and receive Skill() entries are checked", () => {

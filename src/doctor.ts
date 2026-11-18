@@ -1,4 +1,5 @@
 import { hooksDir, isExecutable, listHooks } from "./hooks";
+import { selfArgs, selfCommand } from "./proc";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { authDir, claudeAuth } from "./auth";
@@ -128,6 +129,18 @@ export async function doctorCommand(
     fail(
       `repo clones: ${bad.map(([repo, path]) => `${repo} → ${path}`).join(", ")}`,
       "clone the repo(s) at those paths, or fix the paths in config.json",
+    );
+  }
+
+  // Every run reports its summary by calling back into docket under this exact
+  // command, and the run's allowlist names it — so it must start on its own.
+  const self = selfCommand();
+  if (runs([...selfArgs(), "help"]).ok) {
+    pass(`runs can call docket back: ${self}`);
+  } else {
+    fail(
+      `runs cannot call docket back: ${self} does not start`,
+      "reinstall docket (brew reinstall docket), then run docket doctor again",
     );
   }
 
