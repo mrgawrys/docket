@@ -92,6 +92,11 @@ export const ALLOWED_TOOLS = [
   "Bash(gh search:*),Bash(gh issue view:*),Bash(gh issue list:*),Bash(git log:*),Bash(git show:*),Bash(git diff:*),Bash(git blame:*),Bash(git rev-parse:*),Bash(git fetch:*),Bash(git worktree:*),Bash(git checkout:*),Bash(git branch:*),Bash(cd:*),Bash(echo:*),Bash(ls:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(grep:*)",
 ].join(",");
 
+// How every background run reports its summary back (see report.ts). Only
+// `report`: `handled` belongs to the session the author resumes, never a run.
+export const reportAllowEntry = (self: string): string =>
+  `Bash(${self} report:*)`;
+
 // The --allowedTools value a review runs with: the read-only baseline plus any
 // configured extras. Extras are spliced in verbatim (claude's own grammar) —
 // what a custom review_prompt needs, the user allows here.

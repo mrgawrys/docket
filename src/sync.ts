@@ -125,6 +125,29 @@ const VERDICT_STATES = new Set<string>([
   "commented",
 ]);
 
+// A ready row's review is dealt with once its threads go from some
+// unresolved to none. "Some" matters: a PR with no threads, or threads already
+// resolved before the run, must not leave ready the moment the run lands.
+export function threadsSettled(
+  prev: Entry["threads"],
+  next: NonNullable<Entry["threads"]>,
+): boolean {
+  return (prev?.unresolved ?? 0) > 0 && next.unresolved === 0;
+}
+
+// One mine PR, synced now — what `docket handled` runs after it moves the row
+// to open. false: GitHub could not be read; the next poll catches up.
+export async function syncMineKey(
+  ctx: Ctx,
+  key: string,
+  trigger: TriggerReceive = triggerReceive,
+): Promise<boolean> {
+  const entry = loadState(ctx.paths.statePath)[key];
+  const me = ghUser(ctx.gh);
+  if (!entry || !me) return false;
+  return syncMine(ctx, key, entry, me, trigger);
+}
+
 // Actionable feedback on the user's PR: a review by someone else, newer than
 // the entry's cursor, that is not a bare approval (no body, no inline comments).
 export function decideMineSync(
@@ -219,20 +242,21 @@ async function syncMine(
   entry: Entry,
   me: string,
   trigger: TriggerReceive,
-): Promise<void> {
+): Promise<boolean> {
   const { statePath } = ctx.paths;
   const { repo, number } = splitKey(key);
   const info = prMineInfo(ctx.gh, repo, number);
   if (!info) {
     ctx.log(`SYNC ${key}: gh pr view failed, leaving entry as-is`);
-    return;
+    return false;
   }
   recordActivity(statePath, key, info.updatedAt);
   const d = decideMineSync(info, me, entry);
   if (d.kind === "done") {
-    if (info.state === "MERGED" && !(await fireMerged(ctx, key, entry))) return;
+    if (info.state === "MERGED" && !(await fireMerged(ctx, key, entry)))
+      return true;
     await retire(ctx, key, info.state === "MERGED" ? "merged" : "closed");
-    return;
+    return true;
   }
 
   if (entry.hooks === undefined) {
@@ -284,11 +308,19 @@ async function syncMine(
     (threads.unresolved !== entry.threads?.unresolved ||
       threads.total !== entry.threads?.total)
   ) {
-    patchEntry(statePath, key, { threads });
+    const settled =
+      entry.status === "ready" && threadsSettled(entry.threads, threads);
+    patchEntry(statePath, key, {
+      threads,
+      ...(settled ? { status: standing?.verdict ?? "open" } : {}),
+      ...(settled && standing ? { reviewer: standing.reviewer } : {}),
+    });
+    if (settled)
+      ctx.log(`SYNC ${key}: every review thread resolved — no longer ready`);
     entry = loadState(statePath)[key] ?? entry;
   }
 
-  if (d.kind !== "feedback") return;
+  if (d.kind !== "feedback") return true;
   // Advance the cursor and record their verdict before acting: the same
   // review must never re-trigger, even if the trigger path crashes.
   patchEntry(statePath, key, {
@@ -301,6 +333,7 @@ async function syncMine(
   const n = feedbackNotification(bareKey(key), d.verdict, d.reviewer);
   await notify(ctx.cfg, n.title, n.body);
   await trigger(ctx, key, loadState(statePath)[key] ?? entry);
+  return true;
 }
 
 function addTodos(ctx: Ctx, key: string, todos: Todo[]): void {

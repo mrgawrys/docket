@@ -1,32 +1,29 @@
-// The triage summary every review is asked to end its final message with. The
-// queue renders this; the prose behind it is only a fallback.
+// The triage summary every run reports to docket by running `report` (see
+// report.ts). The queue renders this; the prose behind it is only a fallback.
 export type Risk = "low" | "medium" | "high";
 
-// What every run is asked to end with. Fixed rather than configurable so the
-// queue keeps a triage signal whatever the task body asks for; a prompt that
-// cannot answer a field omits it (see splitSummary).
-export const SUMMARY_INSTRUCTION =
-  `Finally, end your last message with a fenced json block — a triage summary ` +
-  `for the review queue — and write nothing after it:\n\n` +
-  "```json\n" +
-  `{"headline": "one line, at most 80 characters, the first thing the ` +
-  `reviewer should know", "issues": <how many you would flag — omit the key ` +
-  `entirely if finding issues was not your task>, "risk": "low" | "medium" | ` +
-  `"high" — omit the key if you did not assess risk}\n` +
-  "```";
+// What every run is asked to finish with. Fixed rather than configurable so
+// the queue keeps a triage signal whatever the task body asks for; a prompt
+// that cannot answer a field leaves its flag out.
+export const summaryInstruction = (self: string, key: string): string =>
+  `As your last action, report to docket's review queue by running:\n\n` +
+  `    ${self} report ${key} --headline "…" --issues N --risk low|medium|high\n\n` +
+  `The headline is one line, at most 80 characters, the first thing the ` +
+  `reviewer should know. Leave out --issues if finding issues was not your ` +
+  `task, and --risk if you did not assess risk. Run it once, and do not ` +
+  `repeat the summary in your message.`;
 
 // A receive run's counterpart: it is not looking for issues or weighing risk,
 // it is working through asks — so it reports how many it took and how many it
 // left, each with a reason the author can read in the session.
-export const RECEIVE_SUMMARY_INSTRUCTION =
-  `Finally, end your last message with a fenced json block — a summary for ` +
-  `the author's queue — and write nothing after it:\n\n` +
-  "```json\n" +
-  `{"headline": "one line, at most 80 characters, the first thing the ` +
-  `author should know", "addressed": <how many review points you ` +
-  `implemented>, "deferred": <how many you left alone, each with a reason in ` +
-  `your message — omit either key if the feedback could not be read at all>}\n` +
-  "```";
+export const receiveSummaryInstruction = (self: string, key: string): string =>
+  `As your last action, report to docket's queue by running:\n\n` +
+  `    ${self} report ${key} --headline "…" --addressed N --deferred N\n\n` +
+  `The headline is one line, at most 80 characters, the first thing the ` +
+  `author should know. --addressed is how many review points you ` +
+  `implemented, --deferred how many you left alone, each with a reason in ` +
+  `your message; leave both out if the feedback could not be read at all. ` +
+  `Run it once, and do not repeat the summary in your message.`;
 
 // Every field is optional on purpose: `review_prompt` is configurable, so a
 // prompt that never hunts for issues must still be able to answer honestly
@@ -75,7 +72,7 @@ function risk(value: unknown): Risk | undefined {
 
 // A block that parses but carries nothing we recognise is not a summary — the
 // prose keeps it, because it is more likely a code sample than a failed answer.
-function validate(raw: unknown): Summary | undefined {
+export function toSummary(raw: unknown): Summary | undefined {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw))
     return undefined;
   const o = raw as Record<string, unknown>;
@@ -93,9 +90,9 @@ function validate(raw: unknown): Summary | undefined {
   return Object.keys(s).length ? s : undefined;
 }
 
-// Split a review's final message into its triage summary and the prose before
-// it. The block is removed only when it was accepted, so a review that ignored
-// the instruction reads exactly as it did before.
+// Sessions from before `report` end their final message with a json block;
+// the panel strips it from the prose it falls back to. Removed only when it
+// was accepted, so a message that merely ends in json reads as written.
 export function splitSummary(result: string): Split {
   const m = TRAILING_BLOCK.exec(result);
   if (!m) return { prose: result };
@@ -105,7 +102,7 @@ export function splitSummary(result: string): Split {
   } catch {
     return { prose: result };
   }
-  const summary = validate(parsed);
+  const summary = toSummary(parsed);
   if (!summary) return { prose: result };
   return { summary, prose: (m[1] ?? "").trimEnd() };
 }

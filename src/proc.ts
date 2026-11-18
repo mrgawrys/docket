@@ -16,3 +16,9 @@ export function selfArgs(...tail: string[]): string[] {
     return [process.execPath, Bun.main, ...tail];
   return [process.execPath, ...tail];
 }
+
+const shellQuote = (arg: string): string =>
+  /^[\w@%+=:./-]+$/.test(arg) ? arg : `'${arg.replaceAll("'", `'\\''`)}'`;
+
+// selfArgs as one shell word list — how a prompt tells an agent to call docket.
+export const selfCommand = (): string => selfArgs().map(shellQuote).join(" ");

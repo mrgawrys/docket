@@ -19,6 +19,7 @@ import {
   GH_API_WRITE_DENY,
   ghBin,
   permissionMode,
+  reportAllowEntry,
   runLogPath,
   type Config,
   type Paths,
@@ -28,7 +29,7 @@ import { denialGroups, type DenialGroup } from "./denials";
 import type { GhCtx } from "./github";
 import type { Logger } from "./log";
 import { notify } from "./notify";
-import { selfArgs } from "./proc";
+import { selfArgs, selfCommand } from "./proc";
 import { parseRunEvent, tailLines } from "./runlog";
 import {
   entryKind,
@@ -41,7 +42,7 @@ import {
   updateEntry,
   type Entry,
 } from "./state";
-import { SUMMARY_INSTRUCTION, splitSummary, type Summary } from "./summary";
+import { summaryInstruction } from "./summary";
 import {
   parseWorktrees,
   pickReviewWorktrees,
@@ -58,6 +59,7 @@ export function reviewPrompt(
   repo: string,
   cfg: Config,
   note?: string,
+  self = selfCommand(),
 ): string {
   const body = effectiveReviewPrompt(cfg)
     .replaceAll("{number}", number)
@@ -69,7 +71,7 @@ export function reviewPrompt(
     `main working copy.\n\n` +
     `${body}\n\n` +
     `Keep the worktree in place afterwards so follow-up questions can use it.` +
-    `\n\n${SUMMARY_INSTRUCTION}`;
+    `\n\n${summaryInstruction(self, `${repo}#${number}`)}`;
   if (note) p += `\n\nAdditional context from the reviewer: ${note}`;
   return p;
 }
@@ -340,7 +342,10 @@ export function runPlan(ctx: Ctx, key: string, entry: Entry): RunPlan {
   if (entryKind(key) === "mine") {
     return {
       prompt: receivePrompt(ctx.cfg, key, entry, entry.note),
-      allowedTools: effectiveReceiveAllowedTools(ctx.cfg),
+      allowedTools: [
+        ...effectiveReceiveAllowedTools(ctx.cfg),
+        reportAllowEntry(selfCommand()),
+      ],
       cwd: entry.checkout_path ?? "",
       discoverWorktrees: false,
       label: "receive",
@@ -348,7 +353,11 @@ export function runPlan(ctx: Ctx, key: string, entry: Entry): RunPlan {
   }
   return {
     prompt: reviewPrompt(number, repo, ctx.cfg, entry.note),
-    allowedTools: [ALLOWED_TOOLS, ...(ctx.cfg.extra_allowed_tools ?? [])],
+    allowedTools: [
+      ALLOWED_TOOLS,
+      ...(ctx.cfg.extra_allowed_tools ?? []),
+      reportAllowEntry(selfCommand()),
+    ],
     cwd: entry.local_path ?? ctx.cfg.repos[repo] ?? "",
     discoverWorktrees: true,
     label: "review",
@@ -391,10 +400,12 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
   }
 
   const plan = runPlan(ctx, key, entry);
+  // A run that never reports must not show the last run's headline.
   patchEntry(statePath, key, {
     status: "reviewing",
     local_path: localPath,
     pid: process.pid,
+    summary: undefined,
   });
   ctx.current.key = key;
   ctx.log(
@@ -410,7 +421,13 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
     : [];
 
   // gh.env carries GH_TOKEN when gh_account is pinned — claude runs gh itself
-  const env = { ...ctx.gh.env, ...claudeEnv(ctx.cfg) };
+  // The DOCKET_* dirs make the agent's `report` land in this docket's state.
+  const env = {
+    ...ctx.gh.env,
+    ...claudeEnv(ctx.cfg),
+    DOCKET_CONFIG_DIR: ctx.paths.configDir,
+    DOCKET_STATE_DIR: ctx.paths.stateDir,
+  };
   const runLog = runLogPath(ctx.paths, key);
   mkdirSync(dirname(runLog), { recursive: true });
   const proc = Bun.spawn(
@@ -465,15 +482,13 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
   } catch {}
 
   let sessionId = "";
-  let summary: Summary | undefined;
   if (exitCode === 0) {
     // a well-formed run ends with a stream-json result event carrying the session
     const ev = parseRunEvent(tailLines(runLog, 1)[0] ?? "");
-    if (ev?.type === "result") {
-      sessionId = ev.session_id ?? "";
-      summary = splitSummary(ev.result ?? "").summary;
-    }
+    if (ev?.type === "result") sessionId = ev.session_id ?? "";
   }
+  // What the agent reported mid-run; the status writes below rewrite the entry.
+  const summary = loadState(statePath)[key]?.summary;
 
   const url = entry.url ?? "";
   // A capitalized label for the notification title: "Review" | "Receive".
@@ -483,7 +498,7 @@ export async function execReview(ctx: Ctx, key: string): Promise<number> {
   // reviewer, worktrees, flags) — for them, keep everything but the run's own
   // leftovers. summary and denials belong to the finished run and are patched
   // back on below: kept here, a clean run would inherit the last run's
-  // headline and denial list. note is the same — it was written for this run,
+  // denial list. note is the same — it was written for this run,
   // and a review entry already loses it by being rewritten wholesale.
   const carry = (e: Entry | undefined): Partial<Entry> => {
     if (entryKind(key) !== "mine" || !e) return {};

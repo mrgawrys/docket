@@ -2,8 +2,14 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { materialize } from "../dev/sandbox";
+import { reportAllowEntry } from "../src/config";
 
 const MAIN = join(import.meta.dir, "..", "src", "main.ts");
+
+// The allowlist entry a sandboxed runner (`bun src/main.ts exec`) adds for
+// its own `report` call.
+export const RUNNER_SELF = `${process.execPath} ${MAIN}`;
+export const RUNNER_REPORT_ALLOW = reportAllowEntry(RUNNER_SELF);
 
 // The gh/claude/launchctl shims live in dev/sandbox.ts, shared with the demo
 // sandbox; this harness adds the capture-file accessors and run helpers on top.

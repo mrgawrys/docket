@@ -33,6 +33,7 @@ import { reconcile, startReceive } from "./sync";
 import { visitEntry } from "./visit";
 import { runTui, type ActionResult } from "./tui/app";
 import { childOwnsTerminal } from "./tui/suspend";
+import { handledKey, reportKey } from "./report";
 import { hooksCommand } from "./hookscmd";
 import { promptCommand } from "./wizard/prompt";
 import { resolveConfig } from "./wizard/trigger";
@@ -52,6 +53,8 @@ Usage:
                             local commits only, never pushes)
   docket retry <key>        re-run a failed review
   docket dismiss <key>      mark done + remove the PR worktree
+  docket report <key> …     a run's summary for the queue (agents call this)
+  docket handled <key>      your PR's review is dealt with: leave ready
   docket doctor             check setup: config, clones, gh, claude, code-review plugin
   docket prompt             set the review task (and the tools it needs)
   docket hooks [sub]        lifecycle hooks for your PRs: list, payload <pr>,
@@ -409,6 +412,30 @@ const dismiss: Command = (args) =>
     return 0;
   });
 
+// Agent-facing: the key comes verbatim from the run's prompt, mine: prefix
+// and all, so it is taken as given rather than normalized.
+const report: Command = (args) =>
+  withCtx(async (ctx) => {
+    if (!args[0]) {
+      console.error("usage: docket report KEY --headline TEXT [--issues N] …");
+      return 1;
+    }
+    const r = reportKey(ctx, args[0], args.slice(1));
+    (r.code ? console.error : console.log)(r.message);
+    return r.code;
+  });
+
+const handled: Command = (args) =>
+  withCtx(async (ctx) => {
+    if (!args[0]) {
+      console.error("usage: docket handled mine:ORG/REPO#NUM");
+      return 1;
+    }
+    const r = await handledKey(ctx, args[0]);
+    (r.code ? console.error : console.log)(r.message);
+    return r.code;
+  });
+
 const doctor: Command = () => doctorCommand();
 const prompt: Command = () => promptCommand();
 const status: Command = () => withCtx((ctx) => statusCommand(ctx));
@@ -438,6 +465,8 @@ const commands: Record<string, Command> = {
   sync,
   poll,
   dismiss,
+  report,
+  handled,
   doctor,
   prompt,
   hooks,

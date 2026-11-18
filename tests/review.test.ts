@@ -3,7 +3,7 @@ import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { ALLOWED_TOOLS, type Config } from "../src/config";
 import { reviewPrompt } from "../src/reviewer";
-import { makeSandbox } from "./harness";
+import { makeSandbox, RUNNER_REPORT_ALLOW, RUNNER_SELF } from "./harness";
 
 const bareCfg = (review_prompt?: string): Config => ({
   orgs: [],
@@ -64,21 +64,25 @@ test("reviewPrompt: a reviewer note is appended after everything", () => {
   expect(p.trimEnd().endsWith("focus on the migration")).toBe(true);
 });
 
-test("reviewPrompt: the summary block is demanded even of a custom prompt", () => {
-  const p = reviewPrompt("7", "org/repo", bareCfg("Just eyeball it."));
-  expect(p).toContain("triage summary");
-  expect(p).toContain('"headline"');
-  expect(p).toContain('"risk"');
+test("reviewPrompt: the report call is demanded even of a custom prompt", () => {
+  const p = reviewPrompt(
+    "7",
+    "org/repo",
+    bareCfg("Just eyeball it."),
+    undefined,
+    "/bin/docket",
+  );
+  expect(p).toContain("/bin/docket report org/repo#7 --headline");
+  expect(p).toContain("--risk low|medium|high");
+  expect(p).not.toContain("```json");
+  expect(p).not.toContain("handled");
 });
 
-test("a finished review records its triage summary on the entry", async () => {
+test("a summary the agent reports mid-run survives the run's final write", async () => {
   const sb = makeSandbox();
   sb.gitInitDemo();
   const r = sb.run(["review", "testorg/demo#7"], {
-    CLAUDE_RESULT:
-      "# Code review\n\nOne real defect.\n\n```json\n" +
-      '{"headline": "choice questions render as Text", "issues": 1, "risk": "low"}\n' +
-      "```",
+    CLAUDE_RUN: `${RUNNER_SELF} report testorg/demo#7 --headline 'choice questions render as Text' --issues 1 --risk low`,
   });
   expect(r.code).toBe(0);
   // the runner writes the status first and patches the summary on afterwards,
@@ -221,7 +225,7 @@ test("extra_allowed_tools land in claude's --allowedTools after the baseline", a
   expect(sb.run(["review", "testorg/demo#7"]).code).toBe(0);
   await sb.waitEntry("testorg/demo#7", (x) => x.status === "ready");
   expect(sb.allowedCapture()).toBe(
-    `${ALLOWED_TOOLS},Bash(bun test:*),Skill(my-review)`,
+    `${ALLOWED_TOOLS},Bash(bun test:*),Skill(my-review),${RUNNER_REPORT_ALLOW}`,
   );
 });
 
@@ -229,7 +233,7 @@ test("no extra_allowed_tools → claude gets exactly the baseline allowlist", as
   const sb = makeSandbox();
   expect(sb.run(["review", "testorg/demo#7"]).code).toBe(0);
   await sb.waitEntry("testorg/demo#7", (x) => x.status === "ready");
-  expect(sb.allowedCapture()).toBe(ALLOWED_TOOLS);
+  expect(sb.allowedCapture()).toBe(`${ALLOWED_TOOLS},${RUNNER_REPORT_ALLOW}`);
 });
 
 test("permission_mode picks claude's --permission-mode, dontAsk when unset", async () => {

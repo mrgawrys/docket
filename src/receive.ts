@@ -9,7 +9,8 @@ import { prMineInfo } from "./github";
 // imports this module for the mine RunPlan)
 import type { Ctx } from "./reviewer";
 import { patchEntry, splitKey, type Entry } from "./state";
-import { RECEIVE_SUMMARY_INSTRUCTION } from "./summary";
+import { selfCommand } from "./proc";
+import { receiveSummaryInstruction } from "./summary";
 
 // The author opens the session to review each point in turn, so the report is
 // fixed like the summary: a custom receive_prompt changes the work, not this.
@@ -31,6 +32,16 @@ export const RECEIVE_REPORT_INSTRUCTION =
   `- a draft reply for that thread, for the author to post themselves, or ` +
   `a note that none is needed.`;
 
+// The run ends `ready`; only the author, back in the resumed session, knows
+// when the review is dealt with — so the agent moves the row then, not now.
+export const receiveHandledInstruction = (self: string, key: string): string =>
+  `This first run ends with your report — never run \`handled\` in it. If ` +
+  `the author comes back to this session and has pushed your work, or ` +
+  `settled every point another way: re-read all three feedback sources ` +
+  `first. If anything arrived after your report, tell them and work it. ` +
+  `Otherwise run \`${self} handled ${key}\` so docket's queue stops showing ` +
+  `the review as waiting for them.`;
+
 // Fixed checkout hygiene wraps a configurable task body, exactly like the
 // review prompt: the preamble (stay in the checkout, no push, no GitHub
 // writes) and the summary demand are NOT configurable; only the middle is.
@@ -39,6 +50,7 @@ export function receivePrompt(
   key: string,
   entry: Entry,
   note?: string,
+  self = selfCommand(),
 ): string {
   const { repo, number } = splitKey(key);
   const body = effectiveReceivePrompt(cfg)
@@ -68,7 +80,9 @@ export function receivePrompt(
     `\`gh api repos/${repo}/issues/${number}/comments\`. ` +
     `If none of them can be read, stop and say so — do not go looking for ` +
     `other work to do instead.\n\n` +
-    `${body}\n\n${RECEIVE_REPORT_INSTRUCTION}\n\n${RECEIVE_SUMMARY_INSTRUCTION}`;
+    `${body}\n\n${RECEIVE_REPORT_INSTRUCTION}\n\n` +
+    `${receiveSummaryInstruction(self, key)}\n\n` +
+    receiveHandledInstruction(self, key);
   if (note) p += `\n\nAdditional context from the author: ${note}`;
   return p;
 }

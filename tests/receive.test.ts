@@ -15,7 +15,7 @@ import {
   shouldAutoRun,
 } from "../src/receive";
 import type { Entry } from "../src/state";
-import { makeSandbox, type Sandbox } from "./harness";
+import { makeSandbox, RUNNER_REPORT_ALLOW, type Sandbox } from "./harness";
 
 const bareCfg = (over: Partial<Config> = {}): Config => ({
   orgs: [],
@@ -48,9 +48,10 @@ test("receivePrompt: fixed preamble — checkout only, commits yes, push and Git
   expect(p).toContain("gh api repos/acme/widgets/issues/12/comments");
   expect(p).toContain("do not go looking for other work");
   // the receive contract, not the review one: no issues, no risk
-  expect(p).toContain('"addressed"');
-  expect(p).toContain('"deferred"');
-  expect(p).not.toContain('"risk"');
+  expect(p).toContain("report mine:acme/widgets#12 --headline");
+  expect(p).toContain("--addressed N --deferred N");
+  expect(p).not.toContain("--risk");
+  expect(p).not.toContain("```json");
 });
 
 test("receivePrompt: one self-contained section per point, before the summary, whatever the body", () => {
@@ -61,7 +62,7 @@ test("receivePrompt: one self-contained section per point, before the summary, w
     const p = receivePrompt(cfg, "mine:acme/widgets#12", entry());
     expect(p).toContain(RECEIVE_REPORT_INSTRUCTION);
     expect(p.indexOf(RECEIVE_REPORT_INSTRUCTION)).toBeLessThan(
-      p.indexOf("```json"),
+      p.indexOf(" report mine:acme/widgets#12"),
     );
   }
   expect(RECEIVE_REPORT_INSTRUCTION).toContain("in its own section");
@@ -99,7 +100,7 @@ test("receivePrompt: a fallback checkout is named as one, with its reason", () =
   expect(p).not.toContain("the checkout of its branch");
   // the fixed preamble and the summary demand survive
   expect(p).toContain("NEVER push");
-  expect(p).toContain('"addressed"');
+  expect(p).toContain("--addressed N");
 
   // absent for an ordinary checkout, which the opener names as one
   const plain = receivePrompt(bareCfg(), "mine:acme/widgets#12", entry());
@@ -261,7 +262,9 @@ test("feedback on an opted-in PR runs receive headlessly in a docket-owned check
   expect(realpathSync(sb.cwdCapture())).toBe(expected);
 
   // the receive allowlist and prompt, not the review ones
-  expect(sb.allowedCapture()).toBe(RECEIVE_ALLOWED_TOOLS.join(","));
+  expect(sb.allowedCapture()).toBe(
+    [...RECEIVE_ALLOWED_TOOLS, RUNNER_REPORT_ALLOW].join(","),
+  );
   expect(sb.promptCapture()).toContain("Address the review feedback on PR 7");
   expect(sb.promptCapture()).toContain("NEVER push");
 });

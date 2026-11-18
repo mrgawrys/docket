@@ -146,6 +146,8 @@ if [ -n "\${CLAUDE_EMIT_DENIAL:-}" ]; then
 fi
 if [ "\${CLAUDE_FAIL:-0}" = 1 ]; then echo "boom" >&2; exit 1; fi
 [ -n "\${CLAUDE_SLEEP:-}" ] && sleep "\$CLAUDE_SLEEP"
+# optionally simulate the agent calling back into docket (its \`report\`)
+[ -n "\${CLAUDE_RUN:-}" ] && sh -c "\$CLAUDE_RUN" >/dev/null 2>&1
 # CLAUDE_RESULT stands in for the agent's final message; bun does the escaping
 bun -e 'console.log(JSON.stringify({type:"result",subtype:"success",result:process.env.CLAUDE_RESULT??"ok",session_id:"sess-1234"}))'
 `;
